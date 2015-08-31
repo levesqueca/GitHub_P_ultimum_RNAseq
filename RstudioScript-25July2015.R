@@ -9,6 +9,7 @@
 #check version installed
 ############################################################################################################################
 #Building the STAR Reference Genome Index:
+#test 1 from girouxem
 cmd <- paste("mkdir", "GenomeDir")
 system(cmd)
 STAR_path <- "/home/AAFC-AAC/girouxem/RNASeq/tools/STAR-STAR_2.4.2a/source/STAR"
