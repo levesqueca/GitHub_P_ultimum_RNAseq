@@ -9,13 +9,21 @@
 #check version installed
 ############################################################################################################################
 #Building the STAR Reference Genome Index:
-cmd <- paste("mkdir", "GenomeDir")
+
+# use one or the other
+shared_path <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+#shared_path <- "/home/AAFC-AAC/girouxem/RNASeq/"
+
+# makes directory "GenomeDir" on the shared drive
+dir.create(paste(shared_path, "GenomeDir", sep=""), showWarnings = TRUE, recursive = FALSE)
+
 system(cmd)
-STAR_path <- "/home/AAFC-AAC/girouxem/RNASeq/tools/STAR-STAR_2.4.2a/source/STAR"
-Pyuu_ref_path <- "/home/AAFC-AAC/girouxem/RNASeq/References/Pyuu_ref_no_mito.fa"
-Pyuu_gff3_path <- "/home/AAFC-AAC/girouxem/RNASeq/References/Pyuu_ref_no_mito.gff3"
+STAR_path <- "/opt/bio/STAR/STAR"
+#STAR_path <- "/home/AAFC-AAC/girouxem/RNASeq/tools/STAR-STAR_2.4.2a/source/STAR"
+Pyuu_ref_path <- paste(shared_path, "References/Pyuu_ref_no_mito.fa", sep="")
+Pyuu_gff3_path <- paste(shared_path, "References/Pyuu_ref_no_mito.gff3", sep="")
 Pyuu_gtf_path <- "/home/AAFC-AAC/girouxem/RNASeq/References/Pyuu_ref.gtf"
-GenomeDir_path <- "/home/AAFC-AAC/girouxem/RNASeq/GenomeDir/"
+GenomeDir_path <- paste(shared_path, "GenomeDir", "/", sep="")
 P <- "Parent"
 Gff3_overhang <- 280 #needs to be max len -1, max length of R1 and R2 is ~280? This must be for the pair?
 cmd <- paste(STAR_path,"--runMode",
@@ -32,40 +40,93 @@ cat(cmd, "\n")
 system(cmd)
 ############################################################################################################################
 #Creating the bowtie index for the FASTA reference/transcriptome file:
-gff3 <- "/home/AAFC-AAC/girouxem/RNASeq/References/Pyuu_ref_no_mito.gff3"
-fa <- "/home/AAFC-AAC/girouxem/RNASeq/References/Pyuu_ref_no_mito.fa"
+# gff3 <- "/home/AAFC-AAC/girouxem/RNASeq/References/Pyuu_ref_no_mito.gff3"
+# fa <- "/home/AAFC-AAC/girouxem/RNASeq/References/Pyuu_ref_no_mito.fa"
 bowtie2_build_path <- "/opt/bio/bowtie2/bowtie2-build"
 cmd <- paste(bowtie2_build_path, " -f ", fa, 
              " /home/AAFC-AAC/girouxem/RNASeq/References","/",paste("Pyuu_ref", sep="_"), sep="")
+#cmd <- paste(bowtie2_build_path, " -f ", Pyuu_ref_path, " ", shared_path, "References/Pyuu_ref", sep="") 
 cmd
 system(cmd)
 ###########################################################################################################################
-#Reading the csv file and getting the fasta reads from the illumina miseq folder:
-# reads the  csv file with all the info
-OTRI <- read.csv("OTRI.csv", stringsAsFactors=FALSE)
+# Hi Seq
+################
+# path of Genome Quebec Data
+HiSeq_path <- "/isilon/biodiversity/data/raw/illumina/GQC/HI.3222.003/"
+
+# will work once csv files are in raw data folders
+# GC_csv <- list.files(path = HiSeq_path, pattern = "^HiSeq.*OG_Hi.*\\.csv$", recursive = FALSE)
+
+# for now in my working directory (the OG_HI picks up only one file)
+GC_csv <- list.files(path = shared_path, pattern = "^HiSeq.*OG_Hi.*\\.csv$", recursive = FALSE)
+
+# read that csv file
+GC_meta <- read.csv(GC_csv, stringsAsFactors=FALSE)
+
+#create OTRI loke it was for MiSeq
+OTRI1 <- GC_meta[,c("Name","Run","Filename.Prefix","Run.Type")]
+OTRI1$Read_Direction <- "R1"
+OTRI2 <- OTRI1
+OTRI2$Read_Direction <- "R2"
+OTRI <- rbind(OTRI1, OTRI2)
+rm(OTRI1,OTRI2)
+
+OTRI$FastqFilePath <- paste(HiSeq_path,OTRI$Filename.Prefix,"_",OTRI$Read_Direction,".fastq.gz", sep="")
+
+colnames(OTRI)[colnames(OTRI)=="Name"] <- "LibraryName"
+
+
+i <- 1
+
 # creates a list of file names from the full download path
 fs <- basename(OTRI$FastqFilePath)
+
+# Create directory in shared_path folder
+# makes directory "GenomeDir" on the shared drive
+dir.create(paste(shared_path, "HiSeq_data", sep=""), showWarnings = TRUE, recursive = FALSE)
+
 # to copy from the isilon raw data folder into my working directory, renaming with fs basenames
-for(i in 1:nrow(OTRI)) file.copy(OTRI$FastqFilePath[i], fs[i])
+for(i in 1:nrow(OTRI)) file.copy(OTRI$FastqFilePath[i], paste(shared_path, "HiSeq_data/", fs[i], sep=""))
 # to unzip all files
-for(j in 1:length(fs)) {
-  cmd <- paste("gunzip", fs[j])
-  cat(cmd, "\n")
+for(i in 1:length(fs)) {
+  cmd <- paste("gunzip", paste(shared_path, "HiSeq_data/", fs[i], sep=""))
+#  cat(cmd, "\n")
   system(cmd) # invoke command
 }
+
+# 
+# ###########################################################################################################################
+# # MiSeq
+# ##################
+# # Reading the csv file and getting the fasta reads from the illumina miseq folder:
+# # reads the  csv file with all the info
+# OTRI <- read.csv("OTRI.csv", stringsAsFactors=FALSE)
+# # creates a list of file names from the full download path
+# fs <- basename(OTRI$FastqFilePath)
+# # to copy from the isilon raw data folder into my working directory, renaming with fs basenames
+# for(i in 1:nrow(OTRI)) file.copy(OTRI$FastqFilePath[i], fs[i])
+# # to unzip all files
+# for(j in 1:length(fs)) {
+#   cmd <- paste("gunzip", fs[j])
+#   cat(cmd, "\n")
+#   system(cmd) # invoke command
+# }
+
+
 ###########################################################################################################################
 #Parsing the Metadata:
-parsed_columns <- data.frame(matrix(unlist(strsplit(as.character(OTRI$BaseCallsName), "_|-")), 
-                                    nrow=length(OTRI$BaseCallsName), byrow=T), stringsAsFactors = FALSE)
-colnames(parsed_columns) <- c("TimePoint","Condition","Library","Illumina_Lane","Read_Direction","Rest")
-Metadata <- cbind(parsed_columns[,c(1:3,5)], OTRI)
+parsed_columns <- data.frame(matrix(unlist(strsplit(as.character(OTRI$LibraryName), "_|-")), 
+                                    nrow=length(OTRI$LibraryName), byrow=T), stringsAsFactors = FALSE)
+colnames(parsed_columns) <- c("TimePoint","Condition","Library")
+Metadata <- cbind(parsed_columns, OTRI)
 Metadata$Platform <- "Illumina"
 Metadata$ScientificName <- "Pythium ultimum var ultimum"
 Metadata$TimePoint <- sub("T","", Metadata$TimePoint, ignore.case = FALSE)
 Metadata$RNA_Replicate <- sub("[^0-9$]", "", Metadata$Condition, ignore.case = FALSE)
 Metadata$Condition <- sub("^x.*", "Cholesterol", Metadata$Condition, ignore.case = FALSE)
 Metadata$Condition <- sub(".*1$|.*2$|.*3$|.*4$", "Control", Metadata$Condition, ignore.case = FALSE)
-write.table(Metadata, file = "My_Metadata.csv", append = FALSE, sep =",", col.names=NA)
+Metadata$BaseCallsName <- paste(OTRI$Filename.Prefix,"_",OTRI$Read_Direction,".fastq", sep="")
+write.table(Metadata, file = paste(shared_path,"My_Metadata.csv",sep=""), append = FALSE, sep =",", col.names=NA)
 ###########################################################################################################################
 #FastqPairedEndValidator
 #Validate fastq R1 and R2 pairs are ordered: Make a Metadata table called MetadataRaw that has the raw reads rows collapsed.
@@ -74,6 +135,7 @@ MetadataRawPairs <- dcast(data = Metadata, LibraryName + Condition + TimePoint +
                     ="BaseCallsName", FUN=c)
 MetadataRawPairs$ShortName <- paste(MetadataRawPairs$Condition, MetadataRawPairs$TimePoint, 
                                     MetadataRawPairs$RNA_Replicate, sep=".")
+
 FastqPairedEndValidator_path <- "/home/AAFC-AAC/girouxem/RNASeq/tools/FastqPairedEndValidator.pl"
 for(k in 1:nrow(MetadataRawPairs)) {
   cmd = with(MetadataRawPairs, paste(FastqPairedEndValidator_path, R1, R2))}
