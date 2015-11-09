@@ -234,8 +234,11 @@ for(k in 1:nrow(MetadataRawPairs)) {
   cat("\n")
 }
 
+
 # to remove the output files after you are done
-system(paste("rm ", outpath, prefix, "*", suffix, ".*", sep=""))
+system(paste("rm ", outpath, prefix, "*", suffix, ".e*", sep=""))
+system(paste("rm ", outpath, prefix, "*", suffix, ".p*", sep=""))
+
 
 ############################################################################################################################
 LibraryName <- unique(Metadata$LibraryName, incomparables=FALSE, fromLast=FALSE)
@@ -259,15 +262,6 @@ system(cmd)
 cmd <- paste("cat ", path_fastq, MetadataRawPairs$R1[1], " | head -n 1000000 |grep '", RevAdapter, "' | wc -l", sep="")
 system(cmd)
 
-FwdAdapter <- "ATCTCGTATGCCGTCTTCTGCTTG" 
-RevAdapter <- "TAGAGCATACGGCAGAAGACGAAC"
-
-cmd <- paste("cat ", path_fastq, MetadataRawPairs$R1[1], " | head -n 1000000 | grep '", FwdAdapter, "' | wc -l", sep="")
-system(cmd)
-cmd <- paste("cat ", path_fastq, MetadataRawPairs$R1[1], " | head -n 1000000 |grep '", RevAdapter, "' | wc -l", sep="")
-system(cmd)
-
-
 ############################################################################################################################
 #SeqPrep: Removing adapter sequences from fastq reads. Do this prior to any other processing to make them easier to detect.
 SeqPrep_path <- paste(shared_path, "tools/SeqPrep/SeqPrep", sep="")
@@ -287,38 +281,43 @@ make_qsubs(cmd, prefix, suffix, out_path)
 # To show the output of each pair on the console in Rstudio
 for(k in 1:nrow(MetadataRawPairs)) {
   cat(c(k, MetadataRawPairs$R1[1], MetadataRawPairs$R2[1]))
-  system(paste("cat ", path_fastq, prefix, k, suffix, ".o*" , sep=""))
+  cat("\n")
+  system(paste("tail ", path_fastq, prefix, k, suffix, ".e* | head -n 5" , sep=""))
   cat("\n")
 }
 
+# to remove the output files after you are done
+system(paste("rm ", outpath, prefix, "*", suffix, ".o*", sep=""))
+system(paste("rm ", outpath, prefix, "*", suffix, ".p*", sep=""))
+
+
+# to unzip all files with adapters removed using multiple processors
+cmd <-  with(OTRI, paste("gunzip ", path_fastq, "AdapRem_", basename(OTRI$FastqFilePath) ,sep=""))
+
+# now this is all all I have to enter to make qsub and bash files
+prefix <- "Gunzip2_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+make_qsubs(cmd, prefix, suffix, out_path)  
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
 # to remove the output files after you are done
 system(paste("rm ", outpath, prefix, "*", suffix, ".*", sep=""))
 
 
 
 
+#############################################################################################
+#  Test for MiSeq adapters
+FwdAdapter <- "ATCTCGTATGCCGTCTTCTGCTTG"  # MiSeq adapters
+RevAdapter <- "TAGAGCATACGGCAGAAGACGAAC"  # MiSeq adapterscd 
+
+cmd <- paste("cat ", path_fastq, "AdapRem_", MetadataRawPairs$R1[2], " | head -n 1000000 | grep '", FwdAdapter, "' | wc -l", sep="")
+system(cmd)
+cmd <- paste("cat ", path_fastq, "AdapRem_", MetadataRawPairs$R1[2], " | head -n 1000000 |grep '", RevAdapter, "' | wc -l", sep="")
+system(cmd)
 
 
-
-
-
-
-}
-# to test with only one
-cmd[1]
-#system(cmd[1])
-sapply(cmd, function(x) system(x))
-
-
-# should try to paralelize this, see below
-#  http://rstudio-pubs-static.s3.amazonaws.com/10277_00076c154bec44178542e601d365e297.html#/9
-
-#Do we want to capture a log file/record of the output results? The output looks like this when done on just 1 pair (T0-2):
-# Pairs Processed:  782384
-# Pairs Merged:  0
-# Pairs With Adapters:	90284
-# Pairs Discarded:	6258
-# CPU Time Used (Minutes):	5.885167
 
 # To gzip the raw fastq files to manage space - maybe should delete since the raw files are at the original location 
 #on Isilon and here it is redundant?
@@ -326,78 +325,9 @@ sapply(cmd, function(x) system(x))
 #  Delete these fastq files instead?
 To_delete_fastq <- list.files(path = path_fastq, pattern = "^HI.*fastq$")
 for(k in 1:length(To_delete_fastq)) {
-  cmd = paste("rm ", To_delete_fastq[k], sep="")
+  cmd = paste("rm ", path_fastq, To_delete_fastq[k], sep="")
 system(cmd)
 }
-
-
-############################################################################################################################
-#Need to unzip the fastq.gz files after adapter removal:
-#  this is within Rstudio, one file at a time.
-# adap_zip <- list.files(path = path_fastq, pattern = "AdapRem_.*fastq.gz$")
-# adap_zip
-# for(k in 1:length(adap_zip)) {
-#   cmd <- paste("gunzip", adap_zip[k])
-#   cat(cmd, "\n")
-#   system(cmd)
-# }
-
-########################################################################
-#  This is to unzip in parallel, using one node per file
-
-T_raw_zip <- list.files(path = path_fastq, pattern = "^Adap.*fastq.gz$")
-
-#setwd(path_fastq)
-list.files()
-
-prefix <- "unzip_"
-suffix <- ".sub"
-
-for(k in 1:length(T_raw_zip)) {
-  cat(paste("#!/bin/bash
-#$ -S /bin/sh
-# Make sure that the .e and .o file arrive in the
-# working directory
-#$ -cwd
-# request one slot in the smp environment
-#$ -pe smp 1 \n",
-      "gunzip ", path_fastq,T_raw_zip[k], sep=""),
-      file=paste(path_fastq,prefix, k, suffix, sep=""))
-}
-
-# make a bash script to run all qsub
-
-  cat(paste("#!/bin/bash
-argc=$#
-requiredArgc=0
-
-if [ $argc -ne $requiredArgc ]; then
-    echo './test_mkdir.sh'
-    exit 1
-fi
-
-prefixInFiles=", prefix, "\n",
-"suffixInFiles=", suffix, "\n",
-"for (( i = 1; i <= ", length(T_raw_zip), " ; i++ )); do 
-  # keep track of what is going on...
-	echo 'Treating fastq.gz file'  $prefixInFiles$i$suffixInFiles
-  # define a script name that will be submited to the queue
-  qsubFile=$prefixInFiles$i$suffixInFiles
-  # make the script executable
-  chmod a+x $qsubFile
-  # submit the script to the queue
-  qsub -cwd $qsubFile
-done", sep=""), 
-file=paste(path_fastq, prefix, ".sh", sep=""))
-
-##########################################################
-###################################################
-#   here you should go in the directory where the data and qsub files are and type 
-#  "bash unzip_.sh" from head node
-#  to run in parallel on 14 computers.
-########################################################################
-########################################################################
-
 
 
 ############################################################################################################################
@@ -412,62 +342,18 @@ MetadataAdapRem$ShortName <- paste(MetadataAdapRem$Condition, MetadataAdapRem$Ti
 
 
 ##########################
-#  prepares processes for qsub
+#  prepares processes for qsub with paired end validator, second round
 cmd <-  with(MetadataAdapRem, paste(FastqPairedEndValidator_path, " ", path_fastq, R1, " ", path_fastq, R2,sep=""))
 
 ########################################################################
 #  This is to process  FastqPairedEndValidator, using one node per pair of file
-
-prefix <- "Validator_"
-suffix <- ".sub"
-nloop  <- nrow(MetadataAdapRem)
-out_path <- path_fastq
-
-for(k in 1:nloop) {
-  cat(paste("#!/bin/bash
-#$ -S /bin/sh
-# Make sure that the .e and .o file arrive in the
-# working directory
-#$ -cwd
-# request one slot in the smp environment
-#$ -pe smp 1 \n",
-      cmd[k],
-      sep=""),
-      file=paste(out_path ,prefix, k, suffix, sep=""))
-}
-
-# make a bash script to run all qsub
-
-cat(paste("#!/bin/bash
-argc=$#
-requiredArgc=0
-
-if [ $argc -ne $requiredArgc ]; then
-    echo './test_mkdir.sh'
-    exit 1
-fi
-
-prefixInFiles=", prefix, "\n",
-          "suffixInFiles=", suffix, "\n",
-          "for (( i = 1; i <= ", nloop, " ; i++ )); do 
-  # keep track of what is going on...
-  echo 'Treating file'  $prefixInFiles$i$suffixInFiles
-  # define a script name that will be submited to the queue
-  qsubFile=$prefixInFiles$i$suffixInFiles
-  # make the script executable
-  chmod a+x $qsubFile
-  # submit the script to the queue
-  qsub -cwd $qsubFile
-done", sep=""), 
-    file=paste(out_path, prefix, ".sh", sep=""))
-
-##########################################################
-###################################################
-#   here you should go in the directory where the data and qsub files are and type 
-#  "bash Validator_.sh" from head node
-#  to run in parallel on 7 computers.
-########################################################################
-########################################################################
+# now this is all all I have to enter to make qsub and bash files
+prefix <- "Validator2_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+make_qsubs(cmd, prefix, suffix, out_path)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
 
 # To show the output of each pair on the console in Rstudio
 for(k in 1:nrow(MetadataAdapRem)) {
@@ -475,6 +361,10 @@ for(k in 1:nrow(MetadataAdapRem)) {
   system(paste("cat ", path_fastq, prefix, k, suffix, ".o*" , sep=""))
   cat("\n")
 }
+
+# to remove the output files after you are done
+system(paste("rm ", outpath, prefix, "*", suffix, ".e*", sep=""))
+system(paste("rm ", outpath, prefix, "*", suffix, ".p*", sep=""))
 
 
 ############################################################################################################################
@@ -496,35 +386,30 @@ PrinSeq_path <- paste(shared_path, "tools/prinseq-lite-0.20.4/prinseq-lite-0.20.
 
 
 # now this is all all I have to enter to make qsub and bash files
-make_qsubs(cmd = cmd, prefix = "Print_Seq_graph_", suffix = ".sub", 
-                       out_path = paste(shared_path, "PrinSeq_graph_data/", sep="")) 
+prefix <- "Print_Seq_graph_"; suffix <- ".sub"; out_path <- paste(shared_path, "PrinSeq_graph_data/", sep="")
+make_qsubs(cmd, prefix, suffix, out_path)
 ########################################################################################
 ########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
 ########          watch output from this command in the console              ###########
 ########################################################################################
 
+# to remove the output files after you are done
+system(paste("rm ", outpath, prefix, "*", suffix, ".e*", sep=""))
+system(paste("rm ", outpath, prefix, "*", suffix, ".p*", sep=""))
 
 
 
-
-
-
-
-
-list.files(path = "/home/AAFC-AAC/girouxem/RNASeq/PrinSeq_graph_data/", pattern=glob2rx("*_processed.gd"), full.names=T)
-Processed_graphs_PrinSeq <- list.files(path = "/home/AAFC-AAC/girouxem/RNASeq/PrinSeq_graph_data/", pattern=glob2rx("*_processed.gd"), full.names=T)
+list.files(path = out_path, pattern=glob2rx("*_processed.gd"), full.names=T)
+Processed_graphs_PrinSeq <- list.files(path = out_path, pattern=glob2rx("*_processed.gd"), full.names=T)
 Processed_graphs_PrinSeq
 for(k in 1:nrow(Metadata)) {
   Metadata$PrinSeq_Processed_fastq_graph <- paste(Metadata$LibraryName,"processed.gd", sep="_")
 }
 
 
-
-
-
-
 ############################################################################################################################
-#Processing with PrinSeq:
+########################################################################
+#  This is to process  PrinSeq, using one node per pair of file
 
 dir.create(paste(shared_path, "PrinSeq_logs", sep=""), showWarnings = TRUE, recursive = FALSE)
 
@@ -565,59 +450,18 @@ log <- "processed_log"
              " -log ", shared_path, "PrinSeq_logs", "/", "Processed_log_",LibraryName ,
              sep=""))
 
-########################################################################
-#  This is to process  FastqPairedEndValidator, using one node per pair of file
+# now this is all all I have to enter to make qsub and bash files
+prefix <- "Print_Seq_"; suffix <- ".sub"; out_path <- paste(shared_path, "PrinSeq_logs/", sep="")
+make_qsubs(cmd, prefix, suffix, out_path)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
 
-prefix <- "Print_Seq_"
-suffix <- ".sub"
-nloop  <- nrow(MetadataAdapRem)
-out_path <- paste(shared_path, "PrinSeq_logs/", sep="")
+# to remove the output files after you are done
+system(paste("rm ", outpath, prefix, "*", suffix, ".e*", sep=""))
+system(paste("rm ", outpath, prefix, "*", suffix, ".p*", sep=""))
 
-for(k in 1:nloop) {
-  cat(paste("#!/bin/bash
-#$ -S /bin/sh
-# Make sure that the .e and .o file arrive in the
-# working directory
-#$ -cwd
-# request one slot in the smp environment
-#$ -pe smp 1 \n",
-    cmd[k],
-            sep=""),
-      file=paste(out_path ,prefix, k, suffix, sep=""))
-}
-
-# make a bash script to run all qsub
-
-cat(paste("#!/bin/bash
-          argc=$#
-          requiredArgc=0
-          
-          if [ $argc -ne $requiredArgc ]; then
-          echo './test_mkdir.sh'
-          exit 1
-          fi
-          
-          prefixInFiles=", prefix, "\n",
-          "suffixInFiles=", suffix, "\n",
-          "for (( i = 1; i <= ", nloop, " ; i++ )); do 
-          # keep track of what is going on...
-          echo 'Treating file'  $prefixInFiles$i$suffixInFiles
-          # define a script name that will be submited to the queue
-          qsubFile=$prefixInFiles$i$suffixInFiles
-          # make the script executable
-          chmod a+x $qsubFile
-          # submit the script to the queue
-          qsub -cwd $qsubFile
-          done", sep=""), 
-    file=paste(out_path, prefix, ".sh", sep=""))
-
-##########################################################
-##########################################################
-#   here you should go in the directory where the data and qsub files are and type 
-#  "bash Print_seq_.sh" from head node
-#  to run in parallel on 7 computers.
-########################################################################
-########################################################################
 
 
 
