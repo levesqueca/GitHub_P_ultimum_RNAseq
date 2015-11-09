@@ -54,16 +54,16 @@ system(cmd)
 # path of Genome Quebec Data
 HiSeq_path <- "/isilon/biodiversity/data/raw/illumina/GQC/HI.3222.003/"
 
-# will work once csv files are in raw data folders
-# GC_csv <- list.files(path = HiSeq_path, pattern = "^HiSeq.*OG_Hi.*\\.csv$", recursive = FALSE)
+# csv files are now in raw data folders
+GC_csv <- list.files(path = HiSeq_path, pattern = "^HiSeq.*OG_Hi.*\\.csv$", recursive = FALSE)
 
-# for now in my working directory (the OG_HI picks up only one file)
-GC_csv <- list.files(path = shared_path, pattern = "^HiSeq.*OG_Hi.*\\.csv$", recursive = FALSE)
+# Used it before from working directory (the OG_HI picks up only one file)
+#GC_csv <- list.files(path = shared_path, pattern = "^HiSeq.*OG_Hi.*\\.csv$", recursive = FALSE)
 
 # read that csv file
-GC_meta <- read.csv(GC_csv, stringsAsFactors=FALSE)
+GC_meta <- read.csv(paste(HiSeq_path,GC_csv, sep=""), stringsAsFactors=FALSE)
 
-#create OTRI loke it was for MiSeq
+#create OTRI like it was for MiSeq
 OTRI1 <- GC_meta[,c("Name","Run","Filename.Prefix","Run.Type")]
 OTRI1$Read_Direction <- "R1"
 OTRI2 <- OTRI1
@@ -272,8 +272,10 @@ file=paste(path_fastq, prefix, ".sh", sep=""))
 
 ##########################################################
 ###################################################
-#   here you should go in the directory where the data and qsub files are and type "bash unsip_.sh"
+#   here you should go in the directory where the data and qsub files are and type 
+#  "bash unzip_.sh" from head node
 #  to run in parallel on 14 computers.
+########################################################################
 ########################################################################
 
 ############################################################################################################################
@@ -285,15 +287,80 @@ for(k in 1:nrow(Metadata)){
 MetadataAdapRem <- dcast(data = Metadata, LibraryName + Condition + TimePoint + RNA_Replicate ~Read_Direction, value.var
                          = "Adapters_Removed", FUN=c)
 MetadataAdapRem$ShortName <- paste(MetadataAdapRem$Condition, MetadataAdapRem$TimePoint, MetadataAdapRem$RNA_Replicate, sep=".")
+
+
+##########################
+#  prepares pocesses for qsub
+
+cmd <-  with(MetadataAdapRem, paste(FastqPairedEndValidator_path, " ", path_fastq, R1, " ", path_fastq, R2,sep=""))
+
+########################################################################
+#  This is to process  FastqPairedEndValidator, using one node per pair of file
+
+prefix <- "Validator_"
+suffix <- ".sub"
+nloop  <- nrow(MetadataAdapRem)
+out_path <- path_fastq
+
+for(k in 1:nloop) {
+  cat(paste("#!/bin/bash
+#$ -S /bin/sh
+# Make sure that the .e and .o file arrive in the
+# working directory
+#$ -cwd
+# request one slot in the smp environment
+#$ -pe smp 1 \n",
+      cmd[k],
+      sep=""),
+      file=paste(out_path ,prefix, k, suffix, sep=""))
+}
+
+# make a bash script to run all qsub
+
+cat(paste("#!/bin/bash
+argc=$#
+requiredArgc=0
+
+if [ $argc -ne $requiredArgc ]; then
+    echo './test_mkdir.sh'
+    exit 1
+fi
+
+prefixInFiles=", prefix, "\n",
+          "suffixInFiles=", suffix, "\n",
+          "for (( i = 1; i <= ", nloop, " ; i++ )); do 
+  # keep track of what is going on...
+  echo 'Treating file'  $prefixInFiles$i$suffixInFiles
+  # define a script name that will be submited to the queue
+  qsubFile=$prefixInFiles$i$suffixInFiles
+  # make the script executable
+  chmod a+x $qsubFile
+  # submit the script to the queue
+  qsub -cwd $qsubFile
+done", sep=""), 
+    file=paste(out_path, prefix, ".sh", sep=""))
+
+##########################################################
+###################################################
+#   here you should go in the directory where the data and qsub files are and type 
+#  "bash Validator_.sh" from head node
+#  to run in parallel on 7 computers.
+########################################################################
+########################################################################
+
+
 for(k in 1:nrow(MetadataAdapRem)) {
-  cmd = with(MetadataAdapRem, paste(FastqPairedEndValidator_path, R1, R2))}
-cmd
-sapply(cmd, function(x) system(x))
+  cat(c(k, MetadataAdapRem$R1[1], MetadataAdapRem$R2[1]))
+  system(paste("cat ", path_fastq, prefix, k, suffix, ".o*" , sep=""))
+  cat("\n")
+}
+
+
 ############################################################################################################################
 #Processing with PrinSeq:
-cmd <- paste("mkdir", "PrinSeq_logs")
-system(cmd)
-PrinSeq_path <- "perl /home/AAFC-AAC/girouxem/RNASeq/tools/prinseq-lite-0.20.4/prinseq-lite-0.20.4/prinseq-lite.pl" 
+
+dir.create(paste(shared_path, "PrinSeq_logs", sep=""), showWarnings = TRUE, recursive = FALSE)
+PrinSeq_path <- paste(shared_path, "tools/prinseq-lite-0.20.4/prinseq-lite-0.20.4/prinseq-lite.pl", sep="")
 nmax <- 1
 trim_left <- 10
 trim_tail_left <- 5
@@ -310,8 +377,8 @@ min_len <- 50
 trim_to_len <- 200 #may need to make shorter - need pairs to be ~230 bp because that is the average length of mapped pairs during STAR for our 
 #reads. But not sure how to do this - what about using another program to merge pairs? or, try increasing trim_qual_rule to 30.
 log <- "processed_log"
-for(k in 1:nrow(MetadataAdapRem)) {
-  cmd = with(MetadataAdapRem, paste(PrinSeq_path, " -fastq ", R1, " -fastq2 ", R2, 
+
+  cmd = with(MetadataAdapRem, paste(PrinSeq_path, " -fastq ",  path_fastq, R1, " -fastq2 ",  path_fastq, R2, 
               " -ns_max_n ", nmax, 
              " -trim_left ", trim_left, 
              " -trim_tail_left ", trim_tail_left, 
@@ -330,7 +397,66 @@ for(k in 1:nrow(MetadataAdapRem)) {
              " -no_qual_header ", 
              " -log ", "/home/AAFC-AAC/girouxem/RNASeq/PrinSeq_logs","/",paste("Processed_log",LibraryName, sep="_"),
              sep=""))
+
+########################################################################
+#  This is to process  FastqPairedEndValidator, using one node per pair of file
+
+prefix <- "Print_Seq_"
+suffix <- ".sub"
+nloop  <- nrow(MetadataAdapRem)
+out_path <- paste(shared_path, "PrinSeq_logs/", sep="")
+
+for(k in 1:nloop) {
+  cat(paste("#!/bin/bash
+#$ -S /bin/sh
+# Make sure that the .e and .o file arrive in the
+# working directory
+#$ -cwd
+# request one slot in the smp environment
+#$ -pe smp 1 \n",
+    cmd[k],
+            sep=""),
+      file=paste(out_path ,prefix, k, suffix, sep=""))
 }
+
+# make a bash script to run all qsub
+
+cat(paste("#!/bin/bash
+          argc=$#
+          requiredArgc=0
+          
+          if [ $argc -ne $requiredArgc ]; then
+          echo './test_mkdir.sh'
+          exit 1
+          fi
+          
+          prefixInFiles=", prefix, "\n",
+          "suffixInFiles=", suffix, "\n",
+          "for (( i = 1; i <= ", nloop, " ; i++ )); do 
+          # keep track of what is going on...
+          echo 'Treating file'  $prefixInFiles$i$suffixInFiles
+          # define a script name that will be submited to the queue
+          qsubFile=$prefixInFiles$i$suffixInFiles
+          # make the script executable
+          chmod a+x $qsubFile
+          # submit the script to the queue
+          qsub -cwd $qsubFile
+          done", sep=""), 
+    file=paste(out_path, prefix, ".sh", sep=""))
+
+##########################################################
+###################################################
+#   here you should go in the directory where the data and qsub files are and type 
+#  "bash Validator_.sh" from head node
+#  to run in parallel on 7 computers.
+########################################################################
+########################################################################
+
+
+
+
+
+
 cmd
 sapply(cmd, function(x) system(x))
 list.files(path = "/home/AAFC-AAC/girouxem/RNASeq/PrinSeq_logs/", pattern=glob2rx("Processed_log*"), full.names=T)
@@ -352,6 +478,9 @@ for(k in 1:length(adap_rem_zip)) {
    cat(cmd, "\n")
    system(cmd)
  }
+
+
+
 ############################################################################################################################
 #FastqPairedEndValidator - Running this helps me for now.
 #Must rename the Processed fastq due to the name done by PrinSeq:
