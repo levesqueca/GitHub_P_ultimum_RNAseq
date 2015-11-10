@@ -87,15 +87,15 @@ fs <- basename(OTRI$FastqFilePath)
 ################################################################################
 # this makes a function to generate qsub commands and a bash to submit them in parallel using 4 inputs
 # often used later whenever a Linix command needs to be done on several data files
-make_qsubs <- function(cmd, prefix, suffix = ".sub", out_path) {
+make_qsubs <- function(cmd, prefix, suffix = ".sub", out_path, node =1) {
   for(k in 1:length(cmd)) {
     cat(paste("#!/bin/bash
 #$ -S /bin/sh
 # To make sure that the .e and .o and other outputs files arrive in the working directory
 #$ -cwd
 # request one slot in the smp environment
-#$ -pe smp 1
-# Actual linux command for qsub \n",
+#$ -pe smp ", node, "\n",
+"# Actual linux command for qsub \n",
               cmd[k],
               sep=""),
         file=paste(out_path, prefix, k, suffix, sep=""))
@@ -145,29 +145,29 @@ dir.create(paste(shared_path, "HiSeq_data", sep=""), showWarnings = TRUE, recurs
 # to copy all files using multiple processors (this is a lot faster than the above)
 cmd <-  with(OTRI, paste("cp ", FastqFilePath," ", shared_path, "HiSeq_data/", basename(FastqFilePath) ,sep=""))
 
-# now this is all all I have to enter to make qsub and bash files
-prefix <- "Copy_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+# now this is all to do I have to enter to make qsub and bash files
+prefix <- "A_Copy_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
 make_qsubs(cmd, prefix, suffix, out_path) 
 ########################################################################################
 ########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
 ########          watch output from this command in the console              ###########
 ########################################################################################
 # to remove the output files after you are done
-system(paste("rm ", outpath, prefix, "*", suffix, ".*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".*", sep=""))
 
 
 # to unzip all files using multiple processors
 cmd <-  with(OTRI, paste("gunzip ", shared_path, "HiSeq_data/", basename(OTRI$FastqFilePath) ,sep=""))
 
 # now this is all all I have to enter to make qsub and bash files
-prefix <- "Gunzip_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+prefix <- "B_Gunzip_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
 make_qsubs(cmd, prefix, suffix, out_path)  
 ########################################################################################
 ########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
 ########          watch output from this command in the console              ###########
 ########################################################################################
 # to remove the output files after you are done
-system(paste("rm ", outpath, prefix, "*", suffix, ".*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".*", sep=""))
 
 # 
 # ###########################################################################################################################
@@ -221,7 +221,7 @@ FastqPairedEndValidator_path <- paste(shared_path, "tools/FastqPairedEndValidato
 cmd <-  with(MetadataRawPairs, paste(FastqPairedEndValidator_path, " ", path_fastq, R1, " ", path_fastq, R2,sep=""))
 
 # now this is all all I have to enter to make qsub and bash files
-prefix <- "Validator_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+prefix <- "C_Validator_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
 make_qsubs(cmd, prefix, suffix, out_path)  
 ########################################################################################
 ########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
@@ -229,25 +229,16 @@ make_qsubs(cmd, prefix, suffix, out_path)
 ########################################################################################
 # To show the output of each pair on the console in Rstudio
 for(k in 1:nrow(MetadataRawPairs)) {
-  cat(c(k, MetadataRawPairs$R1[1], MetadataRawPairs$R2[1]))
+  cat(c(k, MetadataRawPairs$R1[k], MetadataRawPairs$R2[k]))
   system(paste("cat ", path_fastq, prefix, k, suffix, ".o*" , sep=""))
   cat("\n")
 }
 
 
 # to remove the output files after you are done
-system(paste("rm ", outpath, prefix, "*", suffix, ".e*", sep=""))
-system(paste("rm ", outpath, prefix, "*", suffix, ".p*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".e*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".p*", sep=""))
 
-
-############################################################################################################################
-LibraryName <- unique(Metadata$LibraryName, incomparables=FALSE, fromLast=FALSE)
-LibraryName
-for(j in 1:length(LibraryName)) {
-  cmd <- paste("mkdir", LibraryName[j])
-  cat(cmd, "\n")
-  system(cmd)
-}
 
 
 ############################################################################################################################
@@ -272,7 +263,7 @@ SeqPrep_path <- paste(shared_path, "tools/SeqPrep/SeqPrep", sep="")
 
 
 # now this is all all I have to enter to make qsub and bash files
-prefix <- "SeqPrep_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+prefix <- "D_SeqPrep_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
 make_qsubs(cmd, prefix, suffix, out_path)  
 ########################################################################################
 ########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
@@ -280,29 +271,29 @@ make_qsubs(cmd, prefix, suffix, out_path)
 ########################################################################################
 # To show the output of each pair on the console in Rstudio
 for(k in 1:nrow(MetadataRawPairs)) {
-  cat(c(k, MetadataRawPairs$R1[1], MetadataRawPairs$R2[1]))
+  cat(c(k, MetadataRawPairs$R1[k], MetadataRawPairs$R2[k]))
   cat("\n")
   system(paste("tail ", path_fastq, prefix, k, suffix, ".e* | head -n 5" , sep=""))
   cat("\n")
 }
 
 # to remove the output files after you are done
-system(paste("rm ", outpath, prefix, "*", suffix, ".o*", sep=""))
-system(paste("rm ", outpath, prefix, "*", suffix, ".p*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".o*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".p*", sep=""))
 
 
 # to unzip all files with adapters removed using multiple processors
 cmd <-  with(OTRI, paste("gunzip ", path_fastq, "AdapRem_", basename(OTRI$FastqFilePath) ,sep=""))
 
 # now this is all all I have to enter to make qsub and bash files
-prefix <- "Gunzip2_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+prefix <- "E_Gunzip2_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
 make_qsubs(cmd, prefix, suffix, out_path)  
 ########################################################################################
 ########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
 ########          watch output from this command in the console              ###########
 ########################################################################################
 # to remove the output files after you are done
-system(paste("rm ", outpath, prefix, "*", suffix, ".*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".*", sep=""))
 
 
 
@@ -334,7 +325,7 @@ system(cmd)
 #FastqPairedEndValidator
 #Validate fastq R1 and R2 pairs order: Make a Metadata table called MetadataAdapRem that has the raw reads rows collapsed.
 for(k in 1:nrow(Metadata)){
-  Metadata$Adapters_Removed <- paste("AdapRem",Metadata$BaseCallsName, sep="_")
+  Metadata$Adapters_Removed <- paste("AdapRem", substr(Metadata$BaseCallsName, 1, nchar(Metadata$BaseCallsName)-6), sep="_")
 }
 MetadataAdapRem <- dcast(data = Metadata, LibraryName + Condition + TimePoint + RNA_Replicate ~Read_Direction, value.var
                          = "Adapters_Removed", FUN=c)
@@ -343,12 +334,12 @@ MetadataAdapRem$ShortName <- paste(MetadataAdapRem$Condition, MetadataAdapRem$Ti
 
 ##########################
 #  prepares processes for qsub with paired end validator, second round
-cmd <-  with(MetadataAdapRem, paste(FastqPairedEndValidator_path, " ", path_fastq, R1, " ", path_fastq, R2,sep=""))
+cmd <-  with(MetadataAdapRem, paste(FastqPairedEndValidator_path, " ", path_fastq, R1, ".fastq ", path_fastq, R2, ".fastq", sep=""))
 
 ########################################################################
 #  This is to process  FastqPairedEndValidator, using one node per pair of file
 # now this is all all I have to enter to make qsub and bash files
-prefix <- "Validator2_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+prefix <- "F_Validator2_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
 make_qsubs(cmd, prefix, suffix, out_path)
 ########################################################################################
 ########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
@@ -357,14 +348,14 @@ make_qsubs(cmd, prefix, suffix, out_path)
 
 # To show the output of each pair on the console in Rstudio
 for(k in 1:nrow(MetadataAdapRem)) {
-  cat(c(k, MetadataAdapRem$R1[1], MetadataAdapRem$R2[1]))
+  cat(c(k, MetadataAdapRem$R1[k], MetadataAdapRem$R2[k]))
   system(paste("cat ", path_fastq, prefix, k, suffix, ".o*" , sep=""))
   cat("\n")
 }
 
 # to remove the output files after you are done
-system(paste("rm ", outpath, prefix, "*", suffix, ".e*", sep=""))
-system(paste("rm ", outpath, prefix, "*", suffix, ".p*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".e*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".p*", sep=""))
 
 
 ############################################################################################################################
@@ -376,35 +367,47 @@ PrinSeq_path <- paste(shared_path, "tools/prinseq-lite-0.20.4/prinseq-lite-0.20.
 
 #Generate QC graphs for the processed fastq, output the graph files to the graph directory:
   cmd = with(MetadataAdapRem, paste(PrinSeq_path,
-                                      " -fastq ", path_fastq, R1, " -fastq2 ", path_fastq, R2,
+                                      " -fastq ", path_fastq, R1, ".fastq -fastq2 ", path_fastq, R2, ".fastq",
                                       " -verbose ",
-                                      " -out_good ", out_bad,
-                                      " -out_bad ", out_bad,
+                                      " -out_good null", 
+                                      " -out_bad null", 
                                       " -graph_data ", shared_path, "PrinSeq_graph_data" ,"/",paste(LibraryName,"processed.gd", sep="_"),
                                       sep=""))
 
 
 
 # now this is all all I have to enter to make qsub and bash files
-prefix <- "Print_Seq_graph_"; suffix <- ".sub"; out_path <- paste(shared_path, "PrinSeq_graph_data/", sep="")
+prefix <- "G_Print_Seq_graph_"; suffix <- ".sub"; out_path <- paste(shared_path, "PrinSeq_graph_data/", sep="")
 make_qsubs(cmd, prefix, suffix, out_path)
 ########################################################################################
 ########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
 ########          watch output from this command in the console              ###########
 ########################################################################################
+# To show the output of each pair on the console in Rstudio
+for(k in 1:nrow(MetadataAdapRem)) {
+  cat(c(k, MetadataAdapRem$R1[k], MetadataAdapRem$R2[k]))
+  cat("\n")
+  system(paste("tail ", out_path, prefix, k, suffix, ".e* | head -n 19" , sep=""))
+  cat("\n")
+}
+
+# GO HERE TO READ THE .gd files (could we run this to get html outputs?)
+# http://edwards.sdsu.edu/cgi-bin/prinseq/prinseq.cgi?report=1
+# How to interpret plots here
+# http://prinseq.sourceforge.net/manual.html#STANDALONEG
+
 
 # to remove the output files after you are done
-system(paste("rm ", outpath, prefix, "*", suffix, ".e*", sep=""))
-system(paste("rm ", outpath, prefix, "*", suffix, ".p*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".o*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".p*", sep=""))
 
 
 
 list.files(path = out_path, pattern=glob2rx("*_processed.gd"), full.names=T)
 Processed_graphs_PrinSeq <- list.files(path = out_path, pattern=glob2rx("*_processed.gd"), full.names=T)
 Processed_graphs_PrinSeq
-for(k in 1:nrow(Metadata)) {
-  Metadata$PrinSeq_Processed_fastq_graph <- paste(Metadata$LibraryName,"processed.gd", sep="_")
-}
+Metadata$PrinSeq_Processed_fastq_graph <- paste(Metadata$LibraryName,"processed.gd", sep="_")
+
 
 
 ############################################################################################################################
@@ -414,12 +417,14 @@ for(k in 1:nrow(Metadata)) {
 dir.create(paste(shared_path, "PrinSeq_logs", sep=""), showWarnings = TRUE, recursive = FALSE)
 
 nmax <- 1
-trim_left <- 10
+trim_left <- 3
+trim_right <- 2
 trim_tail_left <- 5
 trim_tail_right <- 5
 trim_qual_window <- 3
 trim_qual_type <- "mean"
-trim_qual_right <- 25 #See about increasing to 30 - see after running with Andre's modified gff.
+trim_qual_right <- 32 #See about increasing to 30 - see after running with Andre's modified gff.
+trim_qual_left <- 32 #See about increasing to 30 - see after running with Andre's modified gff.
 trim_qual_rule <- "lt"
 lc_method <- "dust"
 lc_threshold <- 7
@@ -430,28 +435,31 @@ trim_to_len <- 200 #may need to make shorter - need pairs to be ~230 bp because 
 #reads. But not sure how to do this - what about using another program to merge pairs? or, try increasing trim_qual_rule to 30.
 log <- "processed_log"
 
-  cmd = with(MetadataAdapRem, paste(PrinSeq_path, " -fastq ",  path_fastq, R1, " -fastq2 ",  path_fastq, R2, 
+  cmd = with(MetadataAdapRem, paste(PrinSeq_path, " -fastq ",  path_fastq, R1, ".fastq -fastq2 ",  path_fastq, R2, ".fastq",
               " -ns_max_n ", nmax, 
              " -trim_left ", trim_left, 
+             " -trim_right ", trim_right, 
              " -trim_tail_left ", trim_tail_left, 
              " -trim_tail_right ", trim_tail_right, 
              " -trim_qual_window ", trim_qual_window, 
              " -trim_qual_type ", trim_qual_type, 
+             " -trim_qual_left ",  trim_qual_left,
              " -trim_qual_right ",  trim_qual_right,
              " -trim_qual_rule ", trim_qual_rule, 
              " -lc_method ", lc_method, 
              " -lc_threshold ", lc_threshold, 
-             " -out_good ", paste("Processed",R1, sep="_"), 
-             " -out_bad ", out_bad, 
+   #          " -out_good ", paste("Processed",R1, sep="_"), 
+  #         " -out_bad ", out_bad, 
              " -verbose ",  
              " -min_len ", min_len,
-             " -trim_to_len ", trim_to_len,
+  #           " -trim_to_len ", trim_to_len,
              " -no_qual_header ", 
-             " -log ", shared_path, "PrinSeq_logs", "/", "Processed_log_",LibraryName ,
+             " -log ", shared_path, "PrinSeq_logs/", "Processed_log_",LibraryName ,
+  #           " -graph_data ", shared_path, "PrinSeq_graph_data" ,"/", LibraryName,"_processed2.gd", 
              sep=""))
 
 # now this is all all I have to enter to make qsub and bash files
-prefix <- "Print_Seq_"; suffix <- ".sub"; out_path <- paste(shared_path, "PrinSeq_logs/", sep="")
+prefix <- "H_Print_Seq_trim_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
 make_qsubs(cmd, prefix, suffix, out_path)
 ########################################################################################
 ########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
@@ -459,68 +467,52 @@ make_qsubs(cmd, prefix, suffix, out_path)
 ########################################################################################
 
 # to remove the output files after you are done
-system(paste("rm ", outpath, prefix, "*", suffix, ".e*", sep=""))
-system(paste("rm ", outpath, prefix, "*", suffix, ".p*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".*", sep=""))
 
+#########################################
+# Metadata update
+# Must integrate the Processed fastq names from PrinSeq in new metadata :
 
-
-
-
-
-cmd
-sapply(cmd, function(x) system(x))
-list.files(path = "/home/AAFC-AAC/girouxem/RNASeq/PrinSeq_logs/", pattern=glob2rx("Processed_log*"), full.names=T)
-ProcessedLogs_PrinSeq <- list.files(path = "/home/AAFC-AAC/girouxem/RNASeq/PrinSeq_logs/", pattern=glob2rx("Processed_log*"), full.names=T)
+ProcessedLogs_PrinSeq <- list.files(path = paste(shared_path, "PrinSeq_logs", sep=""),  pattern=glob2rx("Processed_log*"), full.names=T)
+ProcessedLogs_PrinSeq 
 ProcessedLogs_PrinSeq
-for(k in 1:nrow(Metadata)) {
-  Metadata$PrinSeq_Processed_fastq_log <- paste("Processed_log",Metadata$LibraryName, sep="_")
-}
-# glob2rx("Processed*singletons.fastq") - I don't think we want to keep the singletons, correct?
-list.files(path=".", pattern=glob2rx("Processed*singletons.fastq"), full.names=T)
-processed_singletons <- list.files(path=".", pattern=glob2rx("Processed*singletons.fastq"), full.names=T)
-file.remove(processed_singletons)
-# to gzip all files - make a list of AdapRem - manage space
-list.files(path=".", pattern=glob2rx("AdapRem*.fastq"), full.names=T)
-adap_rem_zip <- list.files(path=".", pattern=glob2rx("AdapRem*.fastq"), full.names=T)
-adap_rem_zip
-for(k in 1:length(adap_rem_zip)) {
-   cmd <- paste("gzip", adap_rem_zip[k])
-   cat(cmd, "\n")
-   system(cmd)
- }
+Metadata$PrinSeq_Processed_fastq_log <- paste("Processed_log",Metadata$LibraryName, sep="_")
 
+trimmed_files <- list.files(path=out_path, pattern=glob2rx("^AdapRem*_prinseq_good_*.fastq$"), full.names=F)
+trimmed_files <- data.frame(trimmed_files,trimmed_files)
+colnames(trimmed_files) <- c("Processed_Fastq", "Adapters_Removed")
+trimmed_files$Adapters_Removed <- sub("_prinseq_good_.*\\.fastq$", "", trimmed_files$Adapters_Removed)
+Metadata <- merge(Metadata, trimmed_files, by = "Adapters_Removed", all.x = TRUE)
 
-
-
-
-
-############################################################################################################################
-#FastqPairedEndValidator - Running this helps me for now.
-#Must rename the Processed fastq due to the name done by PrinSeq:
-list.files(path=".", pattern=glob2rx("Processed_AdapRem*_1.fastq"), full.names=T)
-ProcessedR1 <- list.files(path=".", pattern=glob2rx("Processed_AdapRem*_1.fastq"), full.names=T)
-ProcessedR1
-sapply(ProcessedR1, FUN=function(eachPath){
-  file.rename(from=eachPath, to=sub(pattern=(".fastq_1.fastq"), replacement=".fastq", eachPath))
-})
-list.files(path=".", pattern=glob2rx("Processed_AdapRem*_2.fastq"), full.names=T)
-ProcessedR2 <- list.files(path=".", pattern=glob2rx("Processed_AdapRem*_2.fastq"), full.names=T)
-ProcessedR2
-sapply(ProcessedR2, FUN=function(eachPath){
-  file.rename(from=eachPath, to=sub(pattern=("_L001_R1_001.fastq_2.fastq"), replacement="_L001_R2_001.fastq", eachPath))
-})
-list.files(path = ".", pattern = "Processed_.*fastq$")
-for(k in 1:nrow(Metadata)){
-  Metadata$Processed_Fastq <- paste("Processed_AdapRem",Metadata$BaseCallsName, sep="_")
-}
 MetadataProcessed <- dcast(data = Metadata, LibraryName + Condition + TimePoint + RNA_Replicate ~ Read_Direction, value.var
                            ="Processed_Fastq", FUN=c)
+
+
+##########################
+#  prepares processes for qsub with paired end validator, third round
+cmd <-  with(MetadataProcessed, paste(FastqPairedEndValidator_path, " ", path_fastq, R1, " ", path_fastq, R2, sep=""))
+
+
+########################################################################
+#  This is to process  FastqPairedEndValidator, using one node per pair of file
+# now this is all I have to enter to make qsub and bash files
+prefix <- "I_Validator3_"; suffix <- ".sub"; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+make_qsubs(cmd, prefix, suffix, out_path)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+
+# To show the output of each pair on the console in Rstudio
 for(k in 1:nrow(MetadataProcessed)) {
-  cmd = with(MetadataProcessed, paste(FastqPairedEndValidator_path, R1, R2))}
-cmd
-sapply(cmd, function(x) system(x))
+  cat(c(k, MetadataProcessed$R1[k], MetadataProcessed$R2[k]))
+  system(paste("cat ", path_fastq, prefix, k, suffix, ".o*" , sep=""))
+  cat("\n")
+}
 
-
+# to remove the output files after you are done
+system(paste("rm ", out_path, prefix, "*", suffix, ".o*", sep=""))
+system(paste("rm ", out_path, prefix, "*", suffix, ".p*", sep=""))
 
 
 
@@ -528,67 +520,78 @@ sapply(cmd, function(x) system(x))
 #PrinSeq graph fastq reports: Note - this is time-intensive, consider if better to do fastqc with only parameters Andre is
 #interested in - or parameters we want for debugging.
 #Make a directory where all the graphs will be:
-cmd <- paste("mkdir", "PrinSeq_graph_data") 
-cat(cmd, "\n")
-system(cmd)
+dir.create(paste(shared_path, "PrinSeq_graph_data", sep=""), showWarnings = TRUE, recursive = FALSE)
+PrinSeq_path <- paste(shared_path, "tools/prinseq-lite-0.20.4/prinseq-lite-0.20.4/prinseq-lite.pl", sep="")
+
 #Generate QC graphs for the processed fastq, output the graph files to the graph directory:
-for(k in 1:nrow(MetadataProcessed)){
-  cmd = with(MetadataProcessed, paste(PrinSeq_path,
-        " -fastq ", R1, " -fastq2 ", R2,
-        " -verbose ",
-        " -out_good ", out_bad,
-        " -out_bad ", out_bad,
-        " -graph_data ", " /home/AAFC-AAC/girouxem/RNASeq/PrinSeq_graph_data","/",paste(LibraryName,"processed.gd", sep="_"),
-        sep=""))
+cmd = with(MetadataAdapRem, paste(PrinSeq_path,
+                                  " -fastq ", path_fastq, R1, ".fastq -fastq2 ", path_fastq, R2, ".fastq",
+                                  " -verbose ",
+                                  " -out_good null", 
+                                  " -out_bad null", 
+                                  " -graph_data ", shared_path, "PrinSeq_graph_data" ,"/",paste(LibraryName,"processed_2.gd", sep="_"),
+                                  sep=""))
+
+
+
+# now this is all all I have to enter to make qsub and bash files
+prefix <- "J_Print_Seq_graph2_"; suffix <- ".sub"; out_path <- paste(shared_path, "PrinSeq_graph_data/", sep="")
+make_qsubs(cmd, prefix, suffix, out_path)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+# To show the output of each pair on the console in Rstudio
+for(k in 1:nrow(MetadataAdapRem)) {
+  cat(c(k, MetadataAdapRem$R1[k], MetadataAdapRem$R2[k]))
+  cat("\n")
+  system(paste("tail ", out_path, prefix, k, suffix, ".e* | head -n 19" , sep=""))
+  cat("\n")
 }
-cmd
-sapply(cmd, function(x) system(x))
-list.files(path = "/home/AAFC-AAC/girouxem/RNASeq/PrinSeq_graph_data/", pattern=glob2rx("*_processed.gd"), full.names=T)
-Processed_graphs_PrinSeq <- list.files(path = "/home/AAFC-AAC/girouxem/RNASeq/PrinSeq_graph_data/", pattern=glob2rx("*_processed.gd"), full.names=T)
-Processed_graphs_PrinSeq
-for(k in 1:nrow(Metadata)) {
-  Metadata$PrinSeq_Processed_fastq_graph <- paste(Metadata$LibraryName,"processed.gd", sep="_")
-}
+
 
 
 ############################################################################################################################
 #FastQC - I'm putting this in because it's simpler than generating all the PrinSeq graphs and having to break to go online,
 #Also, the outputs are very similar, and you can do all the most relevant stats.
-#Can you take a look at the reads for quality vs length? Maybe after processing I should trim further? Or adjust some of 
-#the PrinSeq Parameters?
-library("ShortRead")
-list.files(path = ".", pattern = "Processed_.*fastq$")
-# runs qa with the files in the directory and with the pattern
-fqQC = qa(dirPath = ".", pattern = "Processed_.*fastq$", type = "fastq")
-report(fqQC, type = "html", dest = "fastqQAreport")
-###Performing some stats (optional):
-df <- fqQC[["readQualityScore"]]
-#[['readCounts']] # inspect read yield
-#[['baseCalls']] # inspect base composition
-#[['frequentSequences']] # inspect most common sequences
-#df <- within(df, acc_sum <- cumsum(density))
-df <- within(df, {cumsumDensity <- ave(density, lane, FUN = cumsum)})
-df <- within(df, {sumDensity <- ave(density, lane, FUN = sum)})
-df$percentile <- df$cumsumDensity / df$sumDensity
-library(ggplot2)
-pdf(file = "quality_scores_distribution.pdf", width = 7, height =10)
-p1 <-   ggplot(df, aes(x=quality, y=density)) +
-  geom_line() + 
-  facet_wrap( ~ lane, ncol=4) +
-  theme_bw() + 
-  theme(strip.text.x = element_text(size = 6)) 
-print(p1)
-p2 <-   ggplot(df, aes(x=quality, y=percentile)) +
-  geom_line() +
-  facet_wrap( ~ lane, ncol=4) +
-  theme_bw() +  
-  theme(strip.text.x = element_text(size = 6)) 
-print(p2)
-dev.off()
-# checks some stats
-ag <- aggregate(density ~ lane, data = df, max)
-df.max <- merge(ag, df)
-see_cut_off <- subset(df, df$quality > 35 & df$quality < 35.1)
+#Can you take a look at the reads for quality vs length? Maybe after processing I should trim further? Or adjust some of the PrinSeq Parameters?
+
+# With HiSeq this is very slow and there seems to be some errors at the first qa step
+
+# library("ShortRead")
+# list.files(path=path_fastq, pattern=glob2rx("^AdapRem*_prinseq_good_*.fastq$"), full.names=F)
+# # runs qa with the files in the directory and with the pattern
+# fqQC = qa(dirPath = path_fastq, pattern = "_prinseq_good_", type = "fastq")
+# report(fqQC, type = "html", dest = "fastqQAreport")
+# ###Performing some stats (optional):
+# df <- fqQC[["readQualityScore"]]
+# #[['readCounts']] # inspect read yield
+# #[['baseCalls']] # inspect base composition
+# #[['frequentSequences']] # inspect most common sequences
+# #df <- within(df, acc_sum <- cumsum(density))
+# df <- within(df, {cumsumDensity <- ave(density, lane, FUN = cumsum)})
+# df <- within(df, {sumDensity <- ave(density, lane, FUN = sum)})
+# df$percentile <- df$cumsumDensity / df$sumDensity
+# library(ggplot2)
+# pdf(file = "quality_scores_distribution.pdf", width = 7, height =10)
+# p1 <-   ggplot(df, aes(x=quality, y=density)) +
+#   geom_line() + 
+#   facet_wrap( ~ lane, ncol=4) +
+#   theme_bw() + 
+#   theme(strip.text.x = element_text(size = 6)) 
+# print(p1)
+# p2 <-   ggplot(df, aes(x=quality, y=percentile)) +
+#   geom_line() +
+#   facet_wrap( ~ lane, ncol=4) +
+#   theme_bw() +  
+#   theme(strip.text.x = element_text(size = 6)) 
+# print(p2)
+# dev.off()
+# # checks some stats
+# ag <- aggregate(density ~ lane, data = df, max)
+# df.max <- merge(ag, df)
+# see_cut_off <- subset(df, df$quality > 35 & df$quality < 35.1)
+
 #Looking at the fastQC html, with respect to nucleotide frequency base calls. How do we know that the difference in AT (higher)
 #versus GC(lower), is due to actual GC content unique to species and not due to a GC that is introduced during DNA amplification
 # by PCR during library preparation - as this is a major source in variation whereby GC-rich regions remain annealed during
@@ -596,18 +599,70 @@ see_cut_off <- subset(df, df$quality > 35 & df$quality < 35.1)
 
 
 
+
+
+
+# clean up files
+# glob2rx("Processed*singletons.fastq") - I don't think we want to keep the singletons, correct?
+processed_singletons <- list.files(path= outpath, pattern=glob2rx("*singletons*.fastq$"), full.names=T)
+processed_singletons
+file.remove(processed_singletons)
+# to gzip all files - make a list of AdapRem - manage space
+list.files(path=".", pattern=glob2rx("AdapRem*.fastq"), full.names=T)
+adap_rem_zip <- list.files(path=".", pattern=glob2rx("AdapRem*.fastq"), full.names=T)
+adap_rem_zip
+for(k in 1:length(adap_rem_zip)) {
+  cmd <- paste("gzip", adap_rem_zip[k])
+  cat(cmd, "\n")
+  system(cmd)
+}
+
+
+############################################################################################################################
+# create folders to put Tophat results
+for(j in 1:length(MetadataProcessed$LibraryName)) {
+  dir.create(paste(shared_path, MetadataProcessed$LibraryName[j], sep=""), showWarnings = TRUE, recursive = FALSE)
+}
+
+# create directory for Tophat_qsubs
+dir.create(paste(shared_path, "TophatQsub", sep=""), showWarnings = TRUE, recursive = FALSE)
+
+
+
+
 ###########################################################################################################################
 tophat2_path <- "/opt/bio/tophat/bin/tophat2"
 # system(tophat2_path) ##Andre - here I can see so many options - surely there's a way to improve the alignment issue we have
-gff3 <- "/home/AAFC-AAC/girouxem/RNASeq/References/Pyuu_ref_no_mito.gff3"
+gff3 <- paste(shared_path, "References/Pyuu_ref_no_mito.gff3", sep="")
 bowind = "Pyuu_ref"
+
+# number of cores for multiprocessing
+# Do not be too greedy and check cluster usage with 
+# qhost   or
+# qstat -q all.q -u "*"
+
+node <- 4
 bowtie2_path <- "/opt/bio/bowtie2/bowtie2"
+
 cmd = with(MetadataProcessed, paste(tophat2_path, " -G ", gff3,
-                             " -p 12 -o ", "/home/AAFC-AAC/girouxem/RNASeq", "/",LibraryName,"/",LibraryName,"_TopHat",
-                             " /home/AAFC-AAC/girouxem/RNASeq/References","/",bowind, 
-                             " ", R1," ", R2,
+                             " -p ", node, " -o ", shared_path,LibraryName,"/",LibraryName,"_TopHat",
+                             " ", shared_path,"References/",bowind, 
+                             " ", path_fastq, R1," ", path_fastq, R2,
                              sep=""))
-cmd
+########################################################################
+#  This is to process  FastqPairedEndValidator, using one node per pair of file
+# now this is all I have to enter to make qsub and bash files
+prefix <- "K_TophatQsub_"; suffix <- ".sub"; out_path <- paste(shared_path, "TophatQsub/", sep=""); 
+make_qsubs(cmd, prefix, suffix, out_path, node)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+
+
+
+
+
 #system(cmd)
 # I can't get TopHat2 to run in Rstudio - see error:
 # [2015-07-25 20:23:51] Beginning TopHat run (v2.0.5)
