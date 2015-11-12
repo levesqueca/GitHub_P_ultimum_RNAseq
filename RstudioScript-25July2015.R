@@ -661,6 +661,8 @@ make_qsubs(cmd, prefix, suffix, out_path, node)
 
 
 
+#  MUST DO CLEAN UP OF TMP FILES WITHIN FOLDERS
+
 
 
 #system(cmd)
@@ -675,42 +677,49 @@ make_qsubs(cmd, prefix, suffix, out_path, node)
 ############################################################################################################################
 #Samtools for TopHat ouputs:
 #Sort by name, convert to SAM for HT-Seq-count:
-cmd = with(MetadataProcessed, paste(samtools1_path, 
+
+samtools1_path <- "/opt/bio/samtools1/bin/samtools1"
+
+cmd = with(MetadataProcessed, (paste(samtools1_path, 
                                     " sort", 
                                     " -n ",
-                                    "/home/AAFC-AAC/girouxem/RNASeq","/",LibraryName,"/",LibraryName,"_TopHat","/","accepted_hits.bam",
-                                    " /home/AAFC-AAC/girouxem/RNASeq","/",LibraryName,"/",LibraryName,"_TopHat","/",LibraryName,"_sn",
-                                    sep=""))
-cmd                                    
-sapply(cmd, function(x) system(x))
-
-cmd = with(MetadataProcessed, paste(samtools1_path, 
-                                    " view ", 
-                                    " -o ", 
-                                    " /home/AAFC-AAC/girouxem/RNASeq","/",LibraryName,"/",LibraryName,"_TopHat","/",LibraryName,"_sn.sam",
-                                    " /home/AAFC-AAC/girouxem/RNASeq","/",LibraryName,"/",LibraryName,"_TopHat","/",LibraryName,"_sn.bam",
-                                    sep=""))
-cmd
-sapply(cmd, function(x) system(x))
-
-# Sort BAM for IGV
-cmd = with(MetadataProcessed, paste(samtools1_path, 
+                                    shared_path,LibraryName,"/",LibraryName,"_TopHat","/","accepted_hits.bam ",
+                                    shared_path,LibraryName,"/",LibraryName,"_TopHat","/",LibraryName,"_sn", 
+                                    "\n",                                    
+           samtools1_path, 
+                 " view ", 
+                 " -o ", 
+                 shared_path,LibraryName,"/",LibraryName,"_TopHat","/",LibraryName,"_sn.sam ",
+                 shared_path,LibraryName,"/",LibraryName,"_TopHat","/",LibraryName,"_sn.bam",
+               "\n",
+  
+            samtools1_path, 
                                     " sort ", 
-                                    " /home/AAFC-AAC/girouxem/RNASeq","/",LibraryName,"/",LibraryName,"_TopHat","/","accepted_hits.bam",
-                                    " /home/AAFC-AAC/girouxem/RNASeq","/",LibraryName,"/",LibraryName,"_TopHat","/",LibraryName,"_s",
-                                    sep=""))
-cmd
-sapply(cmd, function(x) system(x))
-# Index BAM files for IGV
-cmd = with(MetadataProcessed, paste(samtools1_path, 
+           shared_path,LibraryName,"/",LibraryName,"_TopHat","/","accepted_hits.bam ",
+           shared_path,LibraryName,"/",LibraryName,"_TopHat","/",LibraryName,"_s",
+           "\n",
+                  samtools1_path, 
                                     " index ", 
-                                    " /home/AAFC-AAC/girouxem/RNASeq","/",LibraryName,"/",LibraryName,"_TopHat","/",LibraryName,"_s.bam",
-                                    sep=""))
-cmd
-sapply(cmd, function(x) system(x))
+                                  shared_path,LibraryName,"/",LibraryName,"_TopHat","/",LibraryName,"_s.bam",
+                                    sep="")))
+
+
+# create directory for Tophat_qsubs
+dir.create(paste(shared_path, "L_Samtools_Qsub", sep=""), showWarnings = TRUE, recursive = FALSE)
+########################################################################
+#  This is to process  FastqPairedEndValidator, using one node per pair of file
+# now this is all I have to enter to make qsub and bash files
+node <- 1
+prefix <- "L_Samtools_sort_Qsub_"; suffix <- ".sub"; out_path <- paste(shared_path, "L_Samtools_Qsub/", sep=""); 
+make_qsubs(cmd, prefix, suffix, out_path, node)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+
 
 #HTSeq-count for TopHat2 hits:
-htseq_count_path <- "/home/AAFC-AAC/girouxem/RNASeq/tools/HTSeq-0.6.1/HTSeq-0.6.1/build/scripts-2.7/htseq-count"
+htseq_count_path <- paste(shared_path, "tools/HTSeq-0.6.1/HTSeq-0.6.1/build/scripts-2.7/htseq-count", sep="")
 system(htseq_count_path)
 MetadataProcessed$countf_TopHat = paste(MetadataProcessed$LibraryName, "TopHat2_count", sep=".")
 gff3 <- "/home/AAFC-AAC/girouxem/RNASeq/References/Pyuu_ref_no_mito.gff3"
