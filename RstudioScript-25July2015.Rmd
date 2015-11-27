@@ -835,7 +835,7 @@ rpkm_count <- rpkm(temp2[,1:21], gene.length=temp2$y, normalized.lib.sizes=TRUE)
 
 ```
 
-cpms
+cpms for Cazy data
 ```{r}
 Cazy_data <- read.xlsx(paste(shared_path, "References/Final\ Table\ CAZyme\ 050813.xlsx", sep=""), sheetName="Pyuu", startRow=2, header=TRUE,  stringsAsFactors = FALSE)
 
@@ -860,7 +860,7 @@ Cazy_counts_sub <- Cazy_counts[which(Cazy_counts$SequenceID %in% unique(Cazy_dat
 
 ```
 
-rpkm_count
+rpkm_count for Cazy
 ```{r}
 
 rpkm_for_bar_plots <- melt(rpkm_count, id.vars=colnames(cpms))
@@ -913,8 +913,18 @@ dev.off()
 ```
 
 
-
+Subset of table for Edge R
 ```{r}
+# Just the Cazy genes
+rpkm_count_cazy <- rpkm_count[which(rownames(rpkm_count) %in% unique(Cazy_data[,c(3)])), ]
+
+# keep only certain columnms because of principal components analysis of PlotMDS
+rpkm_count_cazy_sub <- rpkm_count_cazy[,c("T3-c1",  "T3-c2",  "T3-c3",  "T3-x1",  "T3-x2",  "T3-x3")]
+
+# Had to turn cholesterol/control as numeric by making them factors and then numbers 
+dat_agg2 <- dat_agg[order(dat_agg$Group.2, -as.numeric(as.factor(dat_agg$Group.1)), dat_agg$Group.3,  decreasing=c(F,F,F)),] 
+
+
 
 ```
 
@@ -931,27 +941,27 @@ dev.off()
 # In edgeR, it is recommended to remove features without  
 # at least 1 read per million in n of the samples,  
 # where n is the size of the smallest group of replicates,  
-keep = rowSums(cpms >1) >=3  
-dim(counts_TopHat_genes) ## the number of features you started with 
-counts_TopHat_genes = counts_TopHat_genes[keep,] 
-dim(counts_TopHat_genes) ## count counts of features you have left over after initial filter 
-colnames(counts_TopHat_genes) = MetadataProcessed$LibraryName 
+#keep = rowSums(cpms >1) >=3  
+#dim(counts_TopHat_genes) ## the number of features you started with 
+#counts_TopHat_genes = counts_TopHat_genes[keep,] 
+#dim(counts_TopHat_genes) ## count counts of features you have left over after initial filter 
+#colnames(counts_TopHat_genes) = MetadataProcessed$LibraryName 
 #Create a DGEList object (edgeR's container for RNA-seq count data): 
-dTopH = DGEList(counts=counts_TopHat_genes, group=MetadataProcessed$Condition) 
+dTopH = DGEList(counts=rpkm_count_cazy_sub, group=dat_agg2$Group.1[10:15]) 
 #Estimate normalization factors using, RNA composition and adjust for read depth: 
 dTopH = calcNormFactors(dTopH)
 #Inspect the relationships between samples using a multidimensional scaling (MDS) plot, as shown in Figure 4:
-results <- "12-Nov-2015-TopHat-edgeR"
+results <- "27-Nov-2015-TopHat-edgeR"
 dir.create(paste(shared_path, results, sep=""), showWarnings = TRUE, recursive = FALSE)
-pdf(file.path(paste(shared_path,results,sep=""),"MDS-edgeR_TopHat.pdf")) 
-plotMDS(dTopH, labels=MetadataProcessed$LibraryName, 
-        col = rainbow(length(levels(factor(MetadataProcessed$Condition))))[factor(MetadataProcessed$Condition)],cex=0.6, main="MDS") 
+pdf(file.path(paste(shared_path,results,sep=""),"MDS-edgeR_TopHat-T3.pdf")) 
+plotMDS(dTopH, labels=colnames(rpkm_count_cazy_sub), 
+        col = rainbow(length(levels(factor(dat_agg2$Group.1[10:15]))))[factor(dat_agg2$Group.1[10:15])],cex=0.6, main="MDS") 
 dev.off() 
 
 
 # edgeR - using glm 
 #Create a design matrix to specify the factors that are expected to affect expression levels: 
-designTopH = model.matrix( ~ Condition, MetadataProcessed) ## samples is your sample sheet, treatment is a column in the sample sheet 
+designTopH = model.matrix( ~ Group.1, dat_agg2[c(10:15),]) ## samples is your sample sheet, treatment is a column in the sample sheet 
 designTopH 
 
 
@@ -963,7 +973,7 @@ d2TopH = estimateGLMTagwiseDisp(d2TopH, designTopH)
 
 
 #plot the mean-variance relationship: 
-pdf(file.path(results,"mean.variance-edgeR_TopHat.pdf")) 
+pdf(file.path(paste(shared_path,results,sep=""),"mean.variance-edgeR_TopHat.pdf")) 
 
 # Plot the relationship between mean expression and variance of expression 
 plotMeanVar(d2TopH, show.tagwise.vars=TRUE, NBline=TRUE,main="MeanVar") 
@@ -988,17 +998,17 @@ table(ttTopH$table$FDR< 0.05) ## the number of "Statistically Differentially Exp
 #Inspect the depth-adjusted reads per million for some of the top differentially expressed genes: 
 ncTopH = cpm(dTopH, normalized.lib.sizes=TRUE) 
 rnTopH = rownames(ttTopH$table) 
-head(ncTopH[rnTopH,order(MetadataProcessed$Condition)],5) 
+head(ncTopH[rnTopH,order(dat_agg2$Group.1[10:15])],5) 
 
 
 #Plot the M (log-fold change) versus A (log-average expression) 
 degTopH = rnTopH[ttTopH$table$FDR < .05] 
-pdf(file.path(results,"smear-edgeR_TopHat.pdf")) 
+pdf(file.path(paste(shared_path,results,sep=""),"smear-edgeR_TopHat-T3.pdf")) 
 plotSmear(dTopH, de.tags=degTopH,main="Smear") 
 dev.off() 
 
 #Save the result table as a CSV file: 
-write.table(ttTopH$table,file=file.path(results,"toptags_edgeR_TopHat.annotated.txt"),sep="\t",row.names=T,col.names=T,quote=F) 
+write.table(ttTopH$table,file=file.path(paste(shared_path,results,sep=""),"toptags_edgeR_TopHat.annotated-T3.csv"), append = FALSE, sep =",", col.names=NA)
 
 ```
 
