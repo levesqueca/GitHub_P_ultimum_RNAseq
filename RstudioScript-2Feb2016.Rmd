@@ -1127,7 +1127,7 @@ degTopH = rnTopH[ttTopH$table$FDR < .05]
 pdf(file.path(paste(shared_path,results,sep=""),"smear-edgeR_TopHat-T3.pdf")) 
 plotSmear(dTopH, de.tags=degTopH,main="Smear") 
 dev.off() 
-
+ 
 #Save the result table as a CSV file: 
 write.table(ttTopH$table,file=file.path(paste(shared_path,results,sep=""),"toptags_edgeR_TopHat.annotated-T3.csv"), append = FALSE, sep =",", col.names=NA)
                       
