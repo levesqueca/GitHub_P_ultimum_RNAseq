@@ -179,7 +179,7 @@ Metadata <- read.table(paste(shared_path, "OosporeConversionTimeCourse_Metadata.
 
 Generating a function to make qsub jobs and a bash script to submit them
 ====================
-  ```{r}
+```{r}
 # this makes a function to generate qsub commands and a bash to submit them in parallel using 3 inputs
 # often used later whenever a Linux command needs to be done on several data files
 make_qsubs <- function(cmd, prefix, suffix = ".sub", node =1) {
@@ -187,6 +187,8 @@ make_qsubs <- function(cmd, prefix, suffix = ".sub", node =1) {
   out_path <- paste(shared_path, prefix, "/", sep="")
   for(k in 1:length(cmd)) {
     cat(paste("#!/bin/bash
+              #$ -S /bin/bash  
+              argc=$#
               # To make sure that the .e and .o and other outputs files arrive in the working directory
               #$ -cwd
               # request one slot in the smp environment
