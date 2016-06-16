@@ -1441,7 +1441,7 @@ cmd = with(metadataAdapRM,
            paste(tophat2Path, 
                  " -G ", pyuugff3Path,
                  " -p ", node, 
-                 " -o ", sharedPathAn, LibraryName,"/",LibraryName,".TopHat.",
+                 " -o ", sharedPathAn, LibraryName, "/",LibraryName,".TopHat.",
                          format(Sys.time(), "%Y-%m-%d"),
                  " ",    referencesPath, bowind,
                  " ",    pathFastq, AdapRMDustMinLen,
@@ -1564,10 +1564,10 @@ node   <- 1
 prefix <- "K_SamtoolsSortQsub" 
 suffix <- ".sub"
 MakeQsubs(cmd, prefix, suffix, node)
-########################################################################################
-########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
-########          watch output from this command in the console              ###########
-########################################################################################
+################################################################################
+#####  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****######
+#####          watch output from this command in the console              ######
+################################################################################
 ```
 
 Function to remove output files after running qsubs:
@@ -1588,14 +1588,12 @@ metadataAdapRM$countfTopHat = paste(metadataAdapRM$LibraryName,
 
 ```
 
-Andre, this works now. I managed to get numpy to install with pip when I created a 
-virtualenv that used python version 2.7:
+Andre, this works now. I managed to get numpy to install with pip when I created 
+a virtualenv that used python version 2.7:
 $ virtualenv -p /opt/python/bin/python2.7 test-emilyJune16-env
 I installed numpy and htseq with bug information in #5656
 ```{r}
-#htseqCountPath <- "~/test-python26-env/bin/htseq-count"
-
-htseqCountPath <- paste(toolsDirPath, "test-emilyJune16-env/bin/htseq-count",
+htseqCountPath <- paste(toolsDirPath, "test-emilyJune16-env/bin/htseq-count", 
                         sep = "")
 
 system(htseqCountPath)
@@ -1608,38 +1606,39 @@ cmd = with(metadataAdapRM,
                  " -a ", MINAQUAL,
                  " --idattr=Parent ", 
                  paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
-                       topHatDate, "/", LibraryName, "_sn.sam ", 
-                       sep = ""),
+                       topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
                  pyuugff3Path,
                  " > ",
                  paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
-                       topHatDate, "/", metadataAdapRM$countfTopHat,
-                       sep = ""),
+                       topHatDate, "/", metadataAdapRM$countfTopHat, sep = ""),
                  sep = ""))
 
-node <- 1
+node   <- 1
 prefix <- "L_HTSeq_Qsub" 
 suffix <- ".sub" 
 MakeQsubs(cmd, prefix, suffix)
-########################################################################################
-########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
-########          watch output from this command in the console              ###########
-########################################################################################
+################################################################################
+#####  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****######
+#####          watch output from this command in the console              ######
+################################################################################
 ```
 
-***Over here!!!!! (I skipped this and jumpled to line 1643)
-To do permissions for sharing data
+
 ```{r}
 
-linux commands:
-  find /isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/ -type d -exec chmod 770 {} +
-  find /isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/ -type f -exec chmod 660 {} +
+#linux commands:
+
+cmd <- paste( "find ", sharedPathAn, " -type d -exec chmod 770 {} + ", sep = "")
+system(cmd)
+cmd <- paste( "find ", sharedPathAn, " -type f -exec chmod 770 {} + ", sep = "")
+system(cmd)
   
 ```
 
 
 
-Get all data together and add the counts for libraries representing the same treatments
+Get all data together and add the counts for libraries representing the same 
+treatments
 ```{r}
 library("edgeR")
 #library(xlsx)
@@ -1648,10 +1647,11 @@ library("edgeR")
 #Identify the count files and read them into R using readDGE
 
 
-countsListTopHat <-  paste(sharedPathAn, metadataAdapRM$LibraryName, "/", 
-                           metadataAdapRM$LibraryName, ".TopHat", topHatDate, "/",
-                           metadataAdapRM$countfTopHat, 
-                           sep = "")
+countsListTopHat <- paste(sharedPathAn, metadataAdapRM$LibraryName, "/", 
+                         metadataAdapRM$LibraryName, 
+                         ".TopHat", topHatDate, "/",
+                         metadataAdapRM$countfTopHat, 
+                         sep = "")
 
 countsListTopHat
 # turns the count of the list into a data.frame
@@ -1660,7 +1660,8 @@ countsTopHat <-  readDGE(countsListTopHat)$counts
 colnames(countsTopHat) <- basename(colnames(countsTopHat))
 
 write.table(countsTopHat, 
-            file = file.path(sharedPathAn, "counts_readDGE_TopHat.annotated.csv"),
+            file = file.path(sharedPathAn, 
+                             "counts_readDGE_TopHat.annotated.csv"),
             sep  = ",", 
             row.names = TRUE, 
             col.names = NA, 
@@ -1668,106 +1669,178 @@ write.table(countsTopHat,
 
 ```
 
-########################################################################################
-**** Over here!!!
 The trick was from here
 http://stackoverflow.com/questions/19321053/sum-together-columns-of-data-frame-based-on-name-type
-The idea is to make the names of the columns with different libraries of the same 
-experimental unit identical, which means that some columns have the same name.  Then a 
-row sum for each unique name is done.
+The idea is to make the names of the columns with different libraries of the 
+same experimental unit identical, which means that some columns have the same 
+name. Then a row sum for each unique name is done.
 ```{r}
-metadataProcessed$Exp_Unit <- sub("_.*","",metadataProcessed$LibraryName)
 
-countsTopHat_df <- as.data.frame(countsTopHat)
+metadataAdapRM$ExpUnit <- sub("_.*", "", metadataAdapRM$LibraryName)
 
-countsTopHat_df$gene <- rownames(countsTopHat_df)
-countsTopHat_melt <- melt(countsTopHat_df)
-#countsTopHat_melt <- countsTopHat_melt[countsTopHat_melt$value>0,]
-colnames(countsTopHat_melt)[2] <- "LibraryName"
-df <- merge(countsTopHat_melt, metadataProcessed[,c(1,8)], by= "LibraryName", all.x=TRUE)
+countsTopHatDf      <- as.data.frame(countsTopHat)
+countsTopHatDf$gene <- rownames(countsTopHatDf)
+countsTopHatMelt    <- melt(countsTopHatDf)
 
-countsTopHat_sum <- dcast(data = df[,2:4], gene ~ Exp_Unit, sum, value.var="value")
 
-rownames(countsTopHat_sum) <- countsTopHat_sum$gene
-countsTopHat_sum$gene <- NULL
+colnames(countsTopHatMelt)[2] <- "LibraryName"
+
+df <- merge(countsTopHatMelt, 
+            #metadataAdapRM[,c(1,8)], 
+            metadataAdapRM[,c("LibraryName", "ExpUnit")], #Here it was (,1,8) 
+            # initially, but that didn't match the layout of the metadataAdapRM  
+            # as it is currently. Are these columns I specified by name the 
+            # correct ones?
+            by    = "LibraryName", 
+            all.x = TRUE)
+
+countsTopHatSum <- dcast(data = df[,2:4], 
+                         gene ~ ExpUnit, 
+                         sum, 
+                         value.var = "value")
+
+rownames(countsTopHatSum) <- countsTopHatSum$gene
+countsTopHatSum$gene      <- NULL
 
 ```
 
 
 ```{r}
-# Normalization after removinf rDNA data.  Nor completely sure if this is the best approach
-countsTopHat_genes <- countsTopHat_sum[-which(rownames(countsTopHat_sum) %in% c("__no_feature","__ambiguous","__too_low_aQual", 
-                                                                                   "__not_aligned","__alignment_not_unique", "PYU1_R000002", "PYU1_R000003", "PYU1_R000004", "PYU1_R000005", "PYU1_R000006")), ]
+# Normalization after removing rDNA data.  Not sure if this is the best approach
+countsTopHatGenes <- countsTopHatSum[-which(rownames(countsTopHatSum) 
+                                            %in%
+                                              c("__no_feature", 
+                                                "__ambiguous", 
+                                                "__too_low_aQual", 
+                                                "__not_aligned",
+                                                "__alignment_not_unique", 
+                                                "PYU1_R000002", 
+                                                "PYU1_R000003", 
+                                                "PYU1_R000004", 
+                                                "PYU1_R000005", 
+                                                "PYU1_R000006",
+                                                "MPYU1_mitoSSU",
+                                                "MPYU1_orf169")), ]
+
+
 # mean(colSums(countsTopHat[!noint,])/colSums(countsTopHat))
-mean(colSums(countsTopHat_genes)/colSums(countsTopHat))
+mean(colSums(countsTopHatGenes)/colSums(countsTopHat))
+
 ## MEAN % of reads map to features
 #cpms <- cpm(countsTopHat)  ## counts per million
-cpms <- cpm(countsTopHat_genes)  ## counts per million
+cpms <- cpm(countsTopHatGenes)  ## counts per million
 
 library(Biostrings)
-temp <- readDNAStringSet(paste(sharedPath, "References/pythium_ultimum_transcripts.fasta", sep=""))
-names_transcripts <- sub(" .*$", "", names(temp))
+
+temp <- readDNAStringSet(paste(referencesPath, 
+                               "pythium_ultimum_transcripts.fasta", 
+                               sep=""))
+
+namesTranscripts <- sub(" .*$", "", names(temp))
+
 # created a vector with names
-gene_length <- setNames(width(temp), names_transcripts)
-
-temp2 <- merge(countsTopHat_genes, gene_length, by.x= 0, by.y =0)
-
+geneLength <- setNames(width(temp), namesTranscripts)
+temp2      <- merge(countsTopHatGenes, geneLength, by.x = 0, by.y = 0)
 rownames(temp2) <- temp2$Row.names
 temp2$Row.names <- NULL
 
-rpkm_count <- rpkm(temp2[,1:21], gene.length=temp2$y, normalized.lib.sizes=TRUE) #, log=FALSE, prior.count=0.25, ...)
+rpkmCount <- rpkm(temp2[,1:16], 
+                  gene.length = temp2$y, 
+                  normalized.lib.sizes = TRUE) 
+
+#, log=FALSE, prior.count=0.25, ...)
 
 ```
 
-cpms for Cazy data
+*** Over here!!
+
 ```{r}
-#Cazy_data <- read.xlsx(paste(sharedPath, "References/Final\ Table\ CAZyme\ 050813.xlsx", sep=""), sheetName="Pyuu", startRow=2, header=TRUE,  stringsAsFactors = FALSE)
 
+secretedCAZyAll <- readAAStringSet(paste(referencesPath,
+                                         "Secretome_scripts/CAZy_secreted.fasta", 
+                                         sep = ""),
+                                   format = "fasta")
+secretedNames     <- names(secretedCAZyAll)
+length(unique(secretedNames))
+secretedPyuuNames <- subset(secretedNames, grepl("^Pyuu_", secretedNames))
+secPyuuNamesTemp  <- secretedPyuuNames
+secPyuuNamesTemp  <- gsub("Pyuu_")
+
+# In perl regex, can match by : /(Pyuu)_(([A-Z])+(\d)+)_/
+  
+  my_names2 <- gsub("maker-", "",my_names2, ignore.case = FALSE)
+```
+
+########################################################################################
+cpms for Cazy data
+
+
+
+*** Over here!!
+
+I want to use the sequences that passed my secretome pipeline instead of the entries in
+the cazy excel we are referring to here. The fasta filename is "CAZy_secreted.fasta"
+It has all the oomycete sequences in our cazy table that passed.
+Issue:
+I needed to modify the names for MrBayes, and easy differentiation in trees and Geneious
+So the names have any '.' and '-' removed
+The name structures are:
+Species Abbrv_Cazy Family_Gene name_secreted
+i.e., Pyuu_PL03_PYU1_T007525_secreted
+
+Can I find the sequences in CAZy_secreted.fasta that match "pythium_ultimum_transcripts.fasta",
+pull out the names from the "pythium_ultimum_transcripts.fasta" so that it matches with our script,
+and retain the cazy family information?
+
+```{r}
 library(openxlsx)
-Cazy_data <- read.xlsx(paste(sharedPath, "References/CAZYexpression-Secretome_details_emily.xlsx", sep=""), sheet="Sheet2", startRow=2, rows=c(1:412),colNames=TRUE)
 
-sapply(Cazy_data, class)
+cazyData <- read.xlsx(paste(referencesPath, 
+                            "CAZYexpression-Secretome_details_emily.xlsx", sep = ""), 
+                      sheet = "Sheet2", startRow = 2, rows = c(1:412), colNames = TRUE)
+
+sapply(cazyData, class)
 
 # just the secreted CZAy genes
-Cazy_data_sub <- subset(Cazy_data, Cazy_data[,33] == "Y")
+cazyData_sub <- subset(cazyData, cazyData[,33] == "Y")
 
 counts_for_bar_plots <- melt(cpms, id.vars=colnames(cpms))
 
 colnames(counts_for_bar_plots)[1] <- "SequenceID"
-colnames(counts_for_bar_plots)[2] <- "Exp_Unit"
+colnames(counts_for_bar_plots)[2] <- "ExpUnit"
 colnames(counts_for_bar_plots)[3] <- "Read_Counts"
-#counts_for_bar_plots$Exp_Unit <- as.character(counts_for_bar_plots$Exp_Unit)
+#counts_for_bar_plots$ExpUnit <- as.character(counts_for_bar_plots$ExpUnit)
 
 
-Cazy_counts <- merge(counts_for_bar_plots,unique(metadataProcessed[,c(2,3,4,8)]),  by = "Exp_Unit", all.x = TRUE)
+Cazy_counts <- merge(counts_for_bar_plots,unique(metadataProcessed[,c(2,3,4,8)]),  by = "ExpUnit", all.x = TRUE)
 
 Cazy_counts$TimePoint <- factor(Cazy_counts$TimePoint, levels = c("0", "3" , "7", "24"))        
 
 length(unique(Cazy_counts$TimePoint))
 
-Cazy_counts_sub <- Cazy_counts[which(Cazy_counts$SequenceID %in% unique(Cazy_data_sub[,c(3)])), ]
+Cazy_counts_sub <- Cazy_counts[which(Cazy_counts$SequenceID %in% unique(cazyData_sub[,c(3)])), ]
 
 
 ```
 
-rpkm_count for Cazy
+rpkmCount for Cazy
 ```{r}
 
-rpkm_for_bar_plots <- melt(rpkm_count, id.vars=colnames(cpms))
+rpkm_for_bar_plots <- melt(rpkmCount, id.vars=colnames(cpms))
 
 colnames(rpkm_for_bar_plots)[1] <- "SequenceID"
-colnames(rpkm_for_bar_plots)[2] <- "Exp_Unit"
+colnames(rpkm_for_bar_plots)[2] <- "ExpUnit"
 colnames(rpkm_for_bar_plots)[3] <- "Read_Counts"
-#counts_for_bar_plots$Exp_Unit <- as.character(counts_for_bar_plots$Exp_Unit)
+#counts_for_bar_plots$ExpUnit <- as.character(counts_for_bar_plots$ExpUnit)
 
 
-Cazy_rpkm <- merge(rpkm_for_bar_plots,unique(metadataProcessed[,c(2,3,4,8)]),  by = "Exp_Unit", all.x = TRUE)
+Cazy_rpkm <- merge(rpkm_for_bar_plots,unique(metadataProcessed[,c(2,3,4,8)]),  by = "ExpUnit", all.x = TRUE)
 
 Cazy_rpkm$TimePoint <- factor(Cazy_rpkm$TimePoint, levels = c("0", "3" , "7", "24"))        
 
 length(unique(Cazy_rpkm$TimePoint))
 
-Cazy_rpkm_sub <- Cazy_rpkm[which(Cazy_rpkm$SequenceID %in% unique(Cazy_data_sub[,c(3)])), ]
+Cazy_rpkm_sub <- Cazy_rpkm[which(Cazy_rpkm$SequenceID %in% unique(cazyData_sub[,c(3)])), ]
 
 
 ```
@@ -1777,7 +1850,7 @@ To make a data subset without time point 0 and to make another subset that merge
 
 Cazy_rpkm_sub2 <- subset(Cazy_rpkm_sub, Cazy_rpkm_sub$TimePoint != 0)
 
-Cazy_rpkm_sub3 <- merge(Cazy_rpkm_sub2, Cazy_data_sub[,c(1,3)],  by = "SequenceID", all.x = TRUE)
+Cazy_rpkm_sub3 <- merge(Cazy_rpkm_sub2, cazyData_sub[,c(1,3)],  by = "SequenceID", all.x = TRUE)
 
 write.table(Cazy_rpkm_sub3,file=file.path(sharedPath,"counts_readDGE_TopHat_secreted_CAZy.csv"),sep=",",row.names = TRUE, col.names = NA, quote = FALSE) 
 
@@ -1859,10 +1932,10 @@ for(i in 1:length(for_plot)){
 Subset of table for Edge R
 ```{r}
 # Just the secreted Cazy genes
-rpkm_count_cazy <- rpkm_count[which(rownames(rpkm_count) %in% unique(Cazy_data_sub[,c(3)])), ]
+rpkmCount_cazy <- rpkmCount[which(rownames(rpkmCount) %in% unique(cazyData_sub[,c(3)])), ]
 
 # keep only certain columnms because of principal components analysis of PlotMDS
-rpkm_count_cazy_sub <- rpkm_count_cazy[ , -which(colnames(rpkm_count_cazy) %in% c("T0-1",  "T0-2",  "T0-4"))]
+rpkmCount_cazy_sub <- rpkmCount_cazy[ , -which(colnames(rpkmCount_cazy) %in% c("T0-1",  "T0-2",  "T0-4"))]
 
 # Had to turn cholesterol/control as numeric by making them factors and then numbers 
 #dat_agg2 <- dat_agg[order(dat_agg$Group.2, -as.numeric(as.factor(dat_agg$Group.1)), dat_agg$Group.3,  decreasing=c(F,F,F)),] 
@@ -1876,7 +1949,7 @@ Create Sample sheet
 ```{r}
 
 
-samples <- data.frame(colnames(rpkm_count_cazy_sub))
+samples <- data.frame(colnames(rpkmCount_cazy_sub))
 colnames(samples)[1] <- "shortname"
 
 samples$Condition <- samples$shortname
@@ -1897,7 +1970,7 @@ samples$Treatment <- paste(samples$Condition, samples$TimePoint, sep="-")
                       
 ```{r}
                       
-colnames(rpkm_count_cazy_sub)
+colnames(rpkmCount_cazy_sub)
 samples
 
 #### HTSEQ_COUNT RESULTS 
@@ -1908,19 +1981,19 @@ samples
 # at least 1 read per million in n of the samples,  
 # where n is the size of the smallest group of replicates,  
 #keep = rowSums(cpms >1) >=3  
-#dim(countsTopHat_genes) ## the number of features you started with 
-#countsTopHat_genes = countsTopHat_genes[keep,] 
-#dim(countsTopHat_genes) ## count counts of features you have left over after initial filter 
-#colnames(countsTopHat_genes) = metadataProcessed$LibraryName 
+#dim(countsTopHatGenes) ## the number of features you started with 
+#countsTopHatGenes = countsTopHatGenes[keep,] 
+#dim(countsTopHatGenes) ## count counts of features you have left over after initial filter 
+#colnames(countsTopHatGenes) = metadataProcessed$LibraryName 
 #Create a DGEList object (edgeR's container for RNA-seq count data): 
-dTopH = DGEList(counts=rpkm_count_cazy_sub, group=samples$Treatments) 
+dTopH = DGEList(counts=rpkmCount_cazy_sub, group=samples$Treatments) 
 #Estimate normalization factors using, RNA composition and adjust for read depth: 
 dTopH = calcNormFactors(dTopH)
 #Inspect the relationships between samples using a multidimensional scaling (MDS) plot, as shown in Figure 4:
 results <- "3-March-2016-TopHat-edgeR"
 dir.create(paste(sharedPath, results, sep=""), showWarnings = TRUE, recursive = FALSE)
 pdf(file.path(paste(sharedPath,results,sep=""),"MDS-edgeR_TopHat-T3.pdf")) 
-plotMDS(dTopH, labels=colnames(rpkm_count_cazy_sub), 
+plotMDS(dTopH, labels=colnames(rpkmCount_cazy_sub), 
         col = rainbow(length(levels(factor(samples$Treatments))))[factor(samples$Treatments)],cex=0.6, main="MDS") 
 dev.off() 
 
@@ -1981,12 +2054,12 @@ write.table(ttTopH$table,file=file.path(paste(sharedPath,results,sep=""),"toptag
                       
                       Read Cazy data and merge some data
 ```{r}
-Cazy_data <- read.xlsx(paste(sharedPath, "References/Final\ Table\ CAZyme\ 050813.xlsx", sep=""), sheetName="Pyuu", startRow=2, header=TRUE,  stringsAsFactors = FALSE)
+cazyData <- read.xlsx(paste(sharedPath, "References/Final\ Table\ CAZyme\ 050813.xlsx", sep=""), sheetName="Pyuu", startRow=2, header=TRUE,  stringsAsFactors = FALSE)
 
-Cazy_counts <- subset(as.data.frame(cpms), rownames(cpms) %in% Cazy_data$SequenceID)
+Cazy_counts <- subset(as.data.frame(cpms), rownames(cpms) %in% cazyData$SequenceID)
 
 
-length(unique(Cazy_data$SequenceID))
+length(unique(cazyData$SequenceID))
 
 
 ```
@@ -1994,17 +2067,17 @@ length(unique(Cazy_data$SequenceID))
                       Prepare data for bar plot
 ```{r}
 Cazy_counts$gene <- rownames(Cazy_counts)
-Cazy_data_melt <- melt(Cazy_counts)
+cazyData_melt <- melt(Cazy_counts)
 
 
-Cazy_counts <- merge(cpms, Cazy_data[,c(1,3,5,6,7,8,9,20)],  by.x = 0, by.y = "SequenceID", all = FALSE, all.y = TRUE)
+Cazy_counts <- merge(cpms, cazyData[,c(1,3,5,6,7,8,9,20)],  by.x = 0, by.y = "SequenceID", all = FALSE, all.y = TRUE)
 
 
-#countsTopHat_melt <- countsTopHat_melt[countsTopHat_melt$value>0,]
-colnames(countsTopHat_melt)[2] <- "LibraryName"
-df <- merge(countsTopHat_melt, metadataProcessed[,c(1,8)], by= "LibraryName", all.x=TRUE)
+#countsTopHatMelt <- countsTopHatMelt[countsTopHatMelt$value>0,]
+colnames(countsTopHatMelt)[2] <- "LibraryName"
+df <- merge(countsTopHatMelt, metadataProcessed[,c(1,8)], by= "LibraryName", all.x=TRUE)
 
-countsTopHat_sum <- dcast(data = df[,2:4], gene ~ Exp_Unit, sum, value.var="value")
+countsTopHatSum <- dcast(data = df[,2:4], gene ~ ExpUnit, sum, value.var="value")
 
 
 
