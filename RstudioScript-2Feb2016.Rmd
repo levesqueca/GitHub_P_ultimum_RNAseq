@@ -1641,7 +1641,6 @@ Get all data together and add the counts for libraries representing the same
 treatments
 ```{r}
 library("edgeR")
-#library(xlsx)
 
 
 #Identify the count files and read them into R using readDGE
@@ -1669,6 +1668,24 @@ write.table(countsTopHat,
 
 ```
 
+
+Only for this set of data, extract control columns based on their names.
+```{r}
+# If there are no columns to drop, do: c("","")
+controlToDrop <- c("T7-c3_BC30","T7-c3_BC31")
+
+
+tempCountsTopHat <- data.frame(countsTopHat)
+
+colnames(tempCountsTopHat) <- colnames(countsTopHat)
+
+countsTopHatDf <- tempCountsTopHat[, !(colnames(tempCountsTopHat) 
+                                     %in% controlToDrop)]
+
+```
+
+
+
 The trick was from here
 http://stackoverflow.com/questions/19321053/sum-together-columns-of-data-frame-based-on-name-type
 The idea is to make the names of the columns with different libraries of the 
@@ -1678,23 +1695,17 @@ name. Then a row sum for each unique name is done.
 
 metadataAdapRM$ExpUnit <- sub("_.*", "", metadataAdapRM$LibraryName)
 
-countsTopHatDf      <- as.data.frame(countsTopHat)
 countsTopHatDf$gene <- rownames(countsTopHatDf)
 countsTopHatMelt    <- melt(countsTopHatDf)
 
 
 colnames(countsTopHatMelt)[2] <- "LibraryName"
 
-df <- merge(countsTopHatMelt, 
-            #metadataAdapRM[,c(1,8)], 
-            metadataAdapRM[,c("LibraryName", "ExpUnit")], #Here it was (,1,8) 
-            # initially, but that didn't match the layout of the metadataAdapRM  
-            # as it is currently. Are these columns I specified by name the 
-            # correct ones?
+df <- merge(countsTopHatMelt, metadataAdapRM[,c("LibraryName", "ExpUnit")], 
             by    = "LibraryName", 
             all.x = TRUE)
 
-countsTopHatSum <- dcast(data = df[,2:4], 
+countsTopHatSum <- dcast(data = df[,c("gene", "value", "ExpUnit")],
                          gene ~ ExpUnit, 
                          sum, 
                          value.var = "value")
@@ -1704,30 +1715,28 @@ countsTopHatSum$gene      <- NULL
 
 ```
 
-
+################################################################################
 ```{r}
 # Normalization after removing rDNA data.  Not sure if this is the best approach
+
+rowsRemove1 <- row.names(countsTopHatSum)[1:37] #genes we don't want are these
+rowsRemove2 <- c("__no_feature", 
+                 "__ambiguous", 
+                 "__too_low_aQual", 
+                 "__not_aligned", 
+                 "__alignment_not_unique")
+
+
 countsTopHatGenes <- countsTopHatSum[-which(rownames(countsTopHatSum) 
                                             %in%
-                                              c("__no_feature", 
-                                                "__ambiguous", 
-                                                "__too_low_aQual", 
-                                                "__not_aligned",
-                                                "__alignment_not_unique", 
-                                                "PYU1_R000002", 
-                                                "PYU1_R000003", 
-                                                "PYU1_R000004", 
-                                                "PYU1_R000005", 
-                                                "PYU1_R000006",
-                                                "MPYU1_mitoSSU",
-                                                "MPYU1_orf169")), ]
+                                            c(rowsRemove1, rowsRemove2)), ]
 
 
-# mean(colSums(countsTopHat[!noint,])/colSums(countsTopHat))
-mean(colSums(countsTopHatGenes)/colSums(countsTopHat))
+# If you want to see the proportion of reads that are not ribosomal compared  
+# to ribosomal and all else (for fun):
+countsTopHatDf$gene      <- NULL
+mean(colSums(countsTopHatGenes)/colSums(countsTopHatDf))
 
-## MEAN % of reads map to features
-#cpms <- cpm(countsTopHat)  ## counts per million
 cpms <- cpm(countsTopHatGenes)  ## counts per million
 
 library(Biostrings)
@@ -1740,19 +1749,23 @@ namesTranscripts <- sub(" .*$", "", names(temp))
 
 # created a vector with names
 geneLength <- setNames(width(temp), namesTranscripts)
-temp2      <- merge(countsTopHatGenes, geneLength, by.x = 0, by.y = 0)
+
+temp2      <- merge(countsTopHatGenes, 
+                    geneLength, 
+                    by.x = 0, 
+                    by.y = 0)
+
 rownames(temp2) <- temp2$Row.names
 temp2$Row.names <- NULL
 
-rpkmCount <- rpkm(temp2[,1:16], 
+rpkmCount <- rpkm(temp2[,1:16], #all columns except y
                   gene.length = temp2$y, 
                   normalized.lib.sizes = TRUE) 
 
-#, log=FALSE, prior.count=0.25, ...)
 
 ```
 
-*** Over here!!
+
 
 ```{r}
 
@@ -1761,98 +1774,105 @@ secretedCAZyAll <- readAAStringSet(paste(referencesPath,
                                          sep = ""),
                                    format = "fasta")
 secretedNames     <- names(secretedCAZyAll)
-length(unique(secretedNames))
 secretedPyuuNames <- subset(secretedNames, grepl("^Pyuu_", secretedNames))
-secPyuuNamesTemp  <- secretedPyuuNames
-secPyuuNamesTemp  <- gsub("Pyuu_")
 
-# In perl regex, can match by : /(Pyuu)_(([A-Z])+(\d)+)_/
-  
-  my_names2 <- gsub("maker-", "",my_names2, ignore.case = FALSE)
+cazyDataSub <- data.frame(matrix(unlist(strsplit(as.character(secretedPyuuNames), "_")), 
+                                nrow  = length(secretedPyuuNames), 
+                                byrow = TRUE), 
+                         stringsAsFactors = FALSE)
+
+cazyDataSub$SequenceID   <- paste(cazyDataSub$X3, cazyDataSub$X4, sep = "_")
+colnames(cazyDataSub)[2] <- "CazyFam"
+
 ```
 
-########################################################################################
+
 cpms for Cazy data
-
-
-
-*** Over here!!
-
-I want to use the sequences that passed my secretome pipeline instead of the entries in
-the cazy excel we are referring to here. The fasta filename is "CAZy_secreted.fasta"
-It has all the oomycete sequences in our cazy table that passed.
-Issue:
-I needed to modify the names for MrBayes, and easy differentiation in trees and Geneious
-So the names have any '.' and '-' removed
-The name structures are:
-Species Abbrv_Cazy Family_Gene name_secreted
-i.e., Pyuu_PL03_PYU1_T007525_secreted
-
-Can I find the sequences in CAZy_secreted.fasta that match "pythium_ultimum_transcripts.fasta",
-pull out the names from the "pythium_ultimum_transcripts.fasta" so that it matches with our script,
-and retain the cazy family information?
-
 ```{r}
 library(openxlsx)
 
-cazyData <- read.xlsx(paste(referencesPath, 
-                            "CAZYexpression-Secretome_details_emily.xlsx", sep = ""), 
-                      sheet = "Sheet2", startRow = 2, rows = c(1:412), colNames = TRUE)
+# cazyData <- read.xlsx(paste(referencesPath, 
+#                             "CAZYexpression-Secretome_details_emily.xlsx", sep = ""), 
+#                       sheet = "Sheet2", startRow = 2, rows = c(1:412), colNames = TRUE)
+# 
+# sapply(cazyData, class)
+# 
+# # just the secreted CZAy genes
+# cazyDataSub <- subset(cazyData, cazyData[,33] == "Y")
 
-sapply(cazyData, class)
+countsForBarPlots <- melt(cpms, id.vars = colnames(cpms))
 
-# just the secreted CZAy genes
-cazyData_sub <- subset(cazyData, cazyData[,33] == "Y")
+colnames(countsForBarPlots)[1] <- "SequenceID"
+colnames(countsForBarPlots)[2] <- "ExpUnit"
+colnames(countsForBarPlots)[3] <- "Read_Counts"
 
-counts_for_bar_plots <- melt(cpms, id.vars=colnames(cpms))
+cazyCounts <- merge(countsForBarPlots,
+                    unique(metadataAdapRM[,c("LibraryName", 
+                                             "TimePoint", 
+                                             "RNASeq_Replicate", 
+                                             "ExpUnit")]),  
+                    by    = "ExpUnit", 
+                    all.x = TRUE)
 
-colnames(counts_for_bar_plots)[1] <- "SequenceID"
-colnames(counts_for_bar_plots)[2] <- "ExpUnit"
-colnames(counts_for_bar_plots)[3] <- "Read_Counts"
-#counts_for_bar_plots$ExpUnit <- as.character(counts_for_bar_plots$ExpUnit)
+cazyCounts$TimePoint <- factor(cazyCounts$TimePoint, 
+                               levels = c("0", "12" , "24", "48", "72", "120", "240"))        
 
+length(unique(cazyCounts$TimePoint))
 
-Cazy_counts <- merge(counts_for_bar_plots,unique(metadataProcessed[,c(2,3,4,8)]),  by = "ExpUnit", all.x = TRUE)
-
-Cazy_counts$TimePoint <- factor(Cazy_counts$TimePoint, levels = c("0", "3" , "7", "24"))        
-
-length(unique(Cazy_counts$TimePoint))
-
-Cazy_counts_sub <- Cazy_counts[which(Cazy_counts$SequenceID %in% unique(cazyData_sub[,c(3)])), ]
+cazyCountsSub <- cazyCounts[which(cazyCounts$SequenceID 
+                                  %in% unique(cazyDataSub[,c("SequenceID")])), ]
 
 
 ```
+
 
 rpkmCount for Cazy
 ```{r}
 
-rpkm_for_bar_plots <- melt(rpkmCount, id.vars=colnames(cpms))
+rpkmForBarPlots <- melt(rpkmCount, id.vars = colnames(cpms))
 
-colnames(rpkm_for_bar_plots)[1] <- "SequenceID"
-colnames(rpkm_for_bar_plots)[2] <- "ExpUnit"
-colnames(rpkm_for_bar_plots)[3] <- "Read_Counts"
-#counts_for_bar_plots$ExpUnit <- as.character(counts_for_bar_plots$ExpUnit)
+colnames(rpkmForBarPlots)[1] <- "SequenceID"
+colnames(rpkmForBarPlots)[2] <- "ExpUnit"
+colnames(rpkmForBarPlots)[3] <- "Read_Counts"
+rpkmForBarPlots$ExpUnit
+#countsForBarPlots$ExpUnit <- as.character(countsForBarPlots$ExpUnit)
 
+cazyRpkm <- merge(rpkmForBarPlots, 
+                  unique(metadataAdapRM[,c("LibraryName",
+                                           "TimePoint",
+                                           "RNASeq_Replicate",
+                                           "ExpUnit")]),
+                  by    = "ExpUnit", 
+                  all.x = TRUE)
 
-Cazy_rpkm <- merge(rpkm_for_bar_plots,unique(metadataProcessed[,c(2,3,4,8)]),  by = "ExpUnit", all.x = TRUE)
+cazyRpkm$TimePoint <- factor(cazyRpkm$TimePoint, 
+                             levels = c("0", "12" , "24", "48", "72", "120", "240"))        
 
-Cazy_rpkm$TimePoint <- factor(Cazy_rpkm$TimePoint, levels = c("0", "3" , "7", "24"))        
+length(unique(cazyRpkm$TimePoint))
 
-length(unique(Cazy_rpkm$TimePoint))
-
-Cazy_rpkm_sub <- Cazy_rpkm[which(Cazy_rpkm$SequenceID %in% unique(cazyData_sub[,c(3)])), ]
+cazyRpkmSub <- cazyRpkm[which(cazyRpkm$SequenceID 
+                              %in% unique(cazyDataSub[,c("SequenceID")])), ]
 
 
 ```
-
-To make a data subset without time point 0 and to make another subset that merges the Cazy classification (duplicating rows when one proteins belongs to more than one family.)
+########################################################################################
+To make a data subset without time point 0 and to make another subset that merges the 
+Cazy classification (duplicating rows when one proteins belongs to more than one family.)
 ```{r}
 
-Cazy_rpkm_sub2 <- subset(Cazy_rpkm_sub, Cazy_rpkm_sub$TimePoint != 0)
+#cazyRpkmSub2 <- subset(cazyRpkmSub, cazyRpkmSub$TimePoint != 0)
 
-Cazy_rpkm_sub3 <- merge(Cazy_rpkm_sub2, cazyData_sub[,c(1,3)],  by = "SequenceID", all.x = TRUE)
+cazyRpkmSub2 <- merge(cazyRpkmSub, 
+                      cazyDataSub[,c("CazyFam", "SequenceID")],  
+                      by    = "SequenceID", 
+                      all.x = TRUE)
 
-write.table(Cazy_rpkm_sub3,file=file.path(sharedPath,"counts_readDGE_TopHat_secreted_CAZy.csv"),sep=",",row.names = TRUE, col.names = NA, quote = FALSE) 
+write.table(cazyRpkmSub2,
+            file = file.path(sharedPathAn, "countsReadDGE_TopHat_SecretedCAZy.csv"),
+            sep       = ",",
+            row.names = TRUE, 
+            col.names = NA, 
+            quote     = FALSE) 
 
 
 ```
@@ -1862,8 +1882,15 @@ Bar plots
 ```{r}
 library("ggplot2")
 
-pdf(file = "Bar_plot_Cazy_rpkm_sub_by_CAZy.pdf", width = 11, height =30)
-bp <- ggplot(aes(y = Read_Counts, x = TimePoint, color=Condition), data = Cazy_rpkm_sub3) +
+pdf(file   = "Bar_plot_cazyRpkmSub_by_CAZy.pdf", 
+    width  = 11, 
+    height = 30)
+
+bp <- ggplot(aes(y = Read_Counts, 
+                 x = TimePoint, 
+                 #color = Condition),  #No column for condition in Oospore Conversion Time-Course
+                 ),
+             data = cazyRpkmSub2) +
   theme_bw() +
   theme(axis.text.y = element_text(size = 6, hjust = 1, vjust = 0.4)) +
   theme(axis.text.x = element_text(colour = 'black', size = 6, angle = 45, hjust = 1, vjust = 1)) +
@@ -1875,10 +1902,11 @@ bp <- ggplot(aes(y = Read_Counts, x = TimePoint, color=Condition), data = Cazy_r
   theme(axis.title.y = element_text(colour = 'black', size = 12, angle = 90, hjust = 0.5, vjust = 0.2, face = 'bold')) +
   theme(axis.title.x = element_text(colour = 'black', size = 12, angle = 0, hjust = 0.5, vjust =  -0.2, face = 'bold')) +
   geom_boxplot(position=position_dodge(0.8), width = 0.8, outlier.size = 1, outlier.colour="black", outlier.shape = 20) +
-  stat_summary(fun.y=mean, geom="point", shape=5, size=1, fatten=0.1, position=position_dodge(0.8))  +
+  #stat_summary(fun.y=mean, geom="point", shape=5, size=1, fatten=0.1, position=position_dodge(0.8))  + #due to Error: Unknown parameters: fatten
+  stat_summary(fun.y=mean, geom="point", shape=5, size=1, position=position_dodge(0.8))  +
   #geom_abline(intercept = 0.15, slope = 0, linetype = "dotted", colour = "red") +
   facet_wrap(~SequenceID, scales = "free", ncol= 9) +
-  #facet_grid(Subject ~ ., scales = "free") +
+  #facet_grid(CazyFam ~ ., scales = "free") +
   theme(strip.text.x = element_text(size = 6, face = 'bold.italic', colour = "black", angle = 0))
 print(bp)
 dev.off()
@@ -1889,20 +1917,25 @@ dev.off()
 
 Individual multiple Bar plots
 ```{r}
+dir.create(paste(sharedPathAn, "ggplots", sep = ""), 
+           showWarnings = TRUE, 
+           recursive    = FALSE)
+
 library("ggplot2")
 
-Cazy_rpkm_sub3$Secreted_CAZy <- paste(Cazy_rpkm_sub3$Subject, Cazy_rpkm_sub3$SequenceID, sep="-")
+cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, cazyRpkmSub2$SequenceID, sep="-")
 
-for_plot <- unique(Cazy_rpkm_sub3$Secreted_CAZy) 
+forPlot <- unique(cazyRpkmSub2$Secreted_CAZy) 
 
 i <- 1
 
-for(i in 1:length(for_plot)){
+for(i in 1:length(forPlot)){
   
-  temp <- subset(Cazy_rpkm_sub3, Cazy_rpkm_sub3$Secreted_CAZy == for_plot[i])
+  temp <- subset(cazyRpkmSub2, cazyRpkmSub2$Secreted_CAZy == forPlot[i])
   
-  png(file = paste(sharedPath,"ggplots/",for_plot[i],"-secreted.png", sep=""), width = 3, height = 3, units = "in", res = 300, bg = "white")
-  bp <- ggplot(aes(y = Read_Counts, x = TimePoint, color=Condition), data = temp) +
+  png(file = paste(sharedPathAn,"ggplots/",forPlot[i],"-secreted.png", sep=""), width = 3, height = 3, units = "in", res = 300, bg = "white")
+  #bp <- ggplot(aes(y = Read_Counts, x = TimePoint, color=Condition), data = temp) + #No column for condition in Oospore Conversion Time-Course
+  bp <- ggplot(aes(y = Read_Counts, x = TimePoint), data = temp) +
     theme_bw() +
     theme(axis.text.y = element_text(size = 6, hjust = 1, vjust = 0.5)) +
     theme(axis.text.x = element_text(colour = 'black', size = 6, angle = 0, hjust = 0.5, vjust = 1)) +
@@ -1915,10 +1948,11 @@ for(i in 1:length(for_plot)){
     theme(axis.title.y = element_text(colour = 'black', size = 7, angle = 90, hjust = 0.5, vjust = 0.5, face = 'bold')) +
     theme(axis.title.x = element_text(colour = 'black', size = 7, angle = 0, hjust =  0.5, vjust = 0.5 ,face = 'bold')) +
     geom_boxplot(position=position_dodge(0.8), width = 0.8, outlier.size = 1, outlier.colour="black", outlier.shape = 20) +
-    stat_summary(fun.y=mean, geom="point", shape=5, size=1, fatten=0.1, position=position_dodge(0.8))  +
+    #stat_summary(fun.y=mean, geom="point", shape=5, size=1, fatten=0.1, position=position_dodge(0.8))  + #due to Error: Unknown parameters: fatten
+    stat_summary(fun.y=mean, geom="point", shape=5, size=1, position=position_dodge(0.8))  +
     #geom_abline(intercept = 0.15, slope = 0, linetype = "dotted", colour = "red") +
     facet_wrap(~Secreted_CAZy, scales = "free", ncol= 1) +
-    #facet_grid(Subject ~ ., scales = "free") +
+    #facet_grid(CazyFam ~ ., scales = "free") +
     theme(strip.text.x = element_text(size = 6, face = 'bold', colour = "black", angle = 0))
   print(bp)
   dev.off()
@@ -1927,15 +1961,15 @@ for(i in 1:length(for_plot)){
 ```
 
 
-
+**** Over here! 
 
 Subset of table for Edge R
 ```{r}
 # Just the secreted Cazy genes
-rpkmCount_cazy <- rpkmCount[which(rownames(rpkmCount) %in% unique(cazyData_sub[,c(3)])), ]
+rpkmCountCazy <- rpkmCount[which(rownames(rpkmCount) %in% unique(cazyDataSub[,c(3)])), ]
 
 # keep only certain columnms because of principal components analysis of PlotMDS
-rpkmCount_cazy_sub <- rpkmCount_cazy[ , -which(colnames(rpkmCount_cazy) %in% c("T0-1",  "T0-2",  "T0-4"))]
+rpkmCountCazySub <- rpkmCountCazy[ , -which(colnames(rpkmCountCazy) %in% c("T0-1",  "T0-2",  "T0-4"))]
 
 # Had to turn cholesterol/control as numeric by making them factors and then numbers 
 #dat_agg2 <- dat_agg[order(dat_agg$Group.2, -as.numeric(as.factor(dat_agg$Group.1)), dat_agg$Group.3,  decreasing=c(F,F,F)),] 
@@ -1949,7 +1983,7 @@ Create Sample sheet
 ```{r}
 
 
-samples <- data.frame(colnames(rpkmCount_cazy_sub))
+samples <- data.frame(colnames(rpkmCountCazySub))
 colnames(samples)[1] <- "shortname"
 
 samples$Condition <- samples$shortname
@@ -1970,7 +2004,7 @@ samples$Treatment <- paste(samples$Condition, samples$TimePoint, sep="-")
                       
 ```{r}
                       
-colnames(rpkmCount_cazy_sub)
+colnames(rpkmCountCazySub)
 samples
 
 #### HTSEQ_COUNT RESULTS 
@@ -1986,14 +2020,14 @@ samples
 #dim(countsTopHatGenes) ## count counts of features you have left over after initial filter 
 #colnames(countsTopHatGenes) = metadataProcessed$LibraryName 
 #Create a DGEList object (edgeR's container for RNA-seq count data): 
-dTopH = DGEList(counts=rpkmCount_cazy_sub, group=samples$Treatments) 
+dTopH = DGEList(counts=rpkmCountCazySub, group=samples$Treatments) 
 #Estimate normalization factors using, RNA composition and adjust for read depth: 
 dTopH = calcNormFactors(dTopH)
 #Inspect the relationships between samples using a multidimensional scaling (MDS) plot, as shown in Figure 4:
 results <- "3-March-2016-TopHat-edgeR"
-dir.create(paste(sharedPath, results, sep=""), showWarnings = TRUE, recursive = FALSE)
-pdf(file.path(paste(sharedPath,results,sep=""),"MDS-edgeR_TopHat-T3.pdf")) 
-plotMDS(dTopH, labels=colnames(rpkmCount_cazy_sub), 
+dir.create(paste(sharedPathAn, results, sep=""), showWarnings = TRUE, recursive = FALSE)
+pdf(file.path(paste(sharedPathAn,results,sep=""),"MDS-edgeR_TopHat-T3.pdf")) 
+plotMDS(dTopH, labels=colnames(rpkmCountCazySub), 
         col = rainbow(length(levels(factor(samples$Treatments))))[factor(samples$Treatments)],cex=0.6, main="MDS") 
 dev.off() 
 
@@ -2012,7 +2046,7 @@ d2TopH = estimateGLMTagwiseDisp(d2TopH, designTopH)
 
 
 #plot the mean-variance relationship: 
-pdf(file.path(paste(sharedPath,results,sep=""),"mean.variance-edgeR_TopHat.pdf")) 
+pdf(file.path(paste(sharedPathAn,results,sep=""),"mean.variance-edgeR_TopHat.pdf")) 
 
 # Plot the relationship between mean expression and variance of expression 
 plotMeanVar(d2TopH, show.tagwise.vars=TRUE, NBline=TRUE,main="MeanVar") 
@@ -2042,21 +2076,21 @@ head(ncTopH[rnTopH,order(dat_agg2$Group.1[10:15])],5)
 
 #Plot the M (log-fold change) versus A (log-average expression) 
 degTopH = rnTopH[ttTopH$table$FDR < .05] 
-pdf(file.path(paste(sharedPath,results,sep=""),"smear-edgeR_TopHat-T3.pdf")) 
+pdf(file.path(paste(sharedPathAn,results,sep=""),"smear-edgeR_TopHat-T3.pdf")) 
 plotSmear(dTopH, de.tags=degTopH,main="Smear") 
 dev.off() 
  
 #Save the result table as a CSV file: 
-write.table(ttTopH$table,file=file.path(paste(sharedPath,results,sep=""),"toptags_edgeR_TopHat.annotated-T3.csv"), append = FALSE, sep =",", col.names=NA)
+write.table(ttTopH$table,file=file.path(paste(sharedPathAn,results,sep=""),"toptags_edgeR_TopHat.annotated-T3.csv"), append = FALSE, sep =",", col.names=NA)
                       
 ```
                       
                       
                       Read Cazy data and merge some data
 ```{r}
-cazyData <- read.xlsx(paste(sharedPath, "References/Final\ Table\ CAZyme\ 050813.xlsx", sep=""), sheetName="Pyuu", startRow=2, header=TRUE,  stringsAsFactors = FALSE)
+cazyData <- read.xlsx(paste(sharedPathAn, "References/Final\ Table\ CAZyme\ 050813.xlsx", sep=""), sheetName="Pyuu", startRow=2, header=TRUE,  stringsAsFactors = FALSE)
 
-Cazy_counts <- subset(as.data.frame(cpms), rownames(cpms) %in% cazyData$SequenceID)
+cazyCounts <- subset(as.data.frame(cpms), rownames(cpms) %in% cazyData$SequenceID)
 
 
 length(unique(cazyData$SequenceID))
@@ -2066,11 +2100,11 @@ length(unique(cazyData$SequenceID))
                       
                       Prepare data for bar plot
 ```{r}
-Cazy_counts$gene <- rownames(Cazy_counts)
-cazyData_melt <- melt(Cazy_counts)
+cazyCounts$gene <- rownames(cazyCounts)
+cazyDataMelt <- melt(cazyCounts)
 
 
-Cazy_counts <- merge(cpms, cazyData[,c(1,3,5,6,7,8,9,20)],  by.x = 0, by.y = "SequenceID", all = FALSE, all.y = TRUE)
+cazyCounts <- merge(cpms, cazyData[,c(1,3,5,6,7,8,9,20)],  by.x = 0, by.y = "SequenceID", all = FALSE, all.y = TRUE)
 
 
 #countsTopHatMelt <- countsTopHatMelt[countsTopHatMelt$value>0,]
@@ -2081,7 +2115,7 @@ countsTopHatSum <- dcast(data = df[,2:4], gene ~ ExpUnit, sum, value.var="value"
 
 
 
-Cazy_counts_t <- t(Cazy_counts)
+cazyCountsT <- t(cazyCounts)
 
 
 ```
