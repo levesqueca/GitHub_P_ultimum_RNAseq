@@ -120,8 +120,8 @@ revAdap      <- revAdapMiSeq
 ```
 
 User:
-Will user produce their own metadata table or use the script here tailored for HiSeq
-csv file given by Genome Quebec? 
+Will user produce their own metadata table or use the script here tailored for 
+HiSeq csv file given by Genome Quebec? 
 TRUE:  Have this script generate the metadata file
 FALSE: Import your own metadata file
 ```{r eval=TRUE, echo=FALSE}
@@ -140,6 +140,13 @@ mergePESeqPrep <- TRUE
 
 ```
 
+User to specify the time-points, if any, for the RNA-Seq experiment:
+```{r}
+
+timePoints <- c("0", "12" , "24", "48", "72", "120", "240")
+
+```
+
 The following paths are to directories where the references, tools and general 
 requirements are located, this depends on the directories actually having been 
 put there:
@@ -151,10 +158,16 @@ binPath          <- paste(sharedPath, "bin/bash/",   sep="")
 tophat2Path      <- "/opt/bio/tophat/bin/tophat2"
 bowtie2BuildPath <- "/opt/bio/bowtie2/bowtie2-build"
 starPath         <- "/opt/bio/STAR/STAR"
-pyuuRefPath      <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.fa",   
-                        sep = "")
-pyuugff3Path     <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.gff3", 
-                        sep = "")
+samtools1Path    <- "/opt/bio/samtools1/bin/samtools1"
+pyuuRefPath      <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.fa", 
+                          sep = "")
+pyuugff3Path     <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.gff3",
+                          sep = "")
+pyuuTranscripts  <- paste(referencesPath, "pythium_ultimum_transcripts.fasta", 
+                          sep = "")
+htseqCountPath   <- paste(toolsDirPath, "test-emilyJune16-env/bin/htseq-count", 
+                          sep = "")
+
 ```
 
 The user does not alter the variables below. The following chunk will integrate 
@@ -285,7 +298,7 @@ Specify the path to the raw data for the sequencing reads:
 #                               sep = "")
 # 
 # colnames(otri)[colnames(otri) == "Name"] <- "LibraryName"
-# 
+#
 # # Parsing the metadata by specific columns based on the library names:
 # parsedCol <- data.frame(matrix(unlist(strsplit(as.character(otri$LibraryName), 
 #                                                "_|-")), 
@@ -412,7 +425,7 @@ prinSeqGraphPath <- paste(toolsDirPath,
 # b = Column name in x with the names of the input fastq files
 # c = Prefix - name of directory where graph .gd files are to go
 # d = tag to add to the graph file name, gets added as LibraryName.tag.gd
-# e = Column name in x with the names of the second read pairs of the input fastq 
+# e = Col name in x with the names of the second read pairs of the input fastq 
 #     files if paired end reads are not merged
 
 # Examples:
@@ -428,26 +441,26 @@ prinSeqGraphPath <- paste(toolsDirPath,
 
 MakePrinSeqGraphFiles <- function(a, b, c, d, e){
   if(missing(e)){
-    cmd = with(a,
-               paste(prinSeqPath,
-                     " -fastq ", paste(pathFastq, b, sep = ""),
-                     " -out_good null ",
-                     " -out_bad null ",
-                     " -verbose ",
-                     " -graph_data ", paste(sharedPathAn, c, "/", 
-                                            LibraryName, ".", d, ".gd", sep = ""),
-                     sep = ""))
+    cmd <- with(a,
+                paste(prinSeqPath,
+                      " -fastq ", paste(pathFastq, b, sep = ""),
+                      " -out_good null ",
+                      " -out_bad null ",
+                      " -verbose ",
+                      " -graph_data ", paste(sharedPathAn, c, "/", LibraryName, 
+                                             ".", d, ".gd", sep = ""),
+                      sep = ""))
     } else {
-      cmd = with(a,
-               paste(prinSeqPath,
-                     " -fastq ", paste(pathFastq, b, sep = ""),
-                     " -fastq2 ", paste(pathFastq, e, sep = ""),
-                     " -out_good null ",
-                     " -out_bad null ",
-                     " -verbose ",
-                     " -graph_data ", paste(sharedPathAn, c, "/", 
-                                            LibraryName, ".", d, ".gd", sep = ""),
-                     sep = ""))
+      cmd <- with(a,
+                paste(prinSeqPath,
+                      " -fastq ", paste(pathFastq, b, sep = ""),
+                      " -fastq2 ", paste(pathFastq, e, sep = ""),
+                      " -out_good null ",
+                      " -out_bad null ",
+                      " -verbose ",
+                      " -graph_data ", paste(sharedPathAn, c, "/", LibraryName, 
+                                             ".", d, ".gd", sep = ""),
+                      sep = ""))
     }
   return(cmd)
 }
@@ -462,12 +475,12 @@ of the .gd files have been recorded in a metadata table:
 # c = name of column in a with the .gd filename
 
 MakePrinSeqHTML <- function(a, b, c) {
-  cmd = with(a,
-             paste(prinSeqGraphPath,
-                   " -verbose ", 
-                   " -i ", sharedPathAn, b, "/", c,
-                   " -html_all ",
-                   sep = ""))
+  cmd <- with(a,
+              paste(prinSeqGraphPath,
+                    " -verbose ", 
+                    " -i ", sharedPathAn, b, "/", c,
+                    " -html_all ",
+                    sep = ""))
   return(cmd)
 }
 # i.e.,
@@ -477,7 +490,7 @@ MakePrinSeqHTML <- function(a, b, c) {
 ```
 
 Function to gunzip or gzip fastq files of specified name in specified 
-directory:
+directory: (Not working yet)
 ```{r}
 # a = metadata table to refer to for the names of fastq files
 # b = path to fastq files
@@ -486,20 +499,15 @@ directory:
 
 GzipGunzipFastq <- function(a, b, c, d){
   if (d = "gunzip" = TRUE){
-    cmd = with(a, paste("gunzip ", paste(b, c, sep = "")), sep = "")
+    cmd <- with(a, paste("gunzip ", paste(b, c, sep = "")), sep = "")
   } else if (d = "gzip" = TRUE) {
-    cmd = with(a, paste("gzip ", paste(b, c, sep = "")), sep = "")
+    cmd <- with(a, paste("gzip ", paste(b, c, sep = "")), sep = "")
   } else {
     warn "Can't complete command: $!\n";
   }
 }
-  
-
-
 
 ```
-
-
 
 
 Copy and gunzip files:
@@ -519,7 +527,6 @@ MakeQsubs(cmd, prefix, suffix)
 #####  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****######
 #####          watch output from this command in the console              ######
 ################################################################################
-
 ```
 Clean-up step:
 Remove the output files while keeping the qsub and bash file:
@@ -732,14 +739,14 @@ longer need to keep in our data directory.
 deleteFastq <- list.files(path = pathFastq, pattern = "^Lib-.*fastq$")
 
 for(k in 1:length(deleteFastq)) {
-  cmd = paste("rm ", pathFastq, deleteFastq[k], sep = "")
+  cmd <- paste("rm ", pathFastq, deleteFastq[k], sep = "")
   system(cmd)
 }
 
 #Because we are working with merged reads, don't needs R1 and R2 sets:
 deleteFastq <- list.files(path = pathFastq, pattern = ".*fastq.gz$")
 for(k in 1:length(deleteFastq)) {
-  cmd = paste("rm ", pathFastq, deleteFastq[k], sep = "")
+  cmd <- paste("rm ", pathFastq, deleteFastq[k], sep = "")
   system(cmd)
 }
 ```
@@ -776,8 +783,7 @@ reads that are merged:
 #Make a Metadata table called MetadataAdapRem with raw reads rows collapsed.
 for(k in 1:nrow(metadata)){
   metadata$AdapRemMerged <- paste(metadata$LibraryName,
-                                  ".adapRemMerged",
-                                  ".fastq", 
+                                  ".adapRemMerged", ".fastq", 
                                   sep = "")
 }
 
@@ -862,9 +868,8 @@ Looking at our data after adapter removal and merging with SeqPrep:
 PrinSeq Step 1: .gd file generation:
 ```{r}
 prefix <- "E_PrinSeqMergedGraph"
-
-cmd <- MakePrinSeqGraphFiles(metadataAdapRM, metadataAdapRM$MergedReads, prefix, 
-                             "adapRemMerged")
+cmd    <- MakePrinSeqGraphFiles(metadataAdapRM, metadataAdapRM$MergedReads, 
+                                prefix, "adapRemMerged")
 suffix <- ".sub"  
 MakeQsubs(cmd, prefix, suffix)
 ################################################################################
@@ -892,9 +897,9 @@ PrinSeq graph reports of adapter-removed merged reads.
 Step 2: html file generation:
 ```{r}
 prefix2 <- "E2_PrinSeqMergedRawGraphs"
-cmd <- MakePrinSeqHTML(metadataAdapRM, prefix, metadataAdapRM$AdapRMGraph)
+cmd     <- MakePrinSeqHTML(metadataAdapRM, prefix, metadataAdapRM$AdapRMGraph)
 
-suffix <- ".sub"  
+suffix  <- ".sub"  
 MakeQsubs(cmd, prefix2, suffix)
 ################################################################################
 #####  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****######
@@ -956,22 +961,22 @@ be merged.
 ```{r}
 prefix <- "F_PrinSeqGraphQualTrim"
 
-cmd = with(metadataAdapRM, 
-           paste(prinSeqPath,
-                 " -fastq ",             pathFastq,  MergedReads,
-                 " -trim_qual_window ",  trimQualWindow,
-                 " -trim_qual_type ",    trimQualType, 
-                 " -trim_qual_right ",   trimQualRight,
-                 " -trim_qual_rule ",    trimQualRule,
-                 " -out_good ",          paste(pathFastq, LibraryName,
-                                               ".2processedMerged",
-                                              sep = ""),
-                 " -out_bad  ",          outBad,
-                 " -verbose ",
-                 " -no_qual_header ",
-                 " -log ",               sharedPathAn, prefix, "/", 
-                                         LibraryName, ".2processedMerged.log",
-                 sep = ""))
+cmd <- with(metadataAdapRM,
+            paste(prinSeqPath,
+                  " -fastq ",             pathFastq,  MergedReads,
+                  " -trim_qual_window ",  trimQualWindow,
+                  " -trim_qual_type ",    trimQualType, 
+                  " -trim_qual_right ",   trimQualRight,
+                  " -trim_qual_rule ",    trimQualRule,
+                  " -out_good ",          paste(pathFastq, LibraryName,
+                                                ".2processedMerged",
+                                                sep = ""),
+                  " -out_bad  ",          outBad,
+                  " -verbose ",
+                  " -no_qual_header ",
+                  " -log ",               sharedPathAn, prefix, "/", 
+                                          LibraryName, ".2processedMerged.log",
+                  sep = ""))
 
 suffix <- ".sub"  
 MakeQsubs(cmd, prefix, suffix)
@@ -995,9 +1000,8 @@ To remove the output files after you are done:
 RemoveQsubTempFiles(sharedPathAn, prefix)
 ```
 
-Gzip the fastq reads that were INPUT to the PrinSeq processing in step 1-1, 
-we won't need them and the next step in 1-2 will be using the OUTPUT processed 
-reads. 
+Gzip the fastq reads that were INPUT to PrinSeq processing in step 1-1, we 
+won't need them, the next step in 1-2 uses the OUTPUT processed reads. 
 ```{r}
 
 cmd <- with(metadataAdapRM, paste("gzip ",
@@ -1008,7 +1012,6 @@ sapply(cmd, function(x) system(x))
 
 ```
 
-
 1-2.
 Generate PrinSeq graph files (.gd) for the fastq generated previously:
 ```{r}
@@ -1017,7 +1020,7 @@ prefix2 <- "F2_PrinSeqGraph"
 cmd <- MakePrinSeqGraphFiles(metadataAdapRM, metadataAdapRM$AdapRMQualFiltFastq,
                              prefix, "2processedMerged")
 
-# Now this is all all I have to enter to make qsub and bash files
+
 suffix <- ".sub"  
 MakeQsubs(cmd, prefix2, suffix)
 ################################################################################
@@ -1030,7 +1033,6 @@ To remove the output files after you are done:
 ```{r}
 RemoveQsubTempFiles(sharedPathAn, prefix2)
 ```
-
 
 Add name of quality-filtered merged reads .gd files to the metadataAdapRM 
 tabel:
@@ -1074,30 +1076,28 @@ as tag cleaner, and not have the benefit of quality filtering/trimming
 co-occuring. So keeping the full set of steps for this with PrinSeq 
 is important.
 
-
-
 Second stage of quality pre-processing with PrinSeq:
 Trim left and right, and Poly-A/T tail removal, round 1
 2-1.
 ```{r}
 prefix <- "G_PrinSeqTrimLRPolyAT"
 
-cmd = with(metadataAdapRM, 
-           paste(prinSeqPath,
-                 " -fastq ",           pathFastq,  AdapRMQualFiltFastq,
-                 " -trim_left ",       trimLeft,
-                 " -trim_right ",      trimRight,
-                 " -trim_tail_left ",  trimTailLeft,
-                 " -trim_tail_right ", trimTailRight,
-                 " -out_good ",        paste(pathFastq, LibraryName,
-                                               ".3processedMerged",
+cmd <- with(metadataAdapRM, 
+            paste(prinSeqPath,
+                  " -fastq ",           pathFastq,  AdapRMQualFiltFastq,
+                  " -trim_left ",       trimLeft,
+                  " -trim_right ",      trimRight,
+                  " -trim_tail_left ",  trimTailLeft,
+                  " -trim_tail_right ", trimTailRight,
+                  " -out_good ",        paste(pathFastq, LibraryName,
+                                              ".3processedMerged",
                                               sep = ""),
-                 " -out_bad  ",        outBad,
-                 " -verbose ",
-                 " -no_qual_header ",
-                 " -log ",             sharedPathAn, prefix, "/", 
-                                         LibraryName, ".3processedMerged.log",
-                 sep = ""))
+                  " -out_bad  ",        outBad,
+                  " -verbose ",
+                  " -no_qual_header ",
+                  " -log ",             sharedPathAn, prefix, "/", 
+                                          LibraryName, ".3processedMerged.log",
+                  sep = ""))
 
 suffix <- ".sub"  
 MakeQsubs(cmd, prefix, suffix)
@@ -1118,10 +1118,9 @@ reads.
 
 ```{r}
 
-cmd <- with(metadataAdapRM, paste("gzip ",
-                                  pathFastq, 
+cmd <- with(metadataAdapRM, paste("gzip ", pathFastq, 
                                   metadataAdapRM$AdapRMQualFiltFastq,
-                                  sep=""))
+                                  sep = ""))
 sapply(cmd, function(x) system(x))
 
 ```
@@ -1141,7 +1140,6 @@ Generate PrinSeq graph files (.gd) for the fastq generated previously:
 ```{r}
 prefix2 <- "G2_PrinSeqGraphTrimLRPolyAT"
 
-
 cmd <- MakePrinSeqGraphFiles(metadataAdapRM, metadataAdapRM$AdapRMTrimLRPolyAT,
                              prefix, "3processedMerged")
 
@@ -1152,8 +1150,6 @@ MakeQsubs(cmd, prefix2, suffix)
 #####          watch output from this command in the console              ######
 ################################################################################
 ```
-
-
 
 To remove the output files after you are done:
 ```{r}
@@ -1195,26 +1191,26 @@ RemoveQsubTempFiles(sharedPathAn, prefix3)
 Third stage of quality pre-processing with PrinSeq:
 Poly-A/T tail removal, round 2:
 Repeat poly tails trimming, this is because after trimming ends with 
-AAAAAAAATTTTTTT that has been trimmed for the poly-T will still have the 
+AAAAAATTTTT that has been trimmed for the poly-T will still have the 
 poly-A string.
 3-1.
 ```{r}
 prefix <- "H_PrinSeq2ndPolyAT"
 
-cmd = with(metadataAdapRM, 
-           paste(prinSeqPath,
-                 " -fastq ",           pathFastq,  AdapRMTrimLRPolyAT,
-                 " -trim_tail_left ",  trimTailLeft,
-                 " -trim_tail_right ", trimTailRight,
-                 " -out_good ",        paste(pathFastq, LibraryName,
-                                               ".4processedMerged",
-                                              sep = ""),
-                 " -out_bad  ",        outBad,
-                 " -verbose ",
-                 " -no_qual_header ",
-                 " -log ",             sharedPathAn, prefix, "/", 
-                                         LibraryName, ".4processedMerged.log",
-                 sep = ""))
+cmd <- with(metadataAdapRM, 
+            paste(prinSeqPath,
+                  " -fastq ",           pathFastq,  AdapRMTrimLRPolyAT,
+                  " -trim_tail_left ",  trimTailLeft,
+                  " -trim_tail_right ", trimTailRight,
+                  " -out_good ",        paste(pathFastq, LibraryName,
+                                                ".4processedMerged",
+                                               sep = ""),
+                  " -out_bad  ",        outBad,
+                  " -verbose ",
+                  " -no_qual_header ",
+                  " -log ",             sharedPathAn, prefix, "/", 
+                                          LibraryName, ".4processedMerged.log",
+                  sep = ""))
 
 
 suffix <- ".sub"  
@@ -1239,10 +1235,11 @@ reads.
 cmd <- with(metadataAdapRM, paste("gzip ",
                                   pathFastq, 
                                   metadataAdapRM$AdapRMTrimLRPolyAT,
-                                  sep=""))
+                                  sep = ""))
 sapply(cmd, function(x) system(x))
 
 ```
+
 Add name of 2nd polyAT trimmed merged reads .fastq files to the 
 metadataAdapRM tabel:
 ```{r}
@@ -1315,21 +1312,21 @@ Filtering of reads by complexity (DUST) and minimum length
 ```{r}
 prefix <- "I_PrinSeqDustMinLen"
 
-cmd = with(metadataAdapRM, 
-           paste(prinSeqPath,
-                 " -fastq ",          pathFastq,  AdapRM2ndPolyAT,
-                 " -min_len ",        minLen,
-                 " -lc_method ",      lcMethod,
-                 " -lc_threshold ",   lcThreshold,
-                 " -out_good ",       paste(pathFastq, LibraryName,
-                                               ".5processedMerged",
-                                              sep = ""),
-                 " -out_bad  ",       outBad,
-                 " -verbose ",
-                 " -no_qual_header ",
-                 " -log ",            sharedPathAn, prefix, "/", 
-                                         LibraryName, ".5processedMerged.log",
-                 sep = ""))
+cmd <- with(metadataAdapRM, 
+            paste(prinSeqPath,
+                  " -fastq ",          pathFastq,  AdapRM2ndPolyAT,
+                  " -min_len ",        minLen,
+                  " -lc_method ",      lcMethod,
+                  " -lc_threshold ",   lcThreshold,
+                  " -out_good ",       paste(pathFastq, LibraryName,
+                                                ".5processedMerged",
+                                               sep = ""),
+                  " -out_bad  ",       outBad,
+                  " -verbose ",
+                  " -no_qual_header ",
+                  " -log ",            sharedPathAn, prefix, "/", 
+                                          LibraryName, ".5processedMerged.log",
+                  sep = ""))
 
 suffix <- ".sub"  
 MakeQsubs(cmd, prefix, suffix)
@@ -1338,6 +1335,7 @@ MakeQsubs(cmd, prefix, suffix)
 #####          watch output from this command in the console              ######
 ################################################################################
 ```
+
 Add name of Dust and minLen filtered merged reads .fastq files to the 
 metadataAdapRM tabel:
 ```{r}
@@ -1354,9 +1352,8 @@ RemoveQsubTempFiles(sharedPathAn, prefix)
 ```
 
 
-Gzip the fastq reads that were INPUT to the PrinSeq processing in step 4-1, 
-we won't need them and the next step in 4-2 will be using the OUTPUT processed 
-reads. 
+Gzip the fastq reads that were INPUT to PrinSeq processing in step 4-1, we 
+won't need them, the next step in 4-2 uses the OUTPUT processed reads. 
 ```{r}
 
 cmd <- with(metadataAdapRM, paste("gzip ",
@@ -1393,12 +1390,10 @@ for(k in 1:nrow(metadataAdapRM)){
 }
 ```
 
-
 To remove the output files after you are done:
 ```{r}
 RemoveQsubTempFiles(sharedPathAn, prefix2)
 ```
-
 
 4-3.
 PrinSeq graph reports of fourth-stage html file generation:
@@ -1419,7 +1414,9 @@ MakeQsubs(cmd, prefix3, suffix)
 
 To remove the output files after you are done:
 ```{r}
+
 RemoveQsubTempFiles(sharedPathAn, prefix3)
+
 ```
 
 TopHat:
@@ -1429,7 +1426,7 @@ You can check how tbusy is the server with qhost or qstat -q all.q -u "*"
 ```{r}
 
 for(j in 1:length(metadataAdapRM$LibraryName)) {
-  dir.create(paste(sharedPathAn, metadataAdapRM$LibraryName[j], sep=""),
+  dir.create(paste(sharedPathAn, metadataAdapRM$LibraryName[j], sep = ""),
              showWarnings = TRUE, 
              recursive    = FALSE)
 }
@@ -1437,15 +1434,15 @@ for(j in 1:length(metadataAdapRM$LibraryName)) {
 prefix <- "J_TophatQsub"
 node   <- 2
 
-cmd = with(metadataAdapRM, 
-           paste(tophat2Path, 
-                 " -G ", pyuugff3Path,
-                 " -p ", node, 
-                 " -o ", sharedPathAn, LibraryName, "/",LibraryName,".TopHat.",
-                         format(Sys.time(), "%Y-%m-%d"),
-                 " ",    referencesPath, bowind,
-                 " ",    pathFastq, AdapRMDustMinLen,
-                 sep = ""))
+cmd <- with(metadataAdapRM, 
+            paste(tophat2Path, 
+                  " -G ", pyuugff3Path,
+                  " -p ", node, 
+                  " -o ", sharedPathAn, LibraryName, "/",LibraryName,".TopHat.",
+                          format(Sys.time(), "%Y-%m-%d"),
+                  " ",    referencesPath, bowind,
+                  " ",    pathFastq, AdapRMDustMinLen,
+                  sep = ""))
 
 suffix <- ".sub" 
 MakeQsubs(cmd, prefix, suffix, node)
@@ -1519,46 +1516,43 @@ RemoveQsubTempFiles(sharedPathAn, prefix)
 
 To run Samtools on the Tophat folder that has the right date
 ```{r}
-samtools1Path <- "/opt/bio/samtools1/bin/samtools1"
-
 # could have automatic search for most recent
-topHatDate    <- ".2016-05-20"
+topHatDate <- ".2016-05-20"
 
-cmd = with(metadataAdapRM, 
-           (paste(samtools1Path, 
-                  " sort",   " -n ", 
-                  paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
-                        topHatDate, "/", "accepted_hits.bam ",
-                        sep = ""),
-                  paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
-                        topHatDate, "/", LibraryName, "_sn",
-                        sep = ""),
-                  "\n",
-                  samtools1Path,  
-                  " view ", " -o ",
-                  paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
-                        topHatDate, "/", LibraryName, "_sn.sam ",
-                        sep = ""),
-                  paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
-                        topHatDate, "/", LibraryName, "_sn.bam",
-                        sep = ""),
-                  "\n",
-                  samtools1Path,               
-                  " sort ",
-                  paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
-                        topHatDate, "/", "accepted_hits.bam ",
-                        sep = ""),
-                  paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
-                        topHatDate, "/", LibraryName, "_s",
-                        sep = ""),
-                  "\n",
-                  samtools1Path,        
-                  " index ",
-                  paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
-                        topHatDate, "/", LibraryName, "_s.bam",
-                        sep = ""),
-                  sep = ""))
-           )
+cmd <- with(metadataAdapRM,
+            (paste(samtools1Path, 
+                   " sort",   " -n ", 
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", "accepted_hits.bam ",
+                         sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn",
+                         sep = ""),
+                   "\n",
+                   samtools1Path,  
+                   " view ", " -o ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn.sam ",
+                         sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn.bam",
+                         sep = ""),
+                   "\n",
+                   samtools1Path,               
+                   " sort ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", "accepted_hits.bam ",
+                         sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_s",
+                         sep = ""),
+                   "\n",
+                   samtools1Path,        
+                   " index ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_s.bam",
+                         sep = ""),
+                   sep = "")))
 
 node   <- 1
 prefix <- "K_SamtoolsSortQsub" 
@@ -1577,10 +1571,9 @@ RemoveQsubTempFiles(sharedPathAn, prefix)
 
 ```
 
-
 HTSeq-count for TopHat2 hits:
   
-  First, prepare metadata
+First, prepare metadata
 ```{r}
 metadataAdapRM$countfTopHat = paste(metadataAdapRM$LibraryName, 
                                     "TopHat2Count", 
@@ -1588,30 +1581,23 @@ metadataAdapRM$countfTopHat = paste(metadataAdapRM$LibraryName,
 
 ```
 
-Andre, this works now. I managed to get numpy to install with pip when I created 
-a virtualenv that used python version 2.7:
-$ virtualenv -p /opt/python/bin/python2.7 test-emilyJune16-env
-I installed numpy and htseq with bug information in #5656
+
 ```{r}
-htseqCountPath <- paste(toolsDirPath, "test-emilyJune16-env/bin/htseq-count", 
-                        sep = "")
-
-system(htseqCountPath)
-
+# Set HT-Seq options:
 stranded <- "no"
 MINAQUAL <- 10
-cmd = with(metadataAdapRM, 
-           paste(htseqCountPath, 
-                 " -s ", stranded,
-                 " -a ", MINAQUAL,
-                 " --idattr=Parent ", 
-                 paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
-                       topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
-                 pyuugff3Path,
-                 " > ",
-                 paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
-                       topHatDate, "/", metadataAdapRM$countfTopHat, sep = ""),
-                 sep = ""))
+cmd <- with(metadataAdapRM, 
+            paste(htseqCountPath, 
+                  " -s ", stranded,
+                  " -a ", MINAQUAL,
+                  " --idattr=Parent ", 
+                  paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
+                        topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
+                  pyuugff3Path,
+                  " > ",
+                  paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
+                        topHatDate, "/", metadataAdapRM$countfTopHat, sep = ""),
+                  sep = ""))
 
 node   <- 1
 prefix <- "L_HTSeq_Qsub" 
@@ -1623,11 +1609,8 @@ MakeQsubs(cmd, prefix, suffix)
 ################################################################################
 ```
 
-
+Fix permissions for files:
 ```{r}
-
-#linux commands:
-
 cmd <- paste( "find ", sharedPathAn, " -type d -exec chmod 770 {} + ", sep = "")
 system(cmd)
 cmd <- paste( "find ", sharedPathAn, " -type f -exec chmod 770 {} + ", sep = "")
@@ -1635,26 +1618,20 @@ system(cmd)
   
 ```
 
-
-
 Get all data together and add the counts for libraries representing the same 
 treatments
 ```{r}
 library("edgeR")
 
-
-#Identify the count files and read them into R using readDGE
-
-
+# Identify the count files and read them into R using readDGE
 countsListTopHat <- paste(sharedPathAn, metadataAdapRM$LibraryName, "/", 
                          metadataAdapRM$LibraryName, 
                          ".TopHat", topHatDate, "/",
                          metadataAdapRM$countfTopHat, 
                          sep = "")
 
-countsListTopHat
-# turns the count of the list into a data.frame
-countsTopHat <-  readDGE(countsListTopHat)$counts
+# Turn the count of the list into a data.frame
+countsTopHat <- readDGE(countsListTopHat)$counts
 
 colnames(countsTopHat) <- basename(colnames(countsTopHat))
 
@@ -1668,23 +1645,16 @@ write.table(countsTopHat,
 
 ```
 
-
 Only for this set of data, extract control columns based on their names.
 ```{r}
-# If there are no columns to drop, do: c("","")
-controlToDrop <- c("T7-c3_BC30","T7-c3_BC31")
 
-
+controlToDrop    <- c("T7-c3_BC30", "T7-c3_BC31") # If none do: c("","")
 tempCountsTopHat <- data.frame(countsTopHat)
-
 colnames(tempCountsTopHat) <- colnames(countsTopHat)
-
-countsTopHatDf <- tempCountsTopHat[, !(colnames(tempCountsTopHat) 
-                                     %in% controlToDrop)]
+countsTopHatDf   <- tempCountsTopHat[, !(colnames(tempCountsTopHat)
+                                         %in% controlToDrop)]
 
 ```
-
-
 
 The trick was from here
 http://stackoverflow.com/questions/19321053/sum-together-columns-of-data-frame-based-on-name-type
@@ -1715,10 +1685,10 @@ countsTopHatSum$gene      <- NULL
 
 ```
 
-################################################################################
+
 ```{r}
 # Normalization after removing rDNA data.  Not sure if this is the best approach
-
+library(Biostrings)
 rowsRemove1 <- row.names(countsTopHatSum)[1:37] #genes we don't want are these
 rowsRemove2 <- c("__no_feature", 
                  "__ambiguous", 
@@ -1726,74 +1696,77 @@ rowsRemove2 <- c("__no_feature",
                  "__not_aligned", 
                  "__alignment_not_unique")
 
-
 countsTopHatGenes <- countsTopHatSum[-which(rownames(countsTopHatSum) 
                                             %in%
                                             c(rowsRemove1, rowsRemove2)), ]
 
-
 # If you want to see the proportion of reads that are not ribosomal compared  
 # to ribosomal and all else (for fun):
-countsTopHatDf$gene      <- NULL
+countsTopHatDf$gene <- NULL
 mean(colSums(countsTopHatGenes)/colSums(countsTopHatDf))
 
-cpms <- cpm(countsTopHatGenes)  ## counts per million
-
-library(Biostrings)
-
-temp <- readDNAStringSet(paste(referencesPath, 
-                               "pythium_ultimum_transcripts.fasta", 
-                               sep=""))
+cpms <- cpm(countsTopHatGenes)  # counts per million
+temp <- readDNAStringSet(pyuuTranscripts)
 
 namesTranscripts <- sub(" .*$", "", names(temp))
 
-# created a vector with names
+# Create a vector with names:
 geneLength <- setNames(width(temp), namesTranscripts)
-
-temp2      <- merge(countsTopHatGenes, 
-                    geneLength, 
+temp2      <- merge(countsTopHatGenes, geneLength, 
                     by.x = 0, 
                     by.y = 0)
 
 rownames(temp2) <- temp2$Row.names
 temp2$Row.names <- NULL
+rpkmCount       <- rpkm(temp2[,1:16], #all columns except y
+                        gene.length = temp2$y,
+                        normalized.lib.sizes = TRUE) 
 
-rpkmCount <- rpkm(temp2[,1:16], #all columns except y
-                  gene.length = temp2$y, 
-                  normalized.lib.sizes = TRUE) 
-
+write.table(temp2, file = file.path(paste(sharedPathAn, sep = ""), 
+                                    "readDGEcountsWithGeneLength.csv"),
+            append    = FALSE, 
+            sep       = ",", 
+            col.names = NA)
 
 ```
 
 
-
+Selecting the subset of reads that are to be analysed (experiment-specific)
 ```{r}
 
-secretedCAZyAll <- readAAStringSet(paste(referencesPath,
-                                         "Secretome_scripts/CAZy_secreted.fasta", 
-                                         sep = ""),
-                                   format = "fasta")
+allCazy <- readAAStringSet(paste(referencesPath, "Secretome/all_CAZy.fasta", sep = ""), format = "fasta")
+allCazyNames <- names(allCazy)
+allCazyPyuuNames <- subset(allCazyNames, grepl("^Pyuu_", allCazyNames))
+allCazyPyuuNames <- sub("_secreted$", "", allCazyPyuuNames)
+#secretedPyuuNames <- allCazyPyuuNames
+
+
+secCazyFasta <- paste(referencesPath, "Secretome/CAZy_secreted.fasta", sep = "")
+secretedCAZyAll   <- readAAStringSet(secCazyFasta), format = "fasta")
 secretedNames     <- names(secretedCAZyAll)
 secretedPyuuNames <- subset(secretedNames, grepl("^Pyuu_", secretedNames))
 
-cazyDataSub <- data.frame(matrix(unlist(strsplit(as.character(secretedPyuuNames), "_")), 
+cazyDataSub <- data.frame(matrix(unlist(strsplit(as.character
+                                                 (secretedPyuuNames), "_")), 
                                 nrow  = length(secretedPyuuNames), 
-                                byrow = TRUE), 
-                         stringsAsFactors = FALSE)
+                                byrow = TRUE), stringsAsFactors = FALSE)
 
 cazyDataSub$SequenceID   <- paste(cazyDataSub$X3, cazyDataSub$X4, sep = "_")
-colnames(cazyDataSub)[2] <- "CazyFam"
+colnames(cazyDataSub$X2) <- "CazyFam"
 
 ```
 
-
-cpms for Cazy data
+Counts per million from the gene counts from TopHat for Cazy data 
 ```{r}
 library(openxlsx)
 
 # cazyData <- read.xlsx(paste(referencesPath, 
-#                             "CAZYexpression-Secretome_details_emily.xlsx", sep = ""), 
-#                       sheet = "Sheet2", startRow = 2, rows = c(1:412), colNames = TRUE)
+#                             "CAZYexpression-Secretome_details_emily.xlsx", 
+#                             sep = ""), 
+#                       sheet    = "Sheet2", 
+#                       startRow = 2, 
+#                       rows     = c(1:412), 
+#                       colNames = TRUE)
 # 
 # sapply(cazyData, class)
 # 
@@ -1806,22 +1779,22 @@ colnames(countsForBarPlots)[1] <- "SequenceID"
 colnames(countsForBarPlots)[2] <- "ExpUnit"
 colnames(countsForBarPlots)[3] <- "Read_Counts"
 
-cazyCounts <- merge(countsForBarPlots,
-                    unique(metadataAdapRM[,c("LibraryName", 
-                                             "TimePoint", 
-                                             "RNASeq_Replicate", 
-                                             "ExpUnit")]),  
+metadataColsToMerge <- c("LibraryName", 
+                         "TimePoint", 
+                         "RNASeq_Replicate", 
+                         "ExpUnit") 
+
+cazyCounts <- merge(countsForBarPlots, 
+                    unique(metadataAdapRM[,c(metadataColsToMerge)]),  
                     by    = "ExpUnit", 
                     all.x = TRUE)
 
-cazyCounts$TimePoint <- factor(cazyCounts$TimePoint, 
-                               levels = c("0", "12" , "24", "48", "72", "120", "240"))        
+cazyCounts$TimePoint <- factor(cazyCounts$TimePoint, levels = c(timePoints))        
 
 length(unique(cazyCounts$TimePoint))
 
 cazyCountsSub <- cazyCounts[which(cazyCounts$SequenceID 
                                   %in% unique(cazyDataSub[,c("SequenceID")])), ]
-
 
 ```
 
@@ -1834,83 +1807,106 @@ rpkmForBarPlots <- melt(rpkmCount, id.vars = colnames(cpms))
 colnames(rpkmForBarPlots)[1] <- "SequenceID"
 colnames(rpkmForBarPlots)[2] <- "ExpUnit"
 colnames(rpkmForBarPlots)[3] <- "Read_Counts"
-rpkmForBarPlots$ExpUnit
-#countsForBarPlots$ExpUnit <- as.character(countsForBarPlots$ExpUnit)
+
+unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y"
+rpkmForBarPlots <- rpkmForBarPlots[rpkmForBarPlots$ExpUnit!="y",]
+unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y" is gone
+
+metadataColsToMerge <- c("LibraryName", 
+                         "TimePoint", 
+                         "RNASeq_Replicate", 
+                         "ExpUnit") 
 
 cazyRpkm <- merge(rpkmForBarPlots, 
-                  unique(metadataAdapRM[,c("LibraryName",
-                                           "TimePoint",
-                                           "RNASeq_Replicate",
-                                           "ExpUnit")]),
+                  unique(metadataAdapRM[,c(metadataColsToMerge)]),
                   by    = "ExpUnit", 
                   all.x = TRUE)
 
-cazyRpkm$TimePoint <- factor(cazyRpkm$TimePoint, 
-                             levels = c("0", "12" , "24", "48", "72", "120", "240"))        
+cazyRpkm$TimePoint <- factor(cazyRpkm$TimePoint, levels = c(timePoints))        
 
-length(unique(cazyRpkm$TimePoint))
-
-cazyRpkmSub <- cazyRpkm[which(cazyRpkm$SequenceID 
+cazyRpkmSub  <- cazyRpkm[which(cazyRpkm$SequenceID 
                               %in% unique(cazyDataSub[,c("SequenceID")])), ]
 
-
-```
-########################################################################################
-To make a data subset without time point 0 and to make another subset that merges the 
-Cazy classification (duplicating rows when one proteins belongs to more than one family.)
-```{r}
-
-#cazyRpkmSub2 <- subset(cazyRpkmSub, cazyRpkmSub$TimePoint != 0)
-
-cazyRpkmSub2 <- merge(cazyRpkmSub, 
-                      cazyDataSub[,c("CazyFam", "SequenceID")],  
+cazyRpkmSub2 <- merge(cazyRpkmSub, cazyDataSub[,c("CazyFam", "SequenceID")],  
                       by    = "SequenceID", 
                       all.x = TRUE)
 
+cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, 
+                                    cazyRpkmSub2$SequenceID, 
+                                    sep = "-")
 write.table(cazyRpkmSub2,
-            file = file.path(sharedPathAn, "countsReadDGE_TopHat_SecretedCAZy.csv"),
+            file = file.path(sharedPathAn, 
+                             "countsReadDGE_TopHat_SecretedCAZy.csv"),
             sep       = ",",
             row.names = TRUE, 
             col.names = NA, 
             quote     = FALSE) 
-
-
 ```
 
-
-Bar plots
+Bar plots per CAZy family group:
 ```{r}
 library("ggplot2")
 
-pdf(file   = "Bar_plot_cazyRpkmSub_by_CAZy.pdf", 
-    width  = 11, 
-    height = 30)
+dir.create(paste(sharedPathAn, "ggplotsByCazyFam", sep = ""),
+           showWarnings = TRUE,
+           recursive    = FALSE)
 
-bp <- ggplot(aes(y = Read_Counts, 
-                 x = TimePoint, 
-                 #color = Condition),  #No column for condition in Oospore Conversion Time-Course
-                 ),
-             data = cazyRpkmSub2) +
+ggplotsByCazyFamPath <- paste(sharedPathAn, "ggplotsByCazyFam/", sep = "")
+
+i <- 1
+
+for(i in 1:length(cazyFam)){
+temp <- subset(cazyRpkmSub2, cazyRpkmSub2$CazyFam == cazyFam[i])
+
+pdf(file   = paste(ggplotsByCazyFamPath, cazyFam[i], ".pdf", sep = ""),
+    width  = 8, 
+    height = 7*ceiling(nrow(temp)/90))
+
+bp <- ggplot(aes(y = Read_Counts, x = TimePoint), data  = temp) +
   theme_bw() +
-  theme(axis.text.y = element_text(size = 6, hjust = 1, vjust = 0.4)) +
-  theme(axis.text.x = element_text(colour = 'black', size = 6, angle = 45, hjust = 1, vjust = 1)) +
-  theme(axis.ticks = element_line(colour = 'black', size = 0.5)) +
-  labs(y="Total Number of Reads (rpkm normalized)") +
-  #theme(axis.ticks.margin = unit(1, "mm")) +
-  #coord_flip() +
-  #xlab("Dye") + ylab("Peak Height/Area Ratio") +
-  theme(axis.title.y = element_text(colour = 'black', size = 12, angle = 90, hjust = 0.5, vjust = 0.2, face = 'bold')) +
-  theme(axis.title.x = element_text(colour = 'black', size = 12, angle = 0, hjust = 0.5, vjust =  -0.2, face = 'bold')) +
-  geom_boxplot(position=position_dodge(0.8), width = 0.8, outlier.size = 1, outlier.colour="black", outlier.shape = 20) +
-  #stat_summary(fun.y=mean, geom="point", shape=5, size=1, fatten=0.1, position=position_dodge(0.8))  + #due to Error: Unknown parameters: fatten
-  stat_summary(fun.y=mean, geom="point", shape=5, size=1, position=position_dodge(0.8))  +
-  #geom_abline(intercept = 0.15, slope = 0, linetype = "dotted", colour = "red") +
-  facet_wrap(~SequenceID, scales = "free", ncol= 9) +
-  #facet_grid(CazyFam ~ ., scales = "free") +
-  theme(strip.text.x = element_text(size = 6, face = 'bold.italic', colour = "black", angle = 0))
+  theme(axis.text.y = element_text(size  = 6, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 6, 
+                                   angle  = 45, 
+                                   hjust  = 1, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads (rpkm-normalized)") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 12, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 0.2, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 12, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  -0.2, 
+                                    face   = 'bold')) +
+  geom_boxplot(position = position_dodge(0.8), 
+               width    = 0.8, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 1, 
+               position = position_dodge(0.8))  +
+  facet_wrap(~SequenceID, 
+             scales = "free", 
+             ncol = 5) +
+  theme(strip.text.x = element_text(size   = 6, 
+                                    face   = 'bold.italic', 
+                                    colour = "black", 
+                                    angle  = 0))
 print(bp)
 dev.off()
-
+}
 
 ```
 
@@ -1921,46 +1917,73 @@ dir.create(paste(sharedPathAn, "ggplots", sep = ""),
            showWarnings = TRUE, 
            recursive    = FALSE)
 
+ggplotsPath <- paste(sharedPathAn, "ggplots/", sep = "")
+
 library("ggplot2")
 
-cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, cazyRpkmSub2$SequenceID, sep="-")
-
+cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, 
+                                    cazyRpkmSub2$SequenceID, 
+                                    sep = "-")
 forPlot <- unique(cazyRpkmSub2$Secreted_CAZy) 
 
 i <- 1
-
 for(i in 1:length(forPlot)){
-  
   temp <- subset(cazyRpkmSub2, cazyRpkmSub2$Secreted_CAZy == forPlot[i])
-  
-  png(file = paste(sharedPathAn,"ggplots/",forPlot[i],"-secreted.png", sep=""), width = 3, height = 3, units = "in", res = 300, bg = "white")
-  #bp <- ggplot(aes(y = Read_Counts, x = TimePoint, color=Condition), data = temp) + #No column for condition in Oospore Conversion Time-Course
+  png(file   = paste(ggplotsPath, forPlot[i], "-secreted.png", sep = ""), 
+      width  = 3, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
   bp <- ggplot(aes(y = Read_Counts, x = TimePoint), data = temp) +
     theme_bw() +
-    theme(axis.text.y = element_text(size = 6, hjust = 1, vjust = 0.5)) +
-    theme(axis.text.x = element_text(colour = 'black', size = 6, angle = 0, hjust = 0.5, vjust = 1)) +
-    theme(axis.ticks = element_line(colour = 'black', size = 0.5)) +
-    # theme(legend.position="none") +
-    labs(y="Total Number of Reads (rpkm normalized)") +
-    #theme(axis.ticks.margin = unit(1, "mm")) +
-    #coord_flip() +
-    #xlab("Dye") + ylab("Peak Height/Area Ratio") +
-    theme(axis.title.y = element_text(colour = 'black', size = 7, angle = 90, hjust = 0.5, vjust = 0.5, face = 'bold')) +
-    theme(axis.title.x = element_text(colour = 'black', size = 7, angle = 0, hjust =  0.5, vjust = 0.5 ,face = 'bold')) +
-    geom_boxplot(position=position_dodge(0.8), width = 0.8, outlier.size = 1, outlier.colour="black", outlier.shape = 20) +
-    #stat_summary(fun.y=mean, geom="point", shape=5, size=1, fatten=0.1, position=position_dodge(0.8))  + #due to Error: Unknown parameters: fatten
-    stat_summary(fun.y=mean, geom="point", shape=5, size=1, position=position_dodge(0.8))  +
-    #geom_abline(intercept = 0.15, slope = 0, linetype = "dotted", colour = "red") +
-    facet_wrap(~Secreted_CAZy, scales = "free", ncol= 1) +
-    #facet_grid(CazyFam ~ ., scales = "free") +
-    theme(strip.text.x = element_text(size = 6, face = 'bold', colour = "black", angle = 0))
+    theme(axis.text.y = element_text(size  = 6, 
+                                     hjust = 1, 
+                                     vjust = 0.5)) +
+    theme(axis.text.x = element_text(colour = 'black', 
+                                     size   = 6, 
+                                     angle  = 0, 
+                                     hjust  = 0.5, 
+                                     vjust  = 1)) +
+    theme(axis.ticks = element_line(colour = 'black', 
+                                    size   = 0.5)) +
+    labs(y = "Total Number of Reads (rpkm-normalized)") +
+    theme(axis.title.y = element_text(colour = 'black', 
+                                      size   = 7, 
+                                      angle  = 90, 
+                                      hjust  = 0.5, 
+                                      vjust  = 0.5, 
+                                      face   = 'bold')) +
+    theme(axis.title.x = element_text(colour = 'black', 
+                                      size   = 7, 
+                                      angle  = 0, 
+                                      hjust  = 0.5, 
+                                      vjust  = 0.5, 
+                                      face   = 'bold')) +
+    geom_boxplot(position = position_dodge(0.8), 
+                 width    = 0.8, 
+                 outlier.size   = 1, 
+                 outlier.colour = "black", 
+                 outlier.shape  = 20) +
+    stat_summary(fun.y = mean, 
+                 geom  = "point", 
+                 shape = 5, 
+                 size  = 1, 
+                 position = position_dodge(0.8))  +
+    facet_wrap(~Secreted_CAZy, 
+               scales = "free", 
+               ncol   = 1) +
+    theme(strip.text.x = element_text(size   = 6, 
+                                      face   = 'bold', 
+                                      colour = "black", 
+                                      angle  = 0))
   print(bp)
   dev.off()
 }
 
 ```
 
-
+################################################################################
 **** Over here!
 
 Subset of table for Edge R
