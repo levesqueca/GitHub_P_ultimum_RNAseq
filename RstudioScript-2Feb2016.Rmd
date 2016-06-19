@@ -1729,30 +1729,34 @@ write.table(temp2, file = file.path(paste(sharedPathAn, sep = ""),
             col.names = NA)
 
 ```
-
+################################################################################
  
 Selecting the subset of reads that are to be analysed (experiment-specific)
 ```{r}
 
-allCazy <- readAAStringSet(paste(referencesPath, "Secretome/all_CAZy.fasta", sep = ""), format = "fasta")
-allCazyNames <- names(allCazy)
+# To look at all CAZy in Pyuu, not just secreted:
+allCazyFasta     <- paste(referencesPath, "Secretome/all_CAZy.fasta", sep = "")
+allCazy          <- readAAStringSet(paste(allCazyFasta), format = "fasta")
+allCazyNames     <- names(allCazy)
 allCazyPyuuNames <- subset(allCazyNames, grepl("^Pyuu_", allCazyNames))
 allCazyPyuuNames <- sub("_secreted$", "", allCazyPyuuNames)
-#secretedPyuuNames <- allCazyPyuuNames
 
-
+# To look at only secreted CAZy in Pyuu:
 secCazyFasta <- paste(referencesPath, "Secretome/CAZy_secreted.fasta", sep = "")
 secretedCAZyAll   <- readAAStringSet(secCazyFasta), format = "fasta")
 secretedNames     <- names(secretedCAZyAll)
 secretedPyuuNames <- subset(secretedNames, grepl("^Pyuu_", secretedNames))
 
+# Name the names file from the above options that will be analyzed:
+namesForPlots <- secretedPyuuNames
+
 cazyDataSub <- data.frame(matrix(unlist(strsplit(as.character
-                                                 (secretedPyuuNames), "_")), 
-                                nrow  = length(secretedPyuuNames), 
+                                                 (namesForPlots), "_")), 
+                                nrow  = length(namesForPlots), 
                                 byrow = TRUE), stringsAsFactors = FALSE)
 
 cazyDataSub$SequenceID   <- paste(cazyDataSub$X3, cazyDataSub$X4, sep = "_")
-colnames(cazyDataSub$X2) <- "CazyFam"
+colnames(cazyDataSub)[2] <- "CazyFam"
 
 ```
 
@@ -1834,9 +1838,9 @@ cazyRpkmSub2 <- merge(cazyRpkmSub, cazyDataSub[,c("CazyFam", "SequenceID")],
 cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, 
                                     cazyRpkmSub2$SequenceID, 
                                     sep = "-")
+nameReadDGEcsv <- "countsReadDGE_TopHat_SecretedCAZy.csv"
 write.table(cazyRpkmSub2,
-            file = file.path(sharedPathAn, 
-                             "countsReadDGE_TopHat_SecretedCAZy.csv"),
+            file = file.path(sharedPathAn, nameReadDGEcsv),
             sep       = ",",
             row.names = TRUE, 
             col.names = NA, 
