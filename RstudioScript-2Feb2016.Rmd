@@ -1730,7 +1730,7 @@ write.table(temp2, file = file.path(paste(sharedPathAn, sep = ""),
 
 ```
 
-
+ 
 Selecting the subset of reads that are to be analysed (experiment-specific)
 ```{r}
 
