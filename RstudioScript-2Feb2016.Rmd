@@ -1749,6 +1749,7 @@ secretedPyuuNames <- subset(secretedNames, grepl("^Pyuu_", secretedNames))
 
 # Name the names file from the above options that will be analyzed:
 namesForPlots <- secretedPyuuNames
+# namesForPlots <- allCazyPyuuNames
 
 cazyDataSub <- data.frame(matrix(unlist(strsplit(as.character
                                                  (namesForPlots), "_")), 
@@ -1757,6 +1758,7 @@ cazyDataSub <- data.frame(matrix(unlist(strsplit(as.character
 
 cazyDataSub$SequenceID   <- paste(cazyDataSub$X3, cazyDataSub$X4, sep = "_")
 colnames(cazyDataSub)[2] <- "CazyFam"
+cazyFam <- unique(cazyDataSub$CazyFam)
 
 ```
 
