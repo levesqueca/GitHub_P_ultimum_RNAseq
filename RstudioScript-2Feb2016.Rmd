@@ -14,7 +14,7 @@
 # library(knitr)
 # source("http://www.Bioconductor.org/biocLite.R")
 # biocLite("BiocUpgrade")
-# 
+
 ```
 
 Many of the commands and approach are from:
@@ -24,16 +24,20 @@ Simon Anders, Davis J McCarthy, Yunshun Chen, Michal Okoniewski, Gordon K Smyth,
 Wolfgang Huber & Mark D Robinson
 nature protocols | VOL.8 NO.9 | 2013
 
-For areas inthe script that I want to revise, search for "**Consider".
+For areas in the script that I want to revise, search for "**Consider".
 
 
+Chunk: Shared Path Setting
 User: 
 Define the path to the shared folder where the main working directory will be.
 ```{r}
+
 sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
 
 ```
 
+
+Chunk: Analysis and Sequence Data Direcotry Setting
 User:
 Define the the folder in the shared folder that will hold the analyses of the 
 time-course/dataset you will be working with. In our case, we have two different 
@@ -47,11 +51,14 @@ overall project. We also added Sci2 because the sequencing libraries were made
 on the SciClone robotics instrument, and also represent the second time we 
 generated libraries on that instrument:
 ```{r}
+
 analysis   <- "Oospore_Conversion_TimeCourse/"
 seqDataDir <- "MiSeq_data_Sci2"
 
 ```
 
+
+Chunk: Library Adapter Sequence User Input
 
 User needs to specify the adapter sequences attached to the sequencing 
 reads. This will depend on how the libraries were prepared.
@@ -147,6 +154,8 @@ timePoints <- c("0", "12" , "24", "48", "72", "120", "240")
 
 ```
 
+
+Chunk: Path Setting
 The following paths are to directories where the references, tools and general 
 requirements are located, this depends on the directories actually having been 
 put there:
@@ -1743,7 +1752,7 @@ allCazyPyuuNames <- sub("_secreted$", "", allCazyPyuuNames)
 
 # To look at only secreted CAZy in Pyuu:
 secCazyFasta <- paste(referencesPath, "Secretome/CAZy_secreted.fasta", sep = "")
-secretedCAZyAll   <- readAAStringSet(secCazyFasta), format = "fasta")
+secretedCAZyAll   <- readAAStringSet(paste(secCazyFasta), format = "fasta")
 secretedNames     <- names(secretedCAZyAll)
 secretedPyuuNames <- subset(secretedNames, grepl("^Pyuu_", secretedNames))
 
@@ -1991,6 +2000,100 @@ for(i in 1:length(forPlot)){
 
 ################################################################################
 **** Over here!
+```{r}
+
+cazyInterestList <- c("PYU1_T010810", "PYU1_T003056", "PYU1_T006946", 
+                      "PYU1_T006947", "PYU1_T009144", "PYU1_T004665", 
+                      "PYU1_T006327", "PYU1_T013821", "PYU1_T014660", 
+                      "PYU1_T009505", "PYU1_T006194", "PYU1_T006546",
+                      "PYU1_T010982", "PYU1_T010437", "PYU1_T006878",
+                      "PYU1_T007490", "PYU1_T000471", "PYU1_T000490",
+                      "PYU1_T010809", "PYU1_T003515", "PYU1_T013496",
+                      "PYU1_T008966", "PYU1_T000955", "PYU1_T012530",
+                      "PYU1_T001495", "PYU1_T001658", "PYU1_T001170",
+                      "PYU1_T006485", "PYU1_T012512", "PYU1_T015040",
+                      "PYU1_T005056", "PYU1_T005072", "PYU1_T011896",
+                      "PYU1_T001346", "PYU1_T005252", "PYU1_T005445",
+                      "PYU1_T014041", "PYU1_T005135", "PYU1_T014584",
+                      "PYU1_T000438", "PYU1_T005971", "PYU1_T005972",
+                      "PYU1_T005973", "PYU1_T006030", "PYU1_T003173",
+                      "PYU1_T009242", "PYU1_T010978", "PYU1_T004531",
+                      "PYU1_T004532", "PYU1_T001515", "PYU1_T005968",
+                      "PYU1_T008740", "PYU1_T009220", "PYU1_T009223", 
+                      "PYU1_T009228", "PYU1_T002046", "PYU1_T002299", 
+                      "PYU1_T008222", "PYU1_T013005", "PYU1_T002412",
+                      "PYU1_T012179", "PYU1_T001053", "PYU1_T002541",
+                      "PYU1_T002542", "PYU1_T007532", "PYU1_T012442", 
+                      "PYU1_T012455", "PYU1_T004680")
+
+length(cazyInterestList)
+unique(cazyInterestList)
+
+
+# To look at only secreted CAZy in Pyuu:
+# secCazyFasta <- paste(referencesPath, "Secretome/CAZy_secreted.fasta", sep = "")
+# secretedCAZyAll   <- readAAStringSet(paste(secCazyFasta), format = "fasta")
+# pyuuAllTranscript <- readAAStringSet(paste(pyuuTranscripts), format = "fasta")
+pyuuInterestFastaPath <- paste(sharedPathAn, "pyuuCazyInterestSubset.fasta", sep = "")
+pyuuCazyInterest <- readAAStringSet(paste(pyuuInterestFastaPath), format = "fasta")
+# secretedNames     <- names(secretedCAZyAll)
+pyuuInterestNames <- names(pyuuCazyInterest)
+
+# Read in the Pythium ultimum transcriptome file from the Pythium Genome Browser
+# (We did this earlier in the script)
+# my_names_pyuu <- gsub(" .*", "", names(Pyuu_fasta_seqs), ignore.case = FALSE)
+pyuuNamesTranscript <- gsub(" .*", "", names(pyuuAllTranscript), ignore.case = FALSE)
+
+#now take vector of names, and make these the names to refer to for readAAstringsset, recall, we put our readAAStringSet into Pyuu_fasta_seqs
+# names(Pyuu_fasta_seqs) <- my_names_pyuu
+names(pyuuAllTranscript) <- pyuuNamesTranscript
+
+#now we can match signalp4 names to fasta names because they are in the same format
+# pyuu_subset_signalp4 <- Pyuu_fasta_seqs[which(names(Pyuu_fasta_seqs) %in% list_gff_seq_names_sp4)]
+pyuuCazyInterestSubset <- pyuuAllTranscript[which(names(pyuuAllTranscript) %in% cazyInterestList)]
+
+
+# writeXStringSet(pyuu_subset_signalp4, file=paste(signalp4_gff_path, "pyuu_subset_signalp4.fasta", sep=""), append=FALSE, format="fasta") 
+writeXStringSet(pyuuCazyInterestSubset, file=paste(sharedPathAn, "pyuuCazyInterestSubsetNt.fasta", sep=""), append=FALSE, format="fasta") 
+
+
+ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nt/nt"
+ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastn"
+blastnOutFrmt  <- paste(" '", 
+                        "6", " qseqid", " sallacc", " pident", " length", 
+                        " mismatch", " gapopen", " qstart", " qend", " sstart", 
+                        " send", " evalue", " bitscore", 
+                        "'",
+                        sep = "") 
+maxTargetsSeqs <- 1
+
+cmd <- paste(ncbiBlastnPath,
+             " -db ",     ncbiDbPath,
+             " -query ",  paste(sharedPathAn, "pyuuCazyInterestSubsetNt.fasta",
+                                sep = ""),
+             " -max_target_seqs ", maxTargetsSeqs,
+             " -outfmt ", blastnOutFrmt,
+             " -out ",    paste(sharedPathAn, "pyuuCazyInterestSubsetNt.fasta.bls",
+                                sep = ""),
+             sep = "")
+
+
+
+prefix <- "pyuuCazyInterestSubset"
+suffix <- ".sub" 
+MakeQsubs(cmd, prefix, suffix, node)
+################################################################################
+#####  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****######
+#####          watch output from this command in the console              ######
+################################################################################
+```
+```{r}
+
+RemoveQsubTempFiles(sharedPathAn, prefix)
+
+```
+
+
 
 Subset of table for Edge R
 ```{r}
