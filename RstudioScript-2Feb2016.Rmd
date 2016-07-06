@@ -27,7 +27,7 @@ nature protocols | VOL.8 NO.9 | 2013
 For areas in the script that I want to revise, search for "**Consider".
 
 
-Chunk: Shared Path Setting
+Chunk: Shared Path Setting 
 User: 
 Define the path to the shared folder where the main working directory will be.
 ```{r}
