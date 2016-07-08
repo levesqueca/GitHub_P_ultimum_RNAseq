@@ -37,7 +37,7 @@ sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
 ```
 
 
-Chunk: Analysis and Sequence Data Direcotry Setting
+Chunk: Analysis and Sequence Data Directory Setting
 User:
 Define the the folder in the shared folder that will hold the analyses of the 
 time-course/dataset you will be working with. In our case, we have two different 
@@ -52,11 +52,16 @@ on the SciClone robotics instrument, and also represent the second time we
 generated libraries on that instrument:
 ```{r}
 
+# What is the name of the overall experiment?
 analysis   <- "Oospore_Conversion_TimeCourse/"
-seqDataDir <- "MiSeq_data_Sci2"
+
+# Name of the directory you'll be keeping all the analyses for this pipeline:
+workDir    <- "HiSeq_Analyses"
+
+#Name of the directory to keep the fastq files in:
+seqDataDir <- "HiSeq_data"
 
 ```
-
 
 Chunk: Library Adapter Sequence User Input
 
@@ -164,32 +169,48 @@ toolsDirPath     <- paste(sharedPath, "tools/",      sep="")
 referencesPath   <- paste(sharedPath, "References/", sep="")
 cazyPath         <- paste(sharedPath, "CAZy/",       sep="")
 binPath          <- paste(sharedPath, "bin/bash/",   sep="")
-tophat2Path      <- "/opt/bio/tophat/bin/tophat2"
 bowtie2BuildPath <- "/opt/bio/bowtie2/bowtie2-build"
-starPath         <- "/opt/bio/STAR/STAR"
+deconSeqPath     <- "/opt/bio/DeconSeq/deconseq.pl"
+htseqCountPath   <- "/opt/bio/HTSeq/bin/htseq-count"
+prinSeqPath      <- "/opt/bio/prinseq-lite/prinseq-lite"
+prinSeqGraphPath <- "/opt/bio/prinseq-lite/prinseq-graphs"
 samtools1Path    <- "/opt/bio/samtools1/bin/samtools1"
+seqPrepPath      <- "/opt/bio/SeqPrep/SeqPrep"
+starPath         <- "/opt/bio/STAR/STAR"
+tophat2Path      <- "/opt/bio/tophat/bin/tophat2"
+
 pyuuRefPath      <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.fa", 
                           sep = "")
 pyuugff3Path     <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.gff3",
                           sep = "")
 pyuuTranscripts  <- paste(referencesPath, "pythium_ultimum_transcripts.fasta", 
                           sep = "")
-htseqCountPath   <- paste(toolsDirPath, "test-emilyJune16-env/bin/htseq-count", 
-                          sep = "")
+
+
+
 
 ```
 
 The user does not alter the variables below. The following chunk will integrate 
 the user-defined variables from the previous chunk into the script.
 ```{r}
-sharedPathAn <- paste(sharedPath, analysis, sep="")
+# Create the working directory for the current analyses:
+dir.create(paste(sharedPath, analysis, workDir, sep = ""),
+           showWarnings = TRUE,
+           recursive    = FALSE)
+# Set the path:
+sharedPathAn <- paste(sharedPath, analysis, workDir, "/", sep ="")
+# Establish the working directory for R:
+setwd(sharedPathAn)
+# Verify the working Directory:
+getwd()
 
 # Create fastq directory in sharedPath folder based on "seqDataDir":
-dir.create(paste(sharedPathAn, seqDataDir, sep = ""), 
+dir.create(paste(sharedPath, analysis, seqDataDir, sep = ""), 
            showWarnings = TRUE, 
            recursive    = FALSE)
 
-pathFastq <- paste(sharedPathAn, seqDataDir, "/", sep = "")
+pathFastq <- paste(sharedPath, analysis, seqDataDir, "/", sep = "")
 ```
 
 STAR
@@ -246,95 +267,68 @@ for the time-course is being done, and skip this step.
 User:
 Specify the path to the raw data for the sequencing reads:
 
-```{r eval = FALSE}
-# print("Don't run me")
-# hiSeqPath1 <- "/isilon/biodiversity/data/raw/illumina/GQC/HI.3222.003/"
-# hiSeqPath2 <- "/isilon/biodiversity/data/raw/illumina/GQC/HI.3292.002/"
+```{r}
+hiSeqPathcsv <- paste(sharedPath, "Hi.3651-EG", "/", sep = "")
+
+hiSeqPathraw <- paste(sharedPath, "Hi.3651-restricted_permissions", "/", sep = "")
+
 ```
 
 **Pull out HiSeq data**
 
 ```{r}
-# # Genome Quebec csv (gQcsv) files are now in raw data folders
-# gQcsv1 <- list.files(path      = hiSeqPath1, 
-#                      pattern   = "^HiSeq.*OG_.*\\.csv$", 
-#                      recursive = FALSE)
-# 
-# gQcsv2 <- list.files(path      = hiSeqPath2, 
-#                      pattern   = "^HiSeq.*OG_.*\\.csv$", 
-#                      recursive = FALSE)
-# 
-# 
-# # Used it before from working directory (the OG_HI picks up only one file)
-# # GC_csv <- list.files(path      = sharedPath, 
-# #                      pattern   = "^HiSeq.*OG_Hi.*\\.csv$", 
-# #                      recursive = FALSE)
-# 
-# # read that csv file
-# gQmetadata1         <- read.csv(paste(hiSeqPath1, gQcsv1, sep = ""), 
-#                                 stringsAsFactors = FALSE)
-# gQmetadata1$rawpath <- hiSeqPath1
-# 
-# gQmetadata2         <- read.csv(paste(hiSeqPath2, gQcsv2, sep = ""), 
-#                                 stringsAsFactors = FALSE)
-# gQmetadata2$rawpath <- hiSeqPath2
-# 
-# gQmetadata          <- rbind(gQmetadata1, gQmetadata2)
-# 
-# 
-# # Because of the one missing sequence:
-# # gQmetadata[grep("T24-x2_BC08", 
-# #                 gQmetadata$Name), 
-# #            41] <- paste(sharedPath, "missing_sequence/", sep = "")
-# 
-# 
-# # Create otri like we had done for our first MiSeq dataset:
-# otri1                <- gQmetadata[,c("Name", 
-#                                       "Run", 
-#                                       "Filename.Prefix", 
-#                                       "Run.Type", 
-#                                       "rawpath")]
-# otri1$Read_Direction <- "R1"
-# otri2                <- otri1
-# otri2$Read_Direction <- "R2"
-# otri                 <- rbind(otri1, otri2)
-# 
-# rm(list = ls(pattern = ".*[1-2]$"))
-# 
-# otri$FastqFilePath   <- paste(otri$rawpath,
-#                               otri$Filename.Prefix, "_",
-#                               otri$Read_Direction, ".fastq.gz", 
-#                               sep = "")
-# 
-# colnames(otri)[colnames(otri) == "Name"] <- "LibraryName"
-#
-# # Parsing the metadata by specific columns based on the library names:
-# parsedCol <- data.frame(matrix(unlist(strsplit(as.character(otri$LibraryName), 
-#                                                "_|-")), 
-#                                nrow  = length(otri$LibraryName), 
-#                                byrow = TRUE), 
-#                         stringsAsFactors = FALSE)
-# 
-# colnames(parsedCol)     <- c("TimePoint", "Condition", "Library")
-# metadata                <- cbind(parsedCol, otri)
-# metadata$Platform       <- "Illumina"
-# metadata$ScientificName <- "Pythium ultimum var ultimum"
-# metadata$TimePoint      <- sub("T","", 
-#                                  metadata$TimePoint, ignore.case = FALSE)
-# metadata$RNA_Replicate  <- sub("[^0-9$]", "", 
-#                                  metadata$Condition, ignore.case = FALSE)
-# metadata$Condition      <- sub("^x.*", "Cholesterol", 
-#                                  metadata$Condition, ignore.case = FALSE)
-# metadata$Condition      <- sub(".*1$|.*2$|.*3$|.*4$", "Control", 
-#                                  metadata$Condition, ignore.case = FALSE)
-# metadata$BaseCallsName  <- paste(otri$Filename.Prefix, "_", 
-#                                  otri$Read_Direction, ".fastq", sep="")
-# 
-# write.table(metadata, 
-#             file      = paste(sharedPath,"My_metadata.csv",sep=""), 
-#             append    = FALSE, 
-#             sep       = ",", 
-#             col.names = NA)
+# Genome Quebec csv (gQcsv) files are now in raw data folders
+# gQcsv1 <- list.files(path = hiSeqPathcsv,
+#                      pattern    = glob2rx("HiSeq_Lane1_*.csv"),
+#                      full.names = TRUE)
+# gQcsv2 <- list.files(path = hiSeqPathcsv,
+#                      pattern    = glob2rx("HiSeq_Lane2_*.csv"),
+#                      full.names = TRUE)
+
+# read that csv file
+gQmetadata1         <- read.csv(gQcsv1, stringsAsFactors = FALSE)
+gQmetadata2         <- read.csv(gQcsv2, stringsAsFactors = FALSE)
+
+gQmetadata          <- rbind(gQmetadata1, gQmetadata2)
+gQmetadata$rawPath  <- hiSeqPathraw
+
+
+# Create otri like we had done for our first MiSeq dataset:
+otri1                <- gQmetadata[,c("LibraryName",
+                                      "TimePoint",
+                                      "Condition",
+                                      "LibraryBC",
+                                      "RNA_Replicate",
+                                      "RNASeq_Replicate",
+                                      "TechnicalRep",
+                                      "Region",
+                                      "FilenamePrefix", 
+                                      "rawPath")]
+otri1$Read_Direction <- "R1"
+otri2                <- otri1
+otri2$Read_Direction <- "R2"
+
+metadata             <- rbind(otri1, otri2)
+
+
+metadata$FastqFilePath <- paste(metadata$rawPath,
+                                metadata$FilenamePrefix, "_",
+                                metadata$Read_Direction, ".fastq.gz",
+                                sep = "")
+metadata$LibraryName    <- sub("Lib_", "", metadata$LibraryName, ignore.case = FALSE)
+metadata$LibraryName    <- paste(metadata$LibraryName, "_", metadata$TechnicalRep, sep = "")
+metadata$LibraryName    <- sub("H2O", "Tneg-H2O", metadata$LibraryName, ignore.case = FALSE)
+metadata$Platform       <- "Illumina"
+metadata$ScientificName <- "Pythium ultimum var ultimum"
+metadata$BaseCallsName  <- paste(metadata$FilenamePrefix, "_", 
+                                 metadata$Read_Direction, ".fastq", sep="")
+
+write.table(metadata, file = "HiSeq_OosporeConversionTimeCourse_Metadata.csv", 
+            append    = FALSE,
+            quote     = FALSE,
+            sep       = ",", 
+            #col.names = NA,
+            row.names = FALSE)
 
 ```
 
@@ -424,12 +418,7 @@ RemoveQsubTempFiles <- function(path, prefixSub) {
 
 Function to generate PrinSeq graph files (.gd).
 ```{r}
-prinSeqPath <- paste(toolsDirPath, 
-                      "prinseq-lite-0.20.4/prinseq-lite-0.20.4/prinseq-lite.pl", 
-                      sep = "")
-prinSeqGraphPath <- paste(toolsDirPath, 
-                      "prinseq-lite-0.20.4/prinseq-lite-0.20.4/prinseq-graphs", 
-                      sep = "")
+
 # a = Metadata table being referred to for read input
 # b = Column name in x with the names of the input fastq files
 # c = Prefix - name of directory where graph .gd files are to go
@@ -471,6 +460,22 @@ MakePrinSeqGraphFiles <- function(a, b, c, d, e){
                                              ".", d, ".gd", sep = ""),
                       sep = ""))
     }
+  return(cmd)
+}
+
+# Function is for compressed input when single reads are input only:
+MakePrinSeqGraphFiles2 <- function(a, b, c, d){
+  cmd = with(a,
+             paste("zcat ", pathFastq, b, ".gz", " | ",
+                   prinSeqPath,
+                   " -fastq stdin ", 
+                   " -out_good null ",
+                   " -out_bad null ",
+                   " -verbose ",
+                   " -graph_data ", paste(sharedPathAn, c, "/", 
+                                          LibraryName, ".", d, ".gd", 
+                                          sep = ""),
+                   sep = ""))
   return(cmd)
 }
 
@@ -523,10 +528,11 @@ Copy and gunzip files:
 ```{r}
 # Copy all files using multiple processors (this is a lot faster than the above)
 cmd <- with(metadata, paste("cp ", 
-                FastqFilePath," ", 
-                sharedPathAn, seqDataDir, "/", basename(FastqFilePath),"\n",
+                FastqFilePath, " ", 
+                #sharedPathAn, seqDataDir, "/", basename(FastqFilePath),"\n",
+                pathFastq, basename(FastqFilePath), "\n",
                 " gunzip ", 
-                sharedPathAn, seqDataDir, "/", basename(metadata$FastqFilePath),
+                pathFastq, basename(metadata$FastqFilePath),
                 sep=""))
 
 # Generate qsub and bash files to complete the commands above:
@@ -696,8 +702,6 @@ Then consider separating the gunzip command - performing gunzip on
 merged reads if the merged option was true, or on single reads if the merged 
 option was false.
 ```{r}
-seqPrepPath <- paste(toolsDirPath, "SeqPrep/SeqPrep", sep="")
-
 cmd <- with(metadataRawPairs, 
             paste(seqPrepPath, 
                   " -f ", pathFastq, R1,
