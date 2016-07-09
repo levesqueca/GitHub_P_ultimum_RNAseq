@@ -628,9 +628,12 @@ MakeQsubs(cmd, prefix, suffix)
 ################################################################################
 ```
 
+
 To remove the output files after you are done:
 ```{r}
+
 RemoveQsubTempFiles(sharedPathAn, prefix)
+
 ```
 
 Add the path to the raw graphs .gd files to the metadataRawPairs tabel:
@@ -638,6 +641,7 @@ Add the path to the raw graphs .gd files to the metadataRawPairs tabel:
 addition to LibraryName, a random character/number.html suffix is added 
 to the filename.
 ```{r}
+
 for(k in 1:nrow(metadataRawPairs)){
   metadataRawPairs$RawGraphFiles <- paste(metadataRawPairs$LibraryName, 
                                           ".rawGraphs.gd", 
@@ -660,7 +664,9 @@ MakeQsubs(cmd, prefix2, suffix)
 
 To remove the output files after you are done:
 ```{r}
+
 RemoveQsubTempFiles(sharedPathAn, prefix2)
+
 ```
 
 Adapter removal and Merging with SeqPrep:
@@ -714,7 +720,7 @@ cmd <- with(metadataRawPairs,
                                            ".adapRemMerged.fastq.gz",
                                            sep = ""),
                   " \n ",
-                  "gunzip ", pathFastq, LibraryName,".adapRemMerged.fastq.gz",
+                  #"gunzip ", pathFastq, LibraryName,".adapRemMerged.fastq.gz",
                   sep = ""))
 # now this is all all I have to enter to make qsub and bash files
 prefix <- "D_SeqPrep"; suffix <- ".sub" 
@@ -745,23 +751,26 @@ To remove the output files after you are done:
 RemoveQsubTempFiles(sharedPathAn, prefix)
 ```
 
+
+*** Note, for HiSeq I didn't remove the single reads because I am still assessing
+results of merging the reads.
 Delete unnecessary fastq files - this should be adjusted so that it matches the 
 basename we originally brought in as it is the original fastq raw reads we no
 longer need to keep in our data directory.
 ```{r}
-deleteFastq <- list.files(path = pathFastq, pattern = "^Lib-.*fastq$")
+deleteFastq <- list.files(path = pathFastq, pattern = "^HI.3651.*fastq$")
 
 for(k in 1:length(deleteFastq)) {
   cmd <- paste("rm ", pathFastq, deleteFastq[k], sep = "")
   system(cmd)
 }
 
-#Because we are working with merged reads, don't needs R1 and R2 sets:
-deleteFastq <- list.files(path = pathFastq, pattern = ".*fastq.gz$")
-for(k in 1:length(deleteFastq)) {
-  cmd <- paste("rm ", pathFastq, deleteFastq[k], sep = "")
-  system(cmd)
-}
+# # Because we are working with merged reads, don't needs R1 and R2 sets:
+# deleteFastq <- list.files(path = pathFastq, pattern = ".adapRem.R.*fastq.gz$")
+# for(k in 1:length(deleteFastq)) {
+#   cmd <- paste("rm ", pathFastq, deleteFastq[k], sep = "")
+#   system(cmd)
+# }
 ```
 
 Do we need the following if reads are merged?
@@ -819,27 +828,27 @@ colnames(metadataAdapRM)[colnames(metadataAdapRM) == "R1"] <- "MergedReads"
 Test for MiSeq adapters on the merged reads - need to re-evaluate utility at 
 this step, and review how merging occurs with SeqPrep:
 ```{r}
-for (k in 1:nrow(metadataAdapRM)) {
-  cat(c(k, metadataAdapRM$MergedReads[k]))
-  system(paste("cat ",
-               pathFastq, metadataAdapRM$MergedReads[k],
-               " | head -n 10000000 | grep '",
-               fwdAdap,
-               "' | wc -l ",
-               sep = ""))
-  cat("\n")
-}
-
-for (k in 1:nrow(metadataAdapRM)) {
-  cat(c(k, metadataAdapRM$MergedReads[k]))
-  system(paste("cat ",
-               pathFastq, metadataAdapRM$MergedReads[k],
-               " | head -n 10000000 | grep '",
-               revAdap,
-               "' | wc -l ",
-               sep = ""))
-  cat("\n")
-}
+# for (k in 1:nrow(metadataAdapRM)) {
+#   cat(c(k, metadataAdapRM$MergedReads[k]))
+#   system(paste("cat ",
+#                pathFastq, metadataAdapRM$MergedReads[k],
+#                " | head -n 10000000 | grep '",
+#                fwdAdap,
+#                "' | wc -l ",
+#                sep = ""))
+#   cat("\n")
+# }
+# 
+# for (k in 1:nrow(metadataAdapRM)) {
+#   cat(c(k, metadataAdapRM$MergedReads[k]))
+#   system(paste("cat ",
+#                pathFastq, metadataAdapRM$MergedReads[k],
+#                " | head -n 10000000 | grep '",
+#                revAdap,
+#                "' | wc -l ",
+#                sep = ""))
+#   cat("\n")
+# }
 
 ```
 
@@ -881,7 +890,7 @@ Looking at our data after adapter removal and merging with SeqPrep:
 PrinSeq Step 1: .gd file generation:
 ```{r}
 prefix <- "E_PrinSeqMergedGraph"
-cmd    <- MakePrinSeqGraphFiles(metadataAdapRM, metadataAdapRM$MergedReads, 
+cmd    <- MakePrinSeqGraphFiles2(metadataAdapRM, metadataAdapRM$MergedReads, 
                                 prefix, "adapRemMerged")
 suffix <- ".sub"  
 MakeQsubs(cmd, prefix, suffix)
@@ -975,21 +984,28 @@ be merged.
 prefix <- "F_PrinSeqGraphQualTrim"
 
 cmd <- with(metadataAdapRM,
-            paste(prinSeqPath,
-                  " -fastq ",             pathFastq,  MergedReads,
+            paste("zcat ", pathFastq, MergedReads, ".gz", " | ", 
+                  prinSeqPath,
+                  " -fastq stdin ",       
                   " -trim_qual_window ",  trimQualWindow,
                   " -trim_qual_type ",    trimQualType, 
                   " -trim_qual_right ",   trimQualRight,
                   " -trim_qual_rule ",    trimQualRule,
-                  " -out_good ",          paste(pathFastq, LibraryName,
-                                                ".2processedMerged",
-                                                sep = ""),
+#                   " -out_good ",          paste(pathFastq, LibraryName,
+#                                                 ".2processedMerged",
+#                                                 sep = ""),
+                  " -out_good stdout ",
                   " -out_bad  ",          outBad,
                   " -verbose ",
                   " -no_qual_header ",
-                  " -log ",               sharedPathAn, prefix, "/", 
+                  " -log ",               paste(sharedPathAn, prefix, "/", 
                                           LibraryName, ".2processedMerged.log",
+                                          sep = ""),
+                  " | gzip > ",           paste(pathFastq, LibraryName, 
+                                                ".2processedMerged.fastq.gz",
+                                                sep = ""),
                   sep = ""))
+
 
 suffix <- ".sub"  
 MakeQsubs(cmd, prefix, suffix)
@@ -998,6 +1014,8 @@ MakeQsubs(cmd, prefix, suffix)
 #####          watch output from this command in the console              ######
 ################################################################################
 ```
+
+
 Add name of quality-filtered merged reads .fastq files to the metadataAdapRM 
 tabel:
 ```{r}
@@ -1013,35 +1031,40 @@ To remove the output files after you are done:
 RemoveQsubTempFiles(sharedPathAn, prefix)
 ```
 
+If output previously was compressed within the script, don't need next chunk.
 Gzip the fastq reads that were INPUT to PrinSeq processing in step 1-1, we 
 won't need them, the next step in 1-2 uses the OUTPUT processed reads. 
 ```{r}
 
-cmd <- with(metadataAdapRM, paste("gzip ",
-                                  pathFastq, 
-                                  metadataAdapRM$MergedReads,
-                                  sep=""))
-sapply(cmd, function(x) system(x))
+# cmd <- with(metadataAdapRM, paste("gzip ",
+#                                   pathFastq, 
+#                                   metadataAdapRM$MergedReads,
+#                                   sep=""))
+# sapply(cmd, function(x) system(x))
 
 ```
 
+****Over here!!!
 1-2.
 Generate PrinSeq graph files (.gd) for the fastq generated previously:
 ```{r}
 prefix2 <- "F2_PrinSeqGraph"
 
-cmd <- MakePrinSeqGraphFiles(metadataAdapRM, metadataAdapRM$AdapRMQualFiltFastq,
-                             prefix, "2processedMerged")
+cmd <- MakePrinSeqGraphFiles2(metadataAdapRM, 
+                              metadataAdapRM$AdapRMQualFiltFastq,
+                              prefix, "2processedMerged")
 
 
 suffix <- ".sub"  
 MakeQsubs(cmd, prefix2, suffix)
+
 ################################################################################
 #####  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****######
 #####          watch output from this command in the console              ######
 ################################################################################
 ```
 
+****Over here!!! 08Jul2016
 To remove the output files after you are done:
 ```{r}
 RemoveQsubTempFiles(sharedPathAn, prefix2)
