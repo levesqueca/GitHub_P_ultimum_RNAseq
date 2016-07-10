@@ -1064,7 +1064,6 @@ MakeQsubs(cmd, prefix2, suffix)
 ################################################################################
 ```
 
-****Over here!!! 08Jul2016
 To remove the output files after you are done:
 ```{r}
 RemoveQsubTempFiles(sharedPathAn, prefix2)
@@ -1119,20 +1118,23 @@ Trim left and right, and Poly-A/T tail removal, round 1
 prefix <- "G_PrinSeqTrimLRPolyAT"
 
 cmd <- with(metadataAdapRM, 
-            paste(prinSeqPath,
-                  " -fastq ",           pathFastq,  AdapRMQualFiltFastq,
+            paste("zcat ", pathFastq, AdapRMQualFiltFastq, ".gz", " | ",
+                  prinSeqPath,
+                  " -fastq stdin ",
                   " -trim_left ",       trimLeft,
                   " -trim_right ",      trimRight,
                   " -trim_tail_left ",  trimTailLeft,
                   " -trim_tail_right ", trimTailRight,
-                  " -out_good ",        paste(pathFastq, LibraryName,
-                                              ".3processedMerged",
-                                              sep = ""),
+                  " -out_good stdout ", 
                   " -out_bad  ",        outBad,
                   " -verbose ",
                   " -no_qual_header ",
                   " -log ",             sharedPathAn, prefix, "/", 
                                           LibraryName, ".3processedMerged.log",
+                  " | gzip > ",           paste(pathFastq, LibraryName,
+                                                ".3processedMerged.fastq.gz",
+                                                sep = ""),
+                  
                   sep = ""))
 
 suffix <- ".sub"  
@@ -1143,21 +1145,22 @@ MakeQsubs(cmd, prefix, suffix)
 ################################################################################
 ```
 
+
 To remove the output files after you are done:
 ```{r}
 RemoveQsubTempFiles(sharedPathAn, prefix)
 ```
 
+If reads are merged and are a single input in step above, no need for next chunk.
 Gzip the fastq reads that were INPUT to the PrinSeq processing in step 2-1, 
 we won't need them and the next step in 2-2 will be using the OUTPUT processed 
 reads. 
-
 ```{r}
 
-cmd <- with(metadataAdapRM, paste("gzip ", pathFastq, 
-                                  metadataAdapRM$AdapRMQualFiltFastq,
-                                  sep = ""))
-sapply(cmd, function(x) system(x))
+# cmd <- with(metadataAdapRM, paste("gzip ", pathFastq, 
+#                                   metadataAdapRM$AdapRMQualFiltFastq,
+#                                   sep = ""))
+# sapply(cmd, function(x) system(x))
 
 ```
 
@@ -1176,7 +1179,7 @@ Generate PrinSeq graph files (.gd) for the fastq generated previously:
 ```{r}
 prefix2 <- "G2_PrinSeqGraphTrimLRPolyAT"
 
-cmd <- MakePrinSeqGraphFiles(metadataAdapRM, metadataAdapRM$AdapRMTrimLRPolyAT,
+cmd <- MakePrinSeqGraphFiles2(metadataAdapRM, metadataAdapRM$AdapRMTrimLRPolyAT,
                              prefix, "3processedMerged")
 
 suffix <- ".sub"  
@@ -1187,6 +1190,7 @@ MakeQsubs(cmd, prefix2, suffix)
 ################################################################################
 ```
 
+***Over here!!!! 08Jul2016 8:58 pm
 To remove the output files after you are done:
 ```{r}
 RemoveQsubTempFiles(sharedPathAn, prefix2)
@@ -1238,6 +1242,7 @@ cmd <- with(metadataAdapRM,
                   " -fastq ",           pathFastq,  AdapRMTrimLRPolyAT,
                   " -trim_tail_left ",  trimTailLeft,
                   " -trim_tail_right ", trimTailRight,
+                  " -nmax ",            nmax,
                   " -out_good ",        paste(pathFastq, LibraryName,
                                                 ".4processedMerged",
                                                sep = ""),
