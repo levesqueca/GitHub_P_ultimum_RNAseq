@@ -1044,7 +1044,6 @@ won't need them, the next step in 1-2 uses the OUTPUT processed reads.
 
 ```
 
-****Over here!!!
 1-2.
 Generate PrinSeq graph files (.gd) for the fastq generated previously:
 ```{r}
@@ -1190,7 +1189,7 @@ MakeQsubs(cmd, prefix2, suffix)
 ################################################################################
 ```
 
-***Over here!!!! 08Jul2016 8:58 pm
+
 To remove the output files after you are done:
 ```{r}
 RemoveQsubTempFiles(sharedPathAn, prefix2)
@@ -1228,6 +1227,7 @@ To remove the output files after you are done:
 RemoveQsubTempFiles(sharedPathAn, prefix3)
 ```
 
+
 Third stage of quality pre-processing with PrinSeq:
 Poly-A/T tail removal, round 2:
 Repeat poly tails trimming, this is because after trimming ends with 
@@ -1238,21 +1238,22 @@ poly-A string.
 prefix <- "H_PrinSeq2ndPolyAT"
 
 cmd <- with(metadataAdapRM, 
-            paste(prinSeqPath,
-                  " -fastq ",           pathFastq,  AdapRMTrimLRPolyAT,
+            paste("zcat " , pathFastq,  AdapRMTrimLRPolyAT, ".gz", " | ", 
+                  prinSeqPath,
+                  " -fastq stdin",           
                   " -trim_tail_left ",  trimTailLeft,
                   " -trim_tail_right ", trimTailRight,
-                  " -nmax ",            nmax,
-                  " -out_good ",        paste(pathFastq, LibraryName,
-                                                ".4processedMerged",
-                                               sep = ""),
+                  " -ns_max_n ",        nmax,
+                  " -out_good stdout ",        
                   " -out_bad  ",        outBad,
                   " -verbose ",
                   " -no_qual_header ",
                   " -log ",             sharedPathAn, prefix, "/", 
-                                          LibraryName, ".4processedMerged.log",
+                                        LibraryName, ".4processedMerged.log",
+                  " | gzip > ",         paste(pathFastq, LibraryName,
+                                              ".4processedMerged.fastq.gz",
+                                              sep = ""),
                   sep = ""))
-
 
 suffix <- ".sub"  
 MakeQsubs(cmd, prefix, suffix)
@@ -1268,16 +1269,16 @@ To remove the output files after you are done:
 RemoveQsubTempFiles(sharedPathAn, prefix)
 ```
 
+Don't need the chunk below since we compressed the fastq files already.
 Gzip the fastq reads that were INPUT to the PrinSeq processing in step 3-1, 
 we won't need them and the next step in 3-2 will be using the OUTPUT processed 
 reads. 
-
 ```{r}
-cmd <- with(metadataAdapRM, paste("gzip ",
-                                  pathFastq, 
-                                  metadataAdapRM$AdapRMTrimLRPolyAT,
-                                  sep = ""))
-sapply(cmd, function(x) system(x))
+# cmd <- with(metadataAdapRM, paste("gzip ",
+#                                   pathFastq, 
+#                                   metadataAdapRM$AdapRMTrimLRPolyAT,
+#                                   sep = ""))
+# sapply(cmd, function(x) system(x))
 
 ```
 
@@ -1296,8 +1297,8 @@ Generate PrinSeq graph files (.gd) for the fastq generated the previously:
 ```{r}
 prefix2 <- "H2_PrinSeq2ndTrimPolyATgraphs"
 
-cmd <- MakePrinSeqGraphFiles(metadataAdapRM, metadataAdapRM$AdapRM2ndPolyAT,
-                             prefix, "4processedMerged")
+cmd <- MakePrinSeqGraphFiles2(metadataAdapRM, metadataAdapRM$AdapRM2ndPolyAT,
+                              prefix, "4processedMerged")
 
 suffix <- ".sub"  
 MakeQsubs(cmd, prefix2, suffix)
@@ -1354,19 +1355,21 @@ Filtering of reads by complexity (DUST) and minimum length
 prefix <- "I_PrinSeqDustMinLen"
 
 cmd <- with(metadataAdapRM, 
-            paste(prinSeqPath,
-                  " -fastq ",          pathFastq,  AdapRM2ndPolyAT,
+            paste("zcat " , pathFastq,  AdapRM2ndPolyAT, ".gz", " | ", 
+                  prinSeqPath,
+                  " -fastq stdin", 
                   " -min_len ",        minLen,
                   " -lc_method ",      lcMethod,
                   " -lc_threshold ",   lcThreshold,
-                  " -out_good ",       paste(pathFastq, LibraryName,
-                                                ".5processedMerged",
-                                               sep = ""),
+                  " -out_good stdout ",
                   " -out_bad  ",       outBad,
                   " -verbose ",
                   " -no_qual_header ",
                   " -log ",            sharedPathAn, prefix, "/", 
                                           LibraryName, ".5processedMerged.log",
+                  " | gzip > ",        paste(pathFastq, LibraryName,
+                                              ".5processedMerged.fastq.gz",
+                                              sep = ""),
                   sep = ""))
 
 suffix <- ".sub"  
@@ -1387,31 +1390,32 @@ for(k in 1:nrow(metadataAdapRM)){
 }
 ```
 
+
 To remove the output files after you are done:
 ```{r}
 RemoveQsubTempFiles(sharedPathAn, prefix)
 ```
 
-
+Don't need the chunk below since we compressed the fastq files already.
 Gzip the fastq reads that were INPUT to PrinSeq processing in step 4-1, we 
 won't need them, the next step in 4-2 uses the OUTPUT processed reads. 
 ```{r}
 
-cmd <- with(metadataAdapRM, paste("gzip ",
-                                  pathFastq, 
-                                  metadataAdapRM$AdapRM2ndPolyAT,
-                                  sep=""))
-sapply(cmd, function(x) system(x))
+# cmd <- with(metadataAdapRM, paste("gzip ",
+#                                   pathFastq, 
+#                                   metadataAdapRM$AdapRM2ndPolyAT,
+#                                   sep=""))
+# sapply(cmd, function(x) system(x))
 
 ```
-
+***Over here!!!! 10Jul2016 7:48 pm
 4-2.
 Generate PrinSeq graph files (.gd) for the fastq generated the previously:
 ```{r}
 prefix2 <- "I2_PrinSeqDustMinLenGraph"
 
-cmd <- MakePrinSeqGraphFiles(metadataAdapRM, metadataAdapRM$AdapRMDustMinLen,
-                             prefix, "5processedMerged")
+cmd <- MakePrinSeqGraphFiles2(metadataAdapRM, metadataAdapRM$AdapRMDustMinLen,
+                              prefix, "5processedMerged")
 
 suffix <- ".sub"  
 MakeQsubs(cmd, prefix2, suffix)
