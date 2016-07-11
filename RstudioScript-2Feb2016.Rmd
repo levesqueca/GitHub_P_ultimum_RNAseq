@@ -1408,7 +1408,7 @@ won't need them, the next step in 4-2 uses the OUTPUT processed reads.
 # sapply(cmd, function(x) system(x))
 
 ```
-***Over here!!!! 10Jul2016 7:48 pm
+
 4-2.
 Generate PrinSeq graph files (.gd) for the fastq generated the previously:
 ```{r}
@@ -1459,9 +1459,7 @@ MakeQsubs(cmd, prefix3, suffix)
 
 To remove the output files after you are done:
 ```{r}
-
 RemoveQsubTempFiles(sharedPathAn, prefix3)
-
 ```
 
 TopHat:
@@ -1486,7 +1484,7 @@ cmd <- with(metadataAdapRM,
                   " -o ", sharedPathAn, LibraryName, "/",LibraryName,".TopHat.",
                           format(Sys.time(), "%Y-%m-%d"),
                   " ",    referencesPath, bowind,
-                  " ",    pathFastq, AdapRMDustMinLen,
+                  " ",    pathFastq, AdapRMDustMinLen, ".gz",
                   sep = ""))
 
 suffix <- ".sub" 
@@ -1539,6 +1537,7 @@ top species are the majority of our contamination from.
 
 ```
 
+***Over here!!!! 10Jul2016 11:12 pm
 #  MUST DO CLEAN UP OF TMP FILES WITHIN FOLDERS
 # fix the matching to temp tophat files to be removed
 ```{r}
