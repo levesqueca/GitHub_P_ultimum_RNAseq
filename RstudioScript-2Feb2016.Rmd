@@ -1537,7 +1537,7 @@ top species are the majority of our contamination from.
 
 ```
 
-***Over here!!!! 10Jul2016 11:12 pm
+
 #  MUST DO CLEAN UP OF TMP FILES WITHIN FOLDERS
 # fix the matching to temp tophat files to be removed
 ```{r}
@@ -1545,7 +1545,7 @@ cmd <- with(metadataAdapRM,
             paste("rm -r ", 
                   sharedPathAn, 
                   metadataAdapRM$LibraryName, "/", 
-                  metadataAdapRM$LibraryName, ".TopHat.2016-05-20/tmp", 
+                  metadataAdapRM$LibraryName, ".TopHat.2016-07-10/tmp", 
                   sep = ""))
 system(cmd)
 ```
@@ -1558,10 +1558,11 @@ RemoveQsubTempFiles(sharedPathAn, prefix)
 
 ```
 
+
 To run Samtools on the Tophat folder that has the right date
 ```{r}
 # could have automatic search for most recent
-topHatDate <- ".2016-05-20"
+topHatDate <- ".2016-07-10"
 
 cmd <- with(metadataAdapRM,
             (paste(samtools1Path, 
@@ -1608,6 +1609,7 @@ MakeQsubs(cmd, prefix, suffix, node)
 ################################################################################
 ```
 
+
 Function to remove output files after running qsubs:
 ```{r}
 
@@ -1653,6 +1655,14 @@ MakeQsubs(cmd, prefix, suffix)
 ################################################################################
 ```
 
+Function to remove output files after running qsubs:
+```{r}
+
+RemoveQsubTempFiles(sharedPathAn, prefix)
+
+```
+
+
 Fix permissions for files:
 ```{r}
 cmd <- paste( "find ", sharedPathAn, " -type d -exec chmod 770 {} + ", sep = "")
@@ -1661,6 +1671,7 @@ cmd <- paste( "find ", sharedPathAn, " -type f -exec chmod 770 {} + ", sep = "")
 system(cmd)
   
 ```
+
 
 Get all data together and add the counts for libraries representing the same 
 treatments
@@ -1689,10 +1700,13 @@ write.table(countsTopHat,
 
 ```
 
+
 Only for this set of data, extract control columns based on their names.
 ```{r}
 
-controlToDrop    <- c("T7-c3_BC30", "T7-c3_BC31") # If none do: c("","")
+controlToDrop    <- c("T7-c3_BC30_a1", "T7-c3_BC30_a2", "T7-c3_BC31_a1", 
+                      "T7-c3_BC31_a2", "Tneg-H2O_BC32_a1", 
+                      "Tneg-H2O_BC32_a2", "T48-2_BC22_a1", "T48-2_BC22_a2") # If none do: c("","")
 tempCountsTopHat <- data.frame(countsTopHat)
 colnames(tempCountsTopHat) <- colnames(countsTopHat)
 countsTopHatDf   <- tempCountsTopHat[, !(colnames(tempCountsTopHat)
@@ -1706,6 +1720,7 @@ The idea is to make the names of the columns with different libraries of the
 same experimental unit identical, which means that some columns have the same 
 name. Then a row sum for each unique name is done.
 ```{r}
+library("reshape2")
 
 metadataAdapRM$ExpUnit <- sub("_.*", "", metadataAdapRM$LibraryName)
 
@@ -1762,7 +1777,9 @@ temp2      <- merge(countsTopHatGenes, geneLength,
 
 rownames(temp2) <- temp2$Row.names
 temp2$Row.names <- NULL
-rpkmCount       <- rpkm(temp2[,1:16], #all columns except y
+
+# *** User, look at temp2 and count columns to select all up to y.
+rpkmCount       <- rpkm(temp2[,1:18], #all columns except y, in HiSeq it's col 19
                         gene.length = temp2$y,
                         normalized.lib.sizes = TRUE) 
 
@@ -1838,7 +1855,7 @@ cazyCounts <- merge(countsForBarPlots,
                     unique(metadataAdapRM[,c(metadataColsToMerge)]),  
                     by    = "ExpUnit", 
                     all.x = TRUE)
-
+# cazyCounts$ExpUnit
 cazyCounts$TimePoint <- factor(cazyCounts$TimePoint, levels = c(timePoints))        
 
 length(unique(cazyCounts$TimePoint))
@@ -1853,7 +1870,8 @@ rpkmCount for Cazy
 ```{r}
 
 rpkmForBarPlots <- melt(rpkmCount, id.vars = colnames(cpms))
-
+colnames(cpms)
+length(unique(rpkmForBarPlots$Var2)) 
 colnames(rpkmForBarPlots)[1] <- "SequenceID"
 colnames(rpkmForBarPlots)[2] <- "ExpUnit"
 colnames(rpkmForBarPlots)[3] <- "Read_Counts"
@@ -2033,6 +2051,7 @@ for(i in 1:length(forPlot)){
 
 ```
 
+***Over here!!!! 11Jul2016 09:59 am
 ################################################################################
 **** Over here!
 ```{r}
