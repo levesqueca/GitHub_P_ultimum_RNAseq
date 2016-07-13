@@ -159,7 +159,6 @@ timePoints <- c("0", "12" , "24", "48", "72", "120", "240")
 
 ```
 
-
 Chunk: Path Setting
 The following paths are to directories where the references, tools and general 
 requirements are located, this depends on the directories actually having been 
@@ -185,7 +184,7 @@ pyuugff3Path     <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.gff3",
                           sep = "")
 pyuuTranscripts  <- paste(referencesPath, "pythium_ultimum_transcripts.fasta", 
                           sep = "")
-pyuuProteins  <- paste(referencesPath, "pythium_ultimum_proteins.fasta", 
+pyuuProteins     <- paste(referencesPath, "pythium_ultimum_proteins.fasta", 
                           sep = "")
 
 
@@ -235,7 +234,6 @@ cmd <- paste(starPath,
               "--sjdbGTFfile",  pyuugff3Path,
               "--sjdbOverhang", gff3StarOverhang)
 cmd
-
 #system(cmd)
 
 ```
@@ -331,7 +329,6 @@ write.table(metadata, file = "HiSeq_OosporeConversionTimeCourse_Metadata.csv",
             row.names = FALSE)
 
 ```
-
 
 User:
 
@@ -571,7 +568,6 @@ PrinSeqProcessPE <- function(metaRef, fastq1, fastq2, outPutSuffix, ...){
 ```
 
 
-
 Function to create html files from the PrinSeq graph files - after the name
 of the .gd files have been recorded in a metadata table:
 ```{r}
@@ -704,9 +700,9 @@ for(k in 1:nrow(metadataRawPairs)){
 }
 ```
 
-
 PrinSeq graph reports of raw, unmerged reads. Step 2: html file generation:
 ```{r}
+
 prefix2 <- "C2_PrinSeq_rawHtmlSub"
 cmd <- MakePrinSeqHTML(metadataRawPairs, prefix, metadataRawPairs$RawGraphFiles)
 
@@ -753,12 +749,6 @@ Removal of adapters from fastq reads and unzip files. Do this prior to any other
 processing to make them easier to detect.
 The option -s is for merging paired end Illumina reads that are overlapping
 into a single longer read.
-**Consider have a variable that defines merging as yes or no by user,
-and having this chunk do the -s option if the variable = yes is true.
-Then consider separating the gunzip command - performing gunzip on
-merged reads if the merged option was true, or on single reads if the merged 
-option was false.
-
 ```{r}
 cmd <- with(metadataRawPairs, 
             paste(seqPrepPath, 
