@@ -17,7 +17,10 @@
 # 
 ```
 
-
+Many of the commands and approach are from:
+Count-based differential expression analysis of RNA sequencing data using R and Bioconductor 
+Simon Anders, Davis J McCarthy, Yunshun Chen, Michal Okoniewski, Gordon K Smyth, Wolfgang Huber & Mark D Robinson
+nature protocols | VOL.8 NO.9 | 2013
 
 Use one or the other.  This defines where main working folder is.  Used throughout the script
 ```{r}
@@ -878,6 +881,9 @@ cpms for Cazy data
 library(openxlsx)
 Cazy_data <- read.xlsx(paste(shared_path, "References/CAZYexpression-Secretome_details_emily.xlsx", sep=""), sheet="Sheet2", startRow=2, rows=c(1:412),colNames=TRUE)
 
+sapply(Cazy_data, class)
+
+# just the secreted CZAy genes
 Cazy_data_sub <- subset(Cazy_data, Cazy_data[,33] == "Y")
 
 counts_for_bar_plots <- melt(cpms, id.vars=colnames(cpms))
@@ -921,20 +927,24 @@ Cazy_rpkm_sub <- Cazy_rpkm[which(Cazy_rpkm$SequenceID %in% unique(Cazy_data_sub[
 
 ```
 
-
-Bar plots
+To make a data subset without time point 0 and to make another subset that merges the Cazy classification (duplicating rows when one proteins belongs to more than one family.)
 ```{r}
-
 
 Cazy_rpkm_sub2 <- subset(Cazy_rpkm_sub, Cazy_rpkm_sub$TimePoint != 0)
 
 Cazy_rpkm_sub3 <- merge(Cazy_rpkm_sub2, Cazy_data_sub[,c(1,3)],  by = "SequenceID", all.x = TRUE)
 
+write.table(Cazy_rpkm_sub3,file=file.path(shared_path,"counts_readDGE_TopHat_secreted_CAZy.csv"),sep=",",row.names=T,col.names=NA,quote=F) 
 
 
+```
+
+
+Bar plots
+```{r}
 library("ggplot2")
 
-pdf(file = "Bar_plot_Cazy_rpkm_sub.pdf", width = 11, height =30)
+pdf(file = "Bar_plot_Cazy_rpkm_sub_by_CAZy.pdf", width = 11, height =30)
 bp <- ggplot(aes(y = Read_Counts, x = TimePoint, color=Condition), data = Cazy_rpkm_sub3) +
   theme_bw() +
   theme(axis.text.y = element_text(size = 6, hjust = 1, vjust = 0.4)) +
@@ -949,8 +959,8 @@ bp <- ggplot(aes(y = Read_Counts, x = TimePoint, color=Condition), data = Cazy_r
   geom_boxplot(position=position_dodge(0.8), width = 0.8, outlier.size = 1, outlier.colour="black", outlier.shape = 20) +
   stat_summary(fun.y=mean, geom="point", shape=5, size=1, fatten=0.1, position=position_dodge(0.8))  +
   #geom_abline(intercept = 0.15, slope = 0, linetype = "dotted", colour = "red") +
-  #facet_wrap(~SequenceID, scales = "free", ncol= 9) +
-  facet_grid(Subject ~ SequenceID, scales = "free") +
+  facet_wrap(~SequenceID, scales = "free", ncol= 9) +
+  #facet_grid(Subject ~ ., scales = "free") +
   theme(strip.text.x = element_text(size = 6, face = 'bold.italic', colour = "black", angle = 0))
 print(bp)
 dev.off()
@@ -959,17 +969,70 @@ dev.off()
 ```
 
 
+Individual multiple Bar plots
+```{r}
+library("ggplot2")
+
+Cazy_rpkm_sub3$Secreted_CAZy <- paste(Cazy_rpkm_sub3$Subject, Cazy_rpkm_sub3$SequenceID, sep="-")
+
+for_plot <- unique(Cazy_rpkm_sub3$Secreted_CAZy) 
+
+i <- 1
+
+for(i in 1:length(for_plot)){
+
+  temp <- subset(Cazy_rpkm_sub3, Cazy_rpkm_sub3$Secreted_CAZy == for_plot[i])
+  
+png(file = paste(shared_path,"ggplots/",for_plot[i],".png2", sep=""), width = 3, height = 3, units = "in", res = 300, bg = "white")
+bp <- ggplot(aes(y = Read_Counts, x = TimePoint, color=Condition), data = temp) +
+  theme_bw() +
+  theme(axis.text.y = element_text(size = 6, hjust = 1, vjust = 0.5)) +
+  theme(axis.text.x = element_text(colour = 'black', size = 6, angle = 0, hjust = 0.5, vjust = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', size = 0.5)) +
+ # theme(legend.position="none") +
+  labs(y="Total Number of Reads (rpkm normalized)") +
+  #theme(axis.ticks.margin = unit(1, "mm")) +
+  #coord_flip() +
+  #xlab("Dye") + ylab("Peak Height/Area Ratio") +
+  theme(axis.title.y = element_text(colour = 'black', size = 7, angle = 90, hjust = 0.5, vjust = 0.5, face = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', size = 7, angle = 0, hjust =  0.5, vjust = 0.5 ,face = 'bold')) +
+  geom_boxplot(position=position_dodge(0.8), width = 0.8, outlier.size = 1, outlier.colour="black", outlier.shape = 20) +
+  stat_summary(fun.y=mean, geom="point", shape=5, size=1, fatten=0.1, position=position_dodge(0.8))  +
+  #geom_abline(intercept = 0.15, slope = 0, linetype = "dotted", colour = "red") +
+  facet_wrap(~Secreted_CAZy, scales = "free", ncol= 1) +
+  #facet_grid(Subject ~ ., scales = "free") +
+  theme(strip.text.x = element_text(size = 6, face = 'bold', colour = "black", angle = 0))
+print(bp)
+dev.off()
+}
+
+```
+
+
+
+
 Subset of table for Edge R
 ```{r}
 # Just the secreted Cazy genes
-rpkm_count_cazy <- rpkm_count[which(rownames(rpkm_count) %in% unique(Cazy_data[,c(3)])), ]
+rpkm_count_cazy <- rpkm_count[which(rownames(rpkm_count) %in% unique(Cazy_data_sub[,c(3)])), ]
 
 # keep only certain columnms because of principal components analysis of PlotMDS
-rpkm_count_cazy_sub <- rpkm_count_cazy[,c("T3-c1",  "T3-c2",  "T3-c3",  "T3-x1",  "T3-x2",  "T3-x3")]
+rpkm_count_cazy_sub <- rpkm_count_cazy[,-c("T0-1",  "T0-2",  "T0-4")]
+
+rpkm_count_cazy_sub <- rpkm_count_cazy[ , -which(colnames(rpkm_count_cazy) %in% c("T0-1",  "T0-2",  "T0-4"))]
 
 # Had to turn cholesterol/control as numeric by making them factors and then numbers 
 dat_agg2 <- dat_agg[order(dat_agg$Group.2, -as.numeric(as.factor(dat_agg$Group.1)), dat_agg$Group.3,  decreasing=c(F,F,F)),] 
 
+
+
+```
+
+
+Create Sample sheet
+```{r}
+
+samples <- data.frame(,colnames(rpkm_count_cazy_sub))
 
 
 ```
@@ -993,6 +1056,7 @@ dat_agg2 <- dat_agg[order(dat_agg$Group.2, -as.numeric(as.factor(dat_agg$Group.1
 #dim(counts_TopHat_genes) ## count counts of features you have left over after initial filter 
 #colnames(counts_TopHat_genes) = MetadataProcessed$LibraryName 
 #Create a DGEList object (edgeR's container for RNA-seq count data): 
+dTopH = DGEList(counts=rpkm_count_cazy_sub, group=dat_agg2$Group.1[10:15]) 
 dTopH = DGEList(counts=rpkm_count_cazy_sub, group=dat_agg2$Group.1[10:15]) 
 #Estimate normalization factors using, RNA composition and adjust for read depth: 
 dTopH = calcNormFactors(dTopH)
