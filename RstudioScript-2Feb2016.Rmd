@@ -1813,7 +1813,7 @@ Potential_HK <- subset(log_rpkmCount, min > 0 & SD < 0.25)
 
 Potential_HK <- Potential_HK[order(-Potential_HK$mean, ),] 
 
-write.table(Potential_HS, file = file.path(paste(sharedPathAn, sep = ""), 
+write.table(Potential_HK, file = file.path(paste(sharedPathAn, sep = ""), 
                                     "potential_houseKeepingGenes.csv"),
             append    = FALSE, 
             sep       = ",", 
@@ -1823,7 +1823,7 @@ write.table(Potential_HS, file = file.path(paste(sharedPathAn, sep = ""),
 ```
 
 
-
+This is to prerform a BLAST on the best candidate House Keeping genes
 ```{r}
 
 
@@ -1859,46 +1859,187 @@ write.table(web_env_search$ids, file = paste(sharedPathAn,"Blast_HK/gilist.txt",
 
 ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nr/nr"
 ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastp"
-blastnOutFrmt  <- paste(" '", 
-                        "6", " qseqid", " sallacc", " pident", " length", 
-                        " mismatch", " gapopen", " qstart", " qend", " sstart", 
-                        " send", " evalue", " bitscore", 
-                        "'",
-                        sep = "") 
+blastnOutFrmt  <-  c("sseqid", "qseqid", "sacc", "pident", "length", 
+                        "mismatch", "gapopen", "qstart", "qend", "sstart", 
+                        "send", "evalue", "bitscore")
+#   paste(" '", 
+#                         "6",  " sseqid", " qseqid", " sacc", " pident", " length", 
+#                         " mismatch", " gapopen", " qstart", " qend", " sstart", 
+#                         " send", " evalue", " bitscore", 
+#                         "'",
+#                         sep = "") 
 maxTargetsSeqs <- 3
 
 cmd <- paste(ncbiBlastnPath,
              " -db ",     ncbiDbPath,
              " -query ",  paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta",
                                 sep = ""),
-             " -max_target_seqs ", maxTargetsSeqs,
+             " -evalue  1.00E-90", 
+        #     " -max_target_seqs ", maxTargetsSeqs,
              " -gilist ", sharedPathAn,   "Blast_HK/gilist.txt",
-             " -outfmt ", blastnOutFrmt,
-             " -out ",    paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt.bls",
+             " -outfmt '6 ", paste(blastnOutFrmt, collapse=" "), "'",
+        #     " -outfmt 6", 
+             " -out ",    paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt.tab",
                                 sep = ""),
              sep = "")
 
-cmd2 <- paste("/opt/bio/ncbi/bin/blastall -p blastp -d /isilon/biodiversity/reference/ncbi/blastdb/reference/nr/nr -i ", 
-              sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", 
-              " -l " , sharedPathAn,   "Blast_HK/gilist.txt",
-                " -e 10 -m 0 -T T -o ", 
-               sharedPathAn, "Blast_HK/HK_InterestSubsetNt.html", sep="")
-
-
-prefix <- "pyuuCazyInterestSubset"
-suffix <- ".sub" 
-MakeQsubs(cmd, prefix, suffix, node)
-################################################################################
-#####  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****######
-#####          watch output from this command in the console              ######
-################################################################################
-
+system(cmd)
 
 
 
 ```
 
 
+This is to get the names of the genes and select/sort  the results by BLAST statistics
+```{r}
+
+HK_hits    <-  read.table(paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt.tab",  sep = ""),
+                                    sep          = "\t",
+                                    header       = FALSE,
+                                    comment.char = "", 
+                                    quote        = "",
+                                    as.is        = TRUE) 
+colnames(HK_hits) <- blastnOutFrmt
+
+library("spider")
+HK_hit_seq <- read.GB(HK_hits$sacc, seq.names = HK_hits$sacc,  species.names = TRUE, gene = TRUE,  access = TRUE, as.character = FALSE)
+
+rm("HK_hit_seq")
+
+HK_hit_genes <- data.frame(attr(HK_hit_seq, "gene"), attr(HK_hit_seq, "accession_num"), stringsAsFactors = FALSE)
+
+colnames(HK_hit_genes) <- c("gene", "sacc")
+
+length(unique(HK_hit_genes$sacc))
+
+HK_hits <- merge(unique(HK_hit_genes), HK_hits, by  = "sacc",  all.y= TRUE)
+
+temp <- HK_hits[-grep("unnamed|hypothetical",HK_hits$gene),]
+ 
+
+temp <- temp[order(temp$qseqid,temp$evalue,-temp$bitscore),] 
+
+write.table(temp, file = file.path(paste(sharedPathAn, sep = ""), 
+                                    "potential_houseKeepingGenes_BLAST.csv"),
+            append    = FALSE, 
+            sep       = ",", 
+            col.names = NA)
+
+```
+
+
+This pulls the first line of each BLAST hits.  Because they were sorted, the one with the lowest evalue and highest bit score is kept.
+```{r}
+HK_best_hit <- temp[!duplicated(temp2$qseqid), ]
+
+HK_best_hit$HK_gene <- sub("_\\[.*","",HK_best_hit$gene)
+
+
+HS_rpkmCount <- rpkmCount[HK_best_hit$qseqid, ]
+
+HS_rpkmForBarPlots <- melt(HS_rpkmCount, id.vars = colnames(HS_rpkmCount))
+colnames(HS_rpkmForBarPlots)[1] <- "SequenceID"
+colnames(HS_rpkmForBarPlots)[2] <- "ExpUnit"
+colnames(HS_rpkmForBarPlots)[3] <- "Read_Counts"
+
+#temp <- merge(HS_rpkmForBarPlots, HK_best_hits, by  = "sacc",  all.y= TRUE)
+
+
+#I took out library name because we added two libraries
+metadataColsToMerge <- c("TimePoint", 
+                         "RNASeq_Replicate", 
+                         "ExpUnit") 
+
+HS_rpkmForBarPlots <- merge(HS_rpkmForBarPlots, 
+                  unique(metadataAdapRM[,c(metadataColsToMerge)]),
+                  by    = "ExpUnit", 
+                  all.x = TRUE)
+
+unique(HS_rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y"
+HS_rpkmForBarPlots <- HS_rpkmForBarPlots[HS_rpkmForBarPlots$ExpUnit!="y",]
+unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y" is gone
+
+
+HS_rpkmForBarPlots$TimePoint <- factor(HS_rpkmForBarPlots$TimePoint, levels = c(timePoints))        
+
+
+HS_rpkmForBarPlots <- merge(HS_rpkmForBarPlots, HK_best_hit[,c("HK_gene", "qseqid")],  
+                      by.x    = "SequenceID", by.y = "qseqid",
+                      all.x = TRUE)
+
+HS_rpkmForBarPlots$House_Keeping_genes <- paste(HS_rpkmForBarPlots$SequenceID,HS_rpkmForBarPlots$HK_gene,sep="-")
+
+
+```
+
+
+Housekeeping Bar plots
+```{r}
+dir.create(paste(sharedPathAn, "HK_ggplots", sep = ""), 
+           showWarnings = TRUE, 
+           recursive    = FALSE)
+
+ggplotsPath <- paste(sharedPathAn, "HK_ggplots/", sep = "")
+
+library("ggplot2")
+
+for(i in 1:length(cazyFam)){
+temp <- subset(cazyRpkmSub2, cazyRpkmSub2$CazyFam == cazyFam[i])
+
+pdf(file   = paste(ggplotsPath, "HK_plots", ".pdf", sep = ""),
+    width  = 8, 
+    height = 24)
+
+bp <- ggplot(aes(y = Read_Counts, x = TimePoint), data  = HS_rpkmForBarPlots) +
+  theme_bw() +
+  scale_y_log10(breaks=c(10, 100,1000)) +
+  #coord_trans(y = "log10") +
+  theme(axis.text.y = element_text(size  = 6, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 6, 
+                                   angle  = 45, 
+                                   hjust  = 1, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads (rpkm-normalized)") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 12, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 0.2, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 12, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  -0.2, 
+                                    face   = 'bold')) +
+  geom_boxplot(position = position_dodge(0.8), 
+               width    = 0.8, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 1, 
+               position = position_dodge(0.8))  +
+  facet_wrap(~House_Keeping_genes, 
+       #      scales = "fixed", 
+             ncol = 4) +
+  theme(strip.text.x = element_text(size   = 4, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = 0))
+print(bp)
+dev.off()
+}
+
+
+```
 
 
 
