@@ -1318,7 +1318,7 @@ Don't need the chunk below since we compressed the fastq files already.
 ```{r}
 # cmd <- with(metadataAdapRM, paste("gzip ", pathFastq, metadataAdapRM$AdapRM2ndPolyAT, sep = ""))
 # sapply(cmd, function(x) system(x))
-```
+``` 
 
 4-2. Generate PrinSeq graph files (.gd) for the fastq generated the previously:
 ```{r}
@@ -1334,7 +1334,7 @@ cmd <- MakePrinSeqGraphFiles(metadataAdapRem, metadataAdapRem$processed5.R1.Fast
 
 suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix2, suffix)
 ```
-**** Over here!!! HiSeq run 2 for unmerged reads analysis 19July2016
+
 To remove the output files after you are done:
 ```{r}
 system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
@@ -1377,31 +1377,41 @@ RemoveQsubTempFiles(sharedPathAn, prefix3)
 TopHat:
 Create folders to put Tophat results and runs the jobs.  
 ```{r}
-
-for(j in 1:length(metadataAdapRM$LibraryName)) {
-  dir.create(paste(sharedPathAn, metadataAdapRM$LibraryName[j], sep = ""),
-             showWarnings = TRUE, recursive = FALSE)
-}
-
 prefix <- "J_TophatQsub"
 node   <- 2
 
-cmd <- with(metadataAdapRM, 
+# For paired-end not merged:
+for(j in 1:length(metadataAdapRem$LibraryName)) {
+  dir.create(paste(sharedPathAn, metadataAdapRem$LibraryName[j], sep = ""),
+             showWarnings = TRUE, recursive = FALSE)
+}
+
+cmd <- with(metadataAdapRem, 
             paste(tophat2Path, 
                   " -G ", pyuugff3Path,
                   " -p ", node, 
                   " -o ", sharedPathAn, LibraryName, "/",LibraryName,".TopHat.",
                           format(Sys.time(), "%Y-%m-%d"),
                   " ",    referencesPath, bowind,
-                  " ",    pathFastq, AdapRMDustMinLen, ".gz",
+                  " ",    pathFastq, processed5.R1.Fastq, " ", pathFastq, processed5.R2.Fastq,
                   sep = ""))
 
-suffix <- ".sub" 
-MakeQsubs(cmd, prefix, suffix, node)
-################################################################################
-#####  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****######
-#####          watch output from this command in the console              ######
-################################################################################
+# # For merged or single-end reads:
+# for(j in 1:length(metadataAdapRM$LibraryName)) {
+#   dir.create(paste(sharedPathAn, metadataAdapRM$LibraryName[j], sep = ""),
+#              showWarnings = TRUE, recursive = FALSE)
+# }
+# cmd <- with(metadataAdapRM, 
+#             paste(tophat2Path, 
+#                   " -G ", pyuugff3Path,
+#                   " -p ", node, 
+#                   " -o ", sharedPathAn, LibraryName, "/",LibraryName,".TopHat.",
+#                           format(Sys.time(), "%Y-%m-%d"),
+#                   " ",    referencesPath, bowind,
+#                   " ",    pathFastq, AdapRMDustMinLen, ".gz",
+#                   sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
 ```
 
 **** Significant contamination observed, majority of reads unmapped - see which 
@@ -1410,63 +1420,44 @@ top species are the majority of our contamination from.
 
 # ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nt/nt"
 # ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastn"
-# testContamPath <- paste(sharedPathAn, 
-#                         "T24-2_BC20/T24-2_BC20.TopHat.2016-05-20/", 
-#                         "testContaminants/",
-#                         sep = "")
+# testContamPath <- paste(sharedPathAn, "T24-2_BC20/T24-2_BC20.TopHat.2016-05-20/", 
+#                         "testContaminants/", sep = "")
 # blastnOutFrmt  <- paste(" '", 
 #                         "6", " qseqid", " sallacc", " pident", " length", 
 #                         " mismatch", " gapopen", " qstart", " qend", " sstart", 
 #                         " send", " evalue", " bitscore", 
-#                         "'",
-#                         sep = "") 
+#                         "'", sep = "") 
 # maxTargetsSeqs <- 1
-# 
+#
+# prefix <- "testContamT24-2_BC20-2"
 # cmd <- paste(ncbiBlastnPath,
 #              " -db ",     ncbiDbPath,
-#              " -query ",  paste(testContamPath,
-#                                 "T24-2_BC20.unmapped.DeRep.fasta",
-#                                 sep = ""),
+#              " -query ",  paste(testContamPath, "T24-2_BC20.unmapped.DeRep.fasta", sep = ""),
 #              " -max_target_seqs ", maxTargetsSeqs,
 #              " -outfmt ", blastnOutFrmt,
-#              " -out ",    paste(testContamPath,
-#                                 "T24-2_BC20.unmapped.DeRep.fasta2.bls",
-#                                 sep = ""),
+#              " -out ",    paste(testContamPath, "T24-2_BC20.unmapped.DeRep.fasta2.bls", sep = ""),
 #              sep = "")
-# 
-# 
-
-# prefix <- "testContamT24-2_BC20-2"
-# suffix <- ".sub" 
-# MakeQsubs(cmd, prefix, suffix, node)
-# ################################################################################
-# #####  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****######
-# #####          watch output from this command in the console              ######
-# ################################################################################
-
+# suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
 ```
-
-
-#  MUST DO CLEAN UP OF TMP FILES WITHIN FOLDERS
-# fix the matching to temp tophat files to be removed
+**** Over here!!! HiSeq run 2 for unmerged reads analysis 19July2016
+MUST DO CLEAN UP OF TMP FILES WITHIN FOLDERS
+- fix the matching to temp tophat files to be removed
 ```{r}
-cmd <- with(metadataAdapRM, 
-            paste("rm -r ", 
-                  sharedPathAn, 
-                  metadataAdapRM$LibraryName, "/", 
-                  metadataAdapRM$LibraryName, ".TopHat.2016-07-10/tmp", 
-                  sep = ""))
+# For paired-end not merged
+cmd <- with(metadataAdapRem, paste("rm -r ", sharedPathAn, metadataAdapRem$LibraryName, "/", 
+                                   metadataAdapRem$LibraryName, ".TopHat.2016-07-19/tmp", sep = ""))
+
+# # For merged or single-end reads:
+# cmd <- with(metadataAdapRM, paste("rm -r ", sharedPathAn, metadataAdapRM$LibraryName, "/", 
+#                                   metadataAdapRM$LibraryName, ".TopHat.2016-07-10/tmp", sep = ""))
 system(cmd)
 ```
-
-
-Function to remove output files after running qsubs:
+#####################################################################################################
+To remove the output files after you are done:
 ```{r}
-
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
 RemoveQsubTempFiles(sharedPathAn, prefix)
-
 ```
-
 
 To run Samtools on the Tophat folder that has the right date
 ```{r}
