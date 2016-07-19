@@ -1,13 +1,11 @@
-####################################################################################################
-# Installing the required packages for R:
-# This is to be done in the R command line and not in R studio
-#source("http://www.Bioconductor.org/biocLite.R")
-#biocLite("BiocUpgrade")
-####################################################################################################
-# Getting started in R
-# Set the working directory > setwd("~/")
-# Check version installed
-####################################################################################################
+Installing the required packages for R:
+This is to be done in the R command line and not in R studio
+source("http://www.Bioconductor.org/biocLite.R")
+biocLite("BiocUpgrade")
+
+Getting started in R:
+Set the working directory > setwd("~/")
+Check version installed
 ```{r}
 # library(knitr)
 # source("http://www.Bioconductor.org/biocLite.R")
