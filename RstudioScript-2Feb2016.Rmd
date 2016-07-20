@@ -1465,36 +1465,32 @@ topHatDate <- ".2016-07-19"
 prefix <- "K_SamtoolsSortQsub"
 # cmd <- with(metadataAdapRM, # For merged or single-end reads
 cmd <- with(metadataAdapRem,  # For paired-end not merged
-            (paste(samtools1Path, 
-                   " sort",   " -n ", 
+            (paste(samtools1Path, " sort",   " -n ", 
                    paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
                          topHatDate, "/", "accepted_hits.bam ", sep = ""),
                    paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
                          topHatDate, "/", LibraryName, "_sn", sep = ""),
                    "\n",
-                   samtools1Path,  
-                   " view ", " -o ",
+                   samtools1Path, " view ", " -o ",
                    paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
                          topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
                    paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
                          topHatDate, "/", LibraryName, "_sn.bam", sep = ""),
                    "\n",
-                   samtools1Path,               
-                   " sort ",
+                   samtools1Path, " sort ",
                    paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
                          topHatDate, "/", "accepted_hits.bam ", sep = ""),
                    paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
                          topHatDate, "/", LibraryName, "_s", sep = ""),
                    "\n",
-                   samtools1Path,        
-                   " index ", paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
-                                    topHatDate, "/", LibraryName, "_s.bam", sep = ""),
+                   samtools1Path, " index ", 
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat",
+                         topHatDate, "/", LibraryName, "_s.bam", sep = ""),
                    sep = "")))
 node   <- 1
 suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
 ```
 
-**** Over here!!! HiSeq run 2 for unmerged reads analysis 19July2016
 To remove the output files after you are done:
 ```{r}
 system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
@@ -1511,128 +1507,110 @@ metadataAdapRem$countfTopHat = paste(metadataAdapRem$LibraryName, "TopHat2Count"
 # metadataAdapRM$countfTopHat = paste(metadataAdapRM$LibraryName, "TopHat2Count", sep = ".")
 ```
 
-#####################################################################################################
+Read count with HT-Seq:
 ```{r}
 # Set HT-Seq options:
 stranded <- "no"
 MINAQUAL <- 10
-cmd <- with(metadataAdapRM, 
+prefix   <- "L_HTSeq_Qsub"
+node     <- 1
+
+# cmd <- with(metadataAdapRM, # For merged or single-end reads
+cmd <- with(metadataAdapRem,  # For paired-end not merged
             paste(htseqCountPath, 
                   " -s ", stranded,
                   " -a ", MINAQUAL,
                   " --idattr=Parent ", 
                   paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
                         topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
-                  pyuugff3Path,
-                  " > ",
+                  pyuugff3Path, " > ",
                   paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
-                        topHatDate, "/", metadataAdapRM$countfTopHat, sep = ""),
+                        topHatDate, "/", metadataAdapRem$countfTopHat, sep = ""),  # PE not merged
+                        # topHatDate, "/", metadataAdapRM$countfTopHat, sep = ""), # Merged/SE reads
                   sep = ""))
 
-node   <- 1
-prefix <- "L_HTSeq_Qsub" 
-suffix <- ".sub" 
-MakeQsubs(cmd, prefix, suffix)
-################################################################################
-#####  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****######
-#####          watch output from this command in the console              ######
-################################################################################
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
 ```
 
-Function to remove output files after running qsubs:
+To remove the output files after you are done:
 ```{r}
-
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
 RemoveQsubTempFiles(sharedPathAn, prefix)
-
 ```
-
 
 Fix permissions for files:
 ```{r}
-cmd <- paste( "find ", sharedPathAn, " -type d -exec chmod 770 {} + ", sep = "")
-system(cmd)
-cmd <- paste( "find ", sharedPathAn, " -type f -exec chmod 770 {} + ", sep = "")
-system(cmd)
-  
+cmd <- paste( "find ", sharedPathAn, " -type d -exec chmod 770 {} + ", sep = ""); system(cmd)
+cmd <- paste( "find ", sharedPathAn, " -type f -exec chmod 770 {} + ", sep = ""); system(cmd)
 ```
 
-
-Get all data together and add the counts for libraries representing the same 
-treatments
+Get all data together and add the counts for libraries representing the same treatments:
 ```{r}
 library("edgeR")
+# Identify the count files and read them into R using readDGE:
 
-# Identify the count files and read them into R using readDGE
-countsListTopHat <- paste(sharedPathAn, metadataAdapRM$LibraryName, "/", 
-                         metadataAdapRM$LibraryName, 
-                         ".TopHat", topHatDate, "/",
-                         metadataAdapRM$countfTopHat, 
-                         sep = "")
+# For paired-end not merged:
+countsListTopHat <- paste(sharedPathAn, metadataAdapRem$LibraryName, "/", metadataAdapRem$LibraryName,
+                          ".TopHat", topHatDate, "/", metadataAdapRem$countfTopHat, sep = "")
+
+# # For merged or single-end reads:
+# countsListTopHat <- paste(sharedPathAn, metadataAdapRM$LibraryName, "/", metadataAdapRM$LibraryName,
+#                           ".TopHat", topHatDate, "/", metadataAdapRM$countfTopHat, sep = "")
 
 # Turn the count of the list into a data.frame
 countsTopHat <- readDGE(countsListTopHat)$counts
 
 colnames(countsTopHat) <- basename(colnames(countsTopHat))
 
-write.table(countsTopHat, 
-            file = file.path(sharedPathAn, 
-                             "counts_readDGE_TopHat.annotated.csv"),
-            sep  = ",", 
-            row.names = TRUE, 
-            col.names = NA, 
-            quote     = FALSE) 
-
+write.table(countsTopHat, file = file.path(sharedPathAn, "counts_readDGE_TopHat.annotated.csv"),
+            sep = ",", row.names = TRUE, col.names = NA, quote = FALSE) 
 ```
-
 
 Only for this set of data, extract control columns based on their names.
 ```{r}
-
-controlToDrop    <- c("T7-c3_BC30_a1", "T7-c3_BC30_a2", "T7-c3_BC31_a1", 
-                      "T7-c3_BC31_a2", "Tneg-H2O_BC32_a1", 
-                      "Tneg-H2O_BC32_a2", "T48-2_BC22_a1", "T48-2_BC22_a2") # If none do: c("","")
+# List the controls that you want to drop from count analyses, if there are none do: c("","") 
+controlToDrop <- c("T7-c3_BC30_a1", "T7-c3_BC30_a2", "T7-c3_BC31_a1", "T7-c3_BC31_a2", 
+                   "Tneg-H2O_BC32_a1", "Tneg-H2O_BC32_a2", "T48-2_BC22_a1", "T48-2_BC22_a2") 
 tempCountsTopHat <- data.frame(countsTopHat)
 colnames(tempCountsTopHat) <- colnames(countsTopHat)
-countsTopHatDf   <- tempCountsTopHat[, !(colnames(tempCountsTopHat)
-                                         %in% controlToDrop)]
-
+countsTopHatDf   <- tempCountsTopHat[, !(colnames(tempCountsTopHat) %in% controlToDrop)]
 ```
 
 The trick was from here
 http://stackoverflow.com/questions/19321053/sum-together-columns-of-data-frame-based-on-name-type
-The idea is to make the names of the columns with different libraries of the 
-same experimental unit identical, which means that some columns have the same 
-name. Then a row sum for each unique name is done.  When a library is sequenced twice, the numbers will be added up.
+Make the names of the columns with different libraries of the same experimental unit identical - some 
+columns have the same name. Then a row sum for each unique name is done. When a library is sequenced 
+twice, the numbers will be added up.
 ```{r}
 library("reshape2")
+# For paired-end not merged:
+metadataAdapRem$ExpUnit <- sub("_.*", "", metadataAdapRem$LibraryName)
 
-metadataAdapRM$ExpUnit <- sub("_.*", "", metadataAdapRM$LibraryName)
+# # For merged or single-end reads:
+# metadataAdapRM$ExpUnit <- sub("_.*", "", metadataAdapRM$LibraryName)
 
 countsTopHatDf$gene <- rownames(countsTopHatDf)
 countsTopHatMelt    <- melt(countsTopHatDf)
-
-
 colnames(countsTopHatMelt)[2] <- "LibraryName"
 
-df <- merge(countsTopHatMelt, metadataAdapRM[,c("LibraryName", "ExpUnit")], 
-            by    = "LibraryName", 
-            all.x = TRUE)
+# For paired-end not merged:
+df <- merge(countsTopHatMelt, metadataAdapRem[,c("LibraryName", "ExpUnit")], 
+            by = "LibraryName", all.x = TRUE)
 
-countsTopHatSum <- dcast(data = df[,c("gene", "value", "ExpUnit")],
-                         gene ~ ExpUnit, 
-                         sum, 
-                         value.var = "value")
+# # For merged or single-end reads:
+# df <- merge(countsTopHatMelt, metadataAdapRM[,c("LibraryName", "ExpUnit")], 
+#             by = "LibraryName", all.x = TRUE)
 
+countsTopHatSum <- dcast(data = df[,c("gene", "value", "ExpUnit")], 
+                         gene ~ ExpUnit, sum, value.var = "value")
 rownames(countsTopHatSum) <- countsTopHatSum$gene
 countsTopHatSum$gene      <- NULL
-
 ```
 
-
+Normalization after removing rDNA data.  Not sure if this is the best approach.
 ```{r}
-# Normalization after removing rDNA data.  Not sure if this is the best approach
 library(Biostrings)
-rowsRemove1 <- row.names(countsTopHatSum)[1:37] #genes we don't want are these
+rowsRemove1 <- row.names(countsTopHatSum)[1:37] # These are unwanted ribosomal or mitochondrial genes 
 rowsRemove2 <- c("__no_feature", 
                  "__ambiguous", 
                  "__too_low_aQual", 
@@ -1640,99 +1618,77 @@ rowsRemove2 <- c("__no_feature",
                  "__alignment_not_unique")
 
 countsTopHatGenes <- countsTopHatSum[-which(rownames(countsTopHatSum) 
-                                            %in%
-                                            c(rowsRemove1, rowsRemove2)), ]
+                                            %in% c(rowsRemove1, rowsRemove2)), ]
 
-# If you want to see the proportion of reads that are not ribosomal compared  
-# to ribosomal and all else (for fun):
+# To see the proportion of reads not ribosomal compared to ribosomal and all else (for fun):
 countsTopHatDf$gene <- NULL
 mean(colSums(countsTopHatGenes)/colSums(countsTopHatDf))
 
 cpms <- cpm(countsTopHatGenes)  # counts per million
 temp <- readDNAStringSet(pyuuTranscripts)
-
 namesTranscripts <- sub(" .*$", "", names(temp))
 
 # Create a vector with names:
 geneLength <- setNames(width(temp), namesTranscripts)
-temp2      <- merge(countsTopHatGenes, geneLength, 
-                    by.x = 0, 
-                    by.y = 0)
-
+temp2      <- merge(countsTopHatGenes, geneLength, by.x = 0, by.y = 0)
 rownames(temp2) <- temp2$Row.names
 temp2$Row.names <- NULL
 
 # *** User, look at temp2 and count columns to select all up to y.
-rpkmCount       <- rpkm(temp2[,1:18], #all columns except y, in HiSeq it's col 19
-                        gene.length = temp2$y,
-                        normalized.lib.sizes = TRUE) 
+rpkmCount <- rpkm(temp2[,1:18], # All columns except y, in HiSeq it's col 19
+                  gene.length = temp2$y, normalized.lib.sizes = TRUE) 
 
-write.table(temp2, file = file.path(paste(sharedPathAn, sep = ""), 
-                                    "readDGEcountsWithGeneLength.csv"),
-            append    = FALSE, 
-            sep       = ",", 
-            col.names = NA)
-
+write.table(temp2, file = file.path(paste(sharedPathAn, sep = ""), "readDGEcountsWithGeneLength.csv"),
+            append = FALSE, sep = ",", col.names = NA)
 ```
 
-Finding potential house keeping genes
+*** Over here, I can't complete the following chunk due to the error generated after potentialHK.
+Finding potential house-keeping (HK) genes
 ```{r}
-
 colnames(rpkmCount)
-log_rpkmCount  <- data.frame(log10(rpkmCount[,1:17]+1))
+logRpkmCount      <- data.frame(log10(rpkmCount[,1:17]+1))
+logRpkmCount$mean <- apply(logRpkmCount, 1, mean)
+logRpkmCount$min  <- apply(logRpkmCount, 1, min)
+logRpkmCount$max  <- apply(logRpkmCount, 1, max)
+logRpkmCount$SD   <- apply(logRpkmCount, 1, sd)
 
-log_rpkmCount$mean <- apply(log_rpkmCount,1,mean)
-log_rpkmCount$min <- apply(log_rpkmCount,1,min)
-log_rpkmCount$max <- apply(log_rpkmCount,1,max)
-log_rpkmCount$SD <- apply(log_rpkmCount,1,sd)
+potentialHK <- subset(logRpkmCount, min > 0 & SD < 0.25)
+potentialHK <- potentialHK[order(-potentialHK$mean, ),] # Error in eval(expr, envir, enclos) : argument is missing, with no default 
 
-
-Potential_HK <- subset(log_rpkmCount, min > 0 & SD < 0.25)
-
-
-
-Potential_HK <- Potential_HK[order(-Potential_HK$mean, ),] 
-
-write.table(Potential_HK, file = file.path(paste(sharedPathAn, sep = ""), 
-                                    "potential_houseKeepingGenes.csv"),
-            append    = FALSE, 
-            sep       = ",", 
-            col.names = NA)
+write.table(potentialHK, 
+            file   = file.path(paste(sharedPathAn, sep = ""), "potential_houseKeepingGenes.csv"),
+            append = FALSE, sep = ",", col.names = NA)
 ```
 
 This is to prerform a BLAST on the best candidate House Keeping genes
 ```{r}
+# Make a list of potential HK genes:
+interestListHK <- rownames(potentialHK)
 
+dir.create(paste(sharedPathAn, "Blast_HK", sep = ""), showWarnings = TRUE, recursive = FALSE)
 
-#make a list of potential HK
-HK_InterestList <- rownames(Potential_HK)
-
-dir.create(paste(sharedPathAn, "Blast_HK", sep = ""), 
-           showWarnings = TRUE, 
-           recursive    = FALSE)
-
-
-# read all transcripts
-HK_Interest <- readAAStringSet(pyuuProteins, format = "fasta") 
+# Read all transcripts:
+interestHK <- readAAStringSet(pyuuProteins, format = "fasta") 
 
 # fixes the names to match list
-names(HK_Interest) <- gsub(" .*", "", names(HK_Interest), ignore.case = FALSE)
+names(interestHK) <- gsub(" .*", "", names(interestHK), ignore.case = FALSE)
 
 # makes a subset of only the potential
-HK_Interest <- HK_Interest[which(names(HK_Interest) %in% HK_InterestList)]
+interestHK <- interestHK[which(names(interestHK) %in% interestListHK)]
 
-writeXStringSet(HK_Interest, file=paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep=""), append=FALSE, format="fasta") 
+writeXStringSet(interestHK, 
+                file   = paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep = ""), 
+                append = FALSE, format = "fasta") 
 
-
-library("rentrez")
+library("rentrez") # Error in library("rentrez") : there is no package called ‘rentrez’
 query <- "(Oomycetes[ORGN])"
 
-web_env_search <- entrez_search(db="protein", query, retmax=999999)
-web_env_search
-length(web_env_search$ids)
-write.table(web_env_search$ids, file = paste(sharedPathAn,"Blast_HK/gilist.txt", sep=""), append = FALSE, quote=FALSE, row.names=FALSE, col.names = FALSE)
-
-
+webEnvSearch <- entrez_search(db = "protein", query, retmax = 999999)
+webEnvSearch
+length(webEnvSearch$ids)
+write.table(webEnvSearch$ids, 
+            file = paste(sharedPathAn,"Blast_HK/gilist.txt", sep = ""), 
+            append = FALSE, quote = FALSE, row.names = FALSE, col.names = FALSE)
 
 ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nr/nr"
 ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastp"
@@ -1761,15 +1717,10 @@ cmd <- paste(ncbiBlastnPath,
              sep = "")
 
 system(cmd)
-
-
-
 ```
-
 
 This is to get the names of the genes and select/sort  the results by BLAST statistics
 ```{r}
-
 HK_hits    <-  read.table(paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt.tab",  sep = ""),
                                     sep          = "\t",
                                     header       = FALSE,
@@ -1779,36 +1730,32 @@ HK_hits    <-  read.table(paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt.tab"
 colnames(HK_hits) <- blastnOutFrmt
 
 library("spider")
-HK_hit_seq <- read.GB(HK_hits$sacc, seq.names = HK_hits$sacc,  species.names = TRUE, gene = TRUE,  access = TRUE, as.character = FALSE)
-
+HK_hit_seq <- read.GB(HK_hits$sacc, seq.names = HK_hits$sacc,  species.names = TRUE, gene = TRUE,  
+                      access = TRUE, as.character = FALSE)
 rm("HK_hit_seq")
 
-HK_hit_genes <- data.frame(attr(HK_hit_seq, "gene"), attr(HK_hit_seq, "accession_num"), stringsAsFactors = FALSE)
+HK_hit_genes <- data.frame(attr(HK_hit_seq, "gene"), attr(HK_hit_seq, "accession_num"), 
+                           stringsAsFactors = FALSE)
 
 colnames(HK_hit_genes) <- c("gene", "sacc")
-
 length(unique(HK_hit_genes$sacc))
 
 HK_hits <- merge(unique(HK_hit_genes), HK_hits, by  = "sacc",  all.y= TRUE)
 
 temp <- HK_hits[-grep("unnamed|hypothetical",HK_hits$gene),]
- 
-
 temp <- temp[order(temp$qseqid,temp$evalue,-temp$bitscore),] 
 
 write.table(temp, file = file.path(paste(sharedPathAn, sep = ""), 
-                                    "potential_houseKeepingGenes_BLAST.csv"),
-            append    = FALSE, 
-            sep       = ",", 
-            col.names = NA)
+                                   "potential_houseKeepingGenes_BLAST.csv"), 
+            append = FALSE, sep = ",", col.names = NA)
 ```
 
-This pulls the first line of each BLAST hits.  Because they were sorted, the one with the lowest evalue and highest bit score is kept.
+This pulls the first line of each BLAST hits.  Because they were sorted, the one with the lowest 
+evalue and highest bit score is kept.
 ```{r}
 HK_best_hit <- temp[!duplicated(temp2$qseqid), ]
 
 HK_best_hit$HK_gene <- sub("_\\[.*","",HK_best_hit$gene)
-
 
 HS_rpkmCount <- rpkmCount[HK_best_hit$qseqid, ]
 
@@ -1817,40 +1764,30 @@ colnames(HS_rpkmForBarPlots)[1] <- "SequenceID"
 colnames(HS_rpkmForBarPlots)[2] <- "ExpUnit"
 colnames(HS_rpkmForBarPlots)[3] <- "Read_Counts"
 
-#temp <- merge(HS_rpkmForBarPlots, HK_best_hits, by  = "sacc",  all.y= TRUE)
+# temp <- merge(HS_rpkmForBarPlots, HK_best_hits, by  = "sacc",  all.y= TRUE)
 
+# I took out library name because we added two libraries
+metadataColsToMerge <- c("TimePoint", "RNASeq_Replicate", "ExpUnit") 
 
-#I took out library name because we added two libraries
-metadataColsToMerge <- c("TimePoint", 
-                         "RNASeq_Replicate", 
-                         "ExpUnit") 
-
-HS_rpkmForBarPlots <- merge(HS_rpkmForBarPlots, 
-                  unique(metadataAdapRM[,c(metadataColsToMerge)]),
-                  by    = "ExpUnit", 
-                  all.x = TRUE)
+HS_rpkmForBarPlots <- merge(HS_rpkmForBarPlots, unique(metadataAdapRM[,c(metadataColsToMerge)]), 
+                            by = "ExpUnit", all.x = TRUE)
 
 unique(HS_rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y"
 HS_rpkmForBarPlots <- HS_rpkmForBarPlots[HS_rpkmForBarPlots$ExpUnit!="y",]
 unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y" is gone
 
-
 HS_rpkmForBarPlots$TimePoint <- factor(HS_rpkmForBarPlots$TimePoint, levels = c(timePoints))        
 
-
 HS_rpkmForBarPlots <- merge(HS_rpkmForBarPlots, HK_best_hit[,c("HK_gene", "qseqid")],  
-                      by.x    = "SequenceID", by.y = "qseqid",
-                      all.x = TRUE)
+                      by.x = "SequenceID", by.y = "qseqid", all.x = TRUE)
 
-HS_rpkmForBarPlots$House_Keeping_genes <- paste(HS_rpkmForBarPlots$SequenceID,HS_rpkmForBarPlots$HK_gene,sep="-")
+HS_rpkmForBarPlots$House_Keeping_genes <- paste(HS_rpkmForBarPlots$SequenceID, 
+                                                HS_rpkmForBarPlots$HK_gene, sep = "-")
 ```
 
 Housekeeping Bar plots
 ```{r}
-dir.create(paste(sharedPathAn, "HK_ggplots", sep = ""), 
-           showWarnings = TRUE, 
-           recursive    = FALSE)
-
+dir.create(paste(sharedPathAn, "HK_ggplots", sep = ""), showWarnings = TRUE, recursive = FALSE)
 ggplotsPath <- paste(sharedPathAn, "HK_ggplots/", sep = "")
 
 library("ggplot2")
@@ -1858,9 +1795,7 @@ library("ggplot2")
 for(i in 1:length(cazyFam)){
 temp <- subset(cazyRpkmSub2, cazyRpkmSub2$CazyFam == cazyFam[i])
 
-pdf(file   = paste(ggplotsPath, "HK_plots", ".pdf", sep = ""),
-    width  = 8, 
-    height = 24)
+pdf(file   = paste(ggplotsPath, "HK_plots", ".pdf", sep = ""), width = 8, height = 24)
 
 bp <- ggplot(aes(y = Read_Counts, x = TimePoint), data  = HS_rpkmForBarPlots) +
   theme_bw() +
@@ -1910,7 +1845,8 @@ print(bp)
 dev.off()
 }
 ```
-
+#####################################################################################################
+*** Over here!!! Script edited up to this point (not including HK portion), 19July2016
 Selecting the subset of reads that are to be analysed (experiment-specific)
 ```{r}
 # To look at all CAZy in Pyuu, not just secreted:
@@ -1930,15 +1866,13 @@ secretedPyuuNames <- subset(secretedNames, grepl("^Pyuu_", secretedNames))
 namesForPlots <- secretedPyuuNames
 # namesForPlots <- allCazyPyuuNames
 
-cazyDataSub <- data.frame(matrix(unlist(strsplit(as.character
-                                                 (namesForPlots), "_")), 
+cazyDataSub <- data.frame(matrix(unlist(strsplit(as.character(namesForPlots), "_")), 
                                 nrow  = length(namesForPlots), 
                                 byrow = TRUE), stringsAsFactors = FALSE)
 
 cazyDataSub$SequenceID   <- paste(cazyDataSub$X3, cazyDataSub$X4, sep = "_")
 colnames(cazyDataSub)[2] <- "CazyFam"
 cazyFam <- unique(cazyDataSub$CazyFam)
-
 ```
 
 Counts per million from the gene counts from TopHat for Cazy data 
