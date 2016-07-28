@@ -1642,7 +1642,6 @@ write.table(temp2, file = file.path(paste(sharedPathAn, sep = ""), "readDGEcount
             append = FALSE, sep = ",", col.names = NA)
 ```
 
-*** Over here, I can't complete the following chunk due to the error generated after potentialHK.
 Finding potential house-keeping (HK) genes
 ```{r}
 colnames(rpkmCount)
@@ -1653,118 +1652,122 @@ logRpkmCount$max  <- apply(logRpkmCount, 1, max)
 logRpkmCount$SD   <- apply(logRpkmCount, 1, sd)
 
 potentialHK <- subset(logRpkmCount, min > 0 & SD < 0.25)
-potentialHK <- potentialHK[order(-potentialHK$mean, ),] # Error in eval(expr, envir, enclos) : argument is missing, with no default 
+potentialHK <- potentialHK[order(-potentialHK$mean),]  
 
 write.table(potentialHK, 
             file   = file.path(paste(sharedPathAn, sep = ""), "potential_houseKeepingGenes.csv"),
             append = FALSE, sep = ",", col.names = NA)
 ```
 
+The following was done by Andre, and the shared path was not the same. I can't get "rentrez" to 
+work for me, so I won't repeat this. Instead I will refer to tab-delinited file with the genes 
+using a hard path reference.
 This is to prerform a BLAST on the best candidate House Keeping genes
 ```{r}
-# Make a list of potential HK genes:
-interestListHK <- rownames(potentialHK)
+# # Make a list of potential HK genes:
+# interestListHK <- rownames(potentialHK)
+# 
+# dir.create(paste(sharedPathAn, "Blast_HK", sep = ""), showWarnings = TRUE, recursive = FALSE)
+# 
+# # Read all transcripts:
+# interestHK <- readAAStringSet(pyuuProteins, format = "fasta") 
+# 
+# # fixes the names to match list
+# names(interestHK) <- gsub(" .*", "", names(interestHK), ignore.case = FALSE)
+# 
+# # makes a subset of only the potential
+# interestHK <- interestHK[which(names(interestHK) %in% interestListHK)]
+# 
+# writeXStringSet(interestHK, 
+#                 file   = paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep = ""), 
+#                 append = FALSE, format = "fasta") 
+# 
+# install.packages("rentrez")
+# library("rentrez") # Error in library("rentrez") : there is no package called ‘rentrez’
+# query <- "(Oomycetes[ORGN])"
+# 
+# webEnvSearch <- entrez_search(db = "protein", query, retmax = 999999)
+# webEnvSearch
+# length(webEnvSearch$ids)
+# write.table(webEnvSearch$ids, 
+#             file = paste(sharedPathAn,"Blast_HK/gilist.txt", sep = ""), 
+#             append = FALSE, quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nr/nr"
+# ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastp"
+# blastnOutFrmt  <-  c("sseqid", "qseqid", "sacc", "pident", "length",
+#                      "mismatch", "gapopen", "qstart", "qend", "sstart",
+#                      "send", "evalue", "bitscore")
+# maxTargetsSeqs <- 3
+# 
+# cmd <- paste(ncbiBlastnPath,
+#              " -db ",     ncbiDbPath,
+#              " -query ",  paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta",
+#                                 sep = ""),
+#              " -evalue  1.00E-90", 
+#         #     " -max_target_seqs ", maxTargetsSeqs,
+#              " -gilist ", sharedPathAn,   "Blast_HK/gilist.txt",
+#              " -outfmt '6 ", paste(blastnOutFrmt, collapse=" "), "'",
+#         #     " -outfmt 6", 
+#              " -out ",    paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt.tab",
+#                                 sep = ""),
+#              sep = "")
+# 
+# system(cmd)
 
-dir.create(paste(sharedPathAn, "Blast_HK", sep = ""), showWarnings = TRUE, recursive = FALSE)
-
-# Read all transcripts:
-interestHK <- readAAStringSet(pyuuProteins, format = "fasta") 
-
-# fixes the names to match list
-names(interestHK) <- gsub(" .*", "", names(interestHK), ignore.case = FALSE)
-
-# makes a subset of only the potential
-interestHK <- interestHK[which(names(interestHK) %in% interestListHK)]
-
-writeXStringSet(interestHK, 
-                file   = paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep = ""), 
-                append = FALSE, format = "fasta") 
-
-library("rentrez") # Error in library("rentrez") : there is no package called ‘rentrez’
-query <- "(Oomycetes[ORGN])"
-
-webEnvSearch <- entrez_search(db = "protein", query, retmax = 999999)
-webEnvSearch
-length(webEnvSearch$ids)
-write.table(webEnvSearch$ids, 
-            file = paste(sharedPathAn,"Blast_HK/gilist.txt", sep = ""), 
-            append = FALSE, quote = FALSE, row.names = FALSE, col.names = FALSE)
-
-ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nr/nr"
-ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastp"
-blastnOutFrmt  <-  c("sseqid", "qseqid", "sacc", "pident", "length", 
-                        "mismatch", "gapopen", "qstart", "qend", "sstart", 
-                        "send", "evalue", "bitscore")
-#   paste(" '", 
-#                         "6",  " sseqid", " qseqid", " sacc", " pident", " length", 
-#                         " mismatch", " gapopen", " qstart", " qend", " sstart", 
-#                         " send", " evalue", " bitscore", 
-#                         "'",
-#                         sep = "") 
-maxTargetsSeqs <- 3
-
-cmd <- paste(ncbiBlastnPath,
-             " -db ",     ncbiDbPath,
-             " -query ",  paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta",
-                                sep = ""),
-             " -evalue  1.00E-90", 
-        #     " -max_target_seqs ", maxTargetsSeqs,
-             " -gilist ", sharedPathAn,   "Blast_HK/gilist.txt",
-             " -outfmt '6 ", paste(blastnOutFrmt, collapse=" "), "'",
-        #     " -outfmt 6", 
-             " -out ",    paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt.tab",
-                                sep = ""),
-             sep = "")
-
-system(cmd)
 ```
 
+**** Over here!!!! 28July2016
 This is to get the names of the genes and select/sort  the results by BLAST statistics
 ```{r}
-HK_hits    <-  read.table(paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt.tab",  sep = ""),
-                                    sep          = "\t",
-                                    header       = FALSE,
-                                    comment.char = "", 
-                                    quote        = "",
-                                    as.is        = TRUE) 
-colnames(HK_hits) <- blastnOutFrmt
+install.packages("ape")
+install.packages("dplyr")
+install.packages("pegas")
+install.packages("liblapack-dev")
+
+subsetHKinterestPath <- paste(sharedPath, analysis, 
+                              "HiSeq_Analyses/Blast_HK/HK_InterestSubsetNt.tab", sep = "")
+
+hitsHK <- read.table(subsetHKinterestPath, sep = "\t", header = FALSE,
+                     comment.char = "", quote = "", as.is = TRUE) 
+colnames(hitsHK) <- blastnOutFrmt
 
 library("spider")
-HK_hit_seq <- read.GB(HK_hits$sacc, seq.names = HK_hits$sacc,  species.names = TRUE, gene = TRUE,  
-                      access = TRUE, as.character = FALSE)
-rm("HK_hit_seq")
+hitSeqHK <- read.GB(hitsHK$sacc, seq.names = hitsHK$sacc, species.names = TRUE, gene = TRUE,
+                    access = TRUE, as.character = FALSE)
+rm("hitSeqHK")
 
-HK_hit_genes <- data.frame(attr(HK_hit_seq, "gene"), attr(HK_hit_seq, "accession_num"), 
+hitGenesHK <- data.frame(attr(hitSeqHK, "gene"), attr(hitSeqHK, "accession_num"), 
                            stringsAsFactors = FALSE)
 
-colnames(HK_hit_genes) <- c("gene", "sacc")
-length(unique(HK_hit_genes$sacc))
+colnames(hitGenesHK) <- c("gene", "sacc")
+length(unique(hitGenesHK$sacc))
 
-HK_hits <- merge(unique(HK_hit_genes), HK_hits, by  = "sacc",  all.y= TRUE)
+hitsHK <- merge(unique(hitGenesHK), hitsHK, by  = "sacc",  all.y= TRUE)
 
-temp <- HK_hits[-grep("unnamed|hypothetical",HK_hits$gene),]
+temp <- hitsHK[-grep("unnamed|hypothetical",hitsHK$gene),]
 temp <- temp[order(temp$qseqid,temp$evalue,-temp$bitscore),] 
 
-write.table(temp, file = file.path(paste(sharedPathAn, sep = ""), 
-                                   "potential_houseKeepingGenes_BLAST.csv"), 
+write.table(temp, 
+            file = file.path(paste(sharedPathAn, sep = ""), "potential_houseKeepingGenes_BLAST.csv"), 
             append = FALSE, sep = ",", col.names = NA)
 ```
 
 This pulls the first line of each BLAST hits.  Because they were sorted, the one with the lowest 
 evalue and highest bit score is kept.
 ```{r}
-HK_best_hit <- temp[!duplicated(temp2$qseqid), ]
+bestHitHK <- temp[!duplicated(temp2$qseqid), ]
 
-HK_best_hit$HK_gene <- sub("_\\[.*","",HK_best_hit$gene)
+bestHitHK$HK_gene <- sub("_\\[.*","",bestHitHK$gene)
 
-HS_rpkmCount <- rpkmCount[HK_best_hit$qseqid, ]
+HS_rpkmCount <- rpkmCount[bestHitHK$qseqid, ]
 
 HS_rpkmForBarPlots <- melt(HS_rpkmCount, id.vars = colnames(HS_rpkmCount))
 colnames(HS_rpkmForBarPlots)[1] <- "SequenceID"
 colnames(HS_rpkmForBarPlots)[2] <- "ExpUnit"
 colnames(HS_rpkmForBarPlots)[3] <- "Read_Counts"
 
-# temp <- merge(HS_rpkmForBarPlots, HK_best_hits, by  = "sacc",  all.y= TRUE)
+# temp <- merge(HS_rpkmForBarPlots, bestHitHKs, by  = "sacc",  all.y= TRUE)
 
 # I took out library name because we added two libraries
 metadataColsToMerge <- c("TimePoint", "RNASeq_Replicate", "ExpUnit") 
@@ -1778,13 +1781,13 @@ unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y" is gone
 
 HS_rpkmForBarPlots$TimePoint <- factor(HS_rpkmForBarPlots$TimePoint, levels = c(timePoints))        
 
-HS_rpkmForBarPlots <- merge(HS_rpkmForBarPlots, HK_best_hit[,c("HK_gene", "qseqid")],  
+HS_rpkmForBarPlots <- merge(HS_rpkmForBarPlots, bestHitHK[,c("HK_gene", "qseqid")],  
                       by.x = "SequenceID", by.y = "qseqid", all.x = TRUE)
 
 HS_rpkmForBarPlots$House_Keeping_genes <- paste(HS_rpkmForBarPlots$SequenceID, 
                                                 HS_rpkmForBarPlots$HK_gene, sep = "-")
 ```
-
+#####################################################################################################
 Housekeeping Bar plots
 ```{r}
 dir.create(paste(sharedPathAn, "HK_ggplots", sep = ""), showWarnings = TRUE, recursive = FALSE)
