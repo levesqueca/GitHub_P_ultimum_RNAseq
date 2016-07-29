@@ -1610,6 +1610,8 @@ countsTopHatSum$gene      <- NULL
 Normalization after removing rDNA data.  Not sure if this is the best approach.
 ```{r}
 library(Biostrings)
+library("edgeR")
+library("reshape2")
 rowsRemove1 <- row.names(countsTopHatSum)[1:37] # These are unwanted ribosomal or mitochondrial genes 
 rowsRemove2 <- c("__no_feature", 
                  "__ambiguous", 
@@ -1625,11 +1627,11 @@ countsTopHatDf$gene <- NULL
 mean(colSums(countsTopHatGenes)/colSums(countsTopHatDf))
 
 cpms <- cpm(countsTopHatGenes)  # counts per million
-temp <- readDNAStringSet(pyuuTranscripts)
-namesTranscripts <- sub(" .*$", "", names(temp))
+tempPyuuTrans <- readDNAStringSet(pyuuTranscripts)
+namesTranscripts <- sub(" .*$", "", names(tempPyuuTrans))
 
 # Create a vector with names:
-geneLength <- setNames(width(temp), namesTranscripts)
+geneLength <- setNames(width(tempPyuuTrans), namesTranscripts)
 temp2      <- merge(countsTopHatGenes, geneLength, by.x = 0, by.y = 0)
 rownames(temp2) <- temp2$Row.names
 temp2$Row.names <- NULL
@@ -1640,6 +1642,99 @@ rpkmCount <- rpkm(temp2[,1:18], # All columns except y, in HiSeq it's col 19
 
 write.table(temp2, file = file.path(paste(sharedPathAn, sep = ""), "readDGEcountsWithGeneLength.csv"),
             append = FALSE, sep = ",", col.names = NA)
+```
+
+Setting up for Differential Analysis: Generating CAZy families, all Secreted and CAZy secreted, 
+as well as House-Keeping subsets
+
+Selecting the subset of reads that are to be analysed (experiment-specific)
+```{r}
+# To look at all CAZy in Pyuu, not just secreted:
+allCazyFasta     <- paste(referencesPath, "Secretome/all_CAZy.fasta", sep = "")
+allCazy          <- readAAStringSet(paste(allCazyFasta), format = "fasta")
+allCazyNames     <- names(allCazy)
+allCazyPyuuNames <- subset(allCazyNames, grepl("^Pyuu_", allCazyNames))
+allCazyPyuuNames <- sub("_secreted$", "", allCazyPyuuNames)
+
+# To look at only secreted CAZy in Pyuu:
+secCazyFasta <- paste(referencesPath, "Secretome/CAZy_secreted.fasta", sep = "")
+secretedCAZyAll   <- readAAStringSet(paste(secCazyFasta), format = "fasta")
+secretedNames     <- names(secretedCAZyAll)
+secretedPyuuNames <- subset(secretedNames, grepl("^Pyuu_", secretedNames))
+
+# Name the names file from the above options that will be analyzed:
+namesForPlots <- secretedPyuuNames
+# namesForPlots <- allCazyPyuuNames
+cazyDataSub <- data.frame(matrix(unlist(strsplit(as.character(namesForPlots), "_")), 
+                                nrow  = length(namesForPlots), 
+                                byrow = TRUE), stringsAsFactors = FALSE)
+
+cazyDataSub$SequenceID   <- paste(cazyDataSub$X3, cazyDataSub$X4, sep = "_")
+colnames(cazyDataSub)[2] <- "CazyFam"
+cazyFam <- unique(cazyDataSub$CazyFam)
+```
+
+Counts per million from the gene counts from TopHat for Cazy data 
+```{r}
+countsForBarPlots <- melt(cpms, id.vars = colnames(cpms))
+
+colnames(countsForBarPlots)[1] <- "SequenceID"
+colnames(countsForBarPlots)[2] <- "ExpUnit"
+colnames(countsForBarPlots)[3] <- "Read_Counts"
+
+metadataColsToMerge <- c("LibraryName", "TimePoint", "RNASeq_Replicate", "ExpUnit") 
+
+# For paired-end not merged:
+cazyCounts <- merge(countsForBarPlots, unique(metadataAdapRem[,c(metadataColsToMerge)]),  
+                    by = "ExpUnit", all.x = TRUE)
+
+# # For merged or single-end reads:
+# cazyCounts <- merge(countsForBarPlots, unique(metadataAdapRM[,c(metadataColsToMerge)]),  
+#                     by = "ExpUnit", all.x = TRUE)
+
+cazyCounts$TimePoint <- factor(cazyCounts$TimePoint, levels = c(timePoints))        
+length(unique(cazyCounts$TimePoint))
+cazyCountsSub <- cazyCounts[which(cazyCounts$SequenceID %in% unique(cazyDataSub[,c("SequenceID")])), ]
+```
+
+rpkmCount for Cazy
+```{r}
+rpkmForBarPlots <- melt(rpkmCount, id.vars = colnames(rpkmCount))
+colnames(rpkmCount)
+length(unique(rpkmForBarPlots$Var2)) 
+colnames(rpkmForBarPlots)[1] <- "SequenceID"
+colnames(rpkmForBarPlots)[2] <- "ExpUnit"
+colnames(rpkmForBarPlots)[3] <- "Read_Counts"
+
+unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y"
+rpkmForBarPlots <- rpkmForBarPlots[rpkmForBarPlots$ExpUnit!="y",]
+unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y" is gone
+
+#I took out library name because we added two libraries
+metadataColsToMerge <- c("TimePoint", "RNASeq_Replicate", "ExpUnit") 
+
+# For paired-end not merged:
+cazyRpkm <- merge(rpkmForBarPlots, unique(metadataAdapRem[,c(metadataColsToMerge)]),
+                  by = "ExpUnit", all.x = TRUE)
+
+# # For merged or single-end reads:
+# cazyRpkm <- merge(rpkmForBarPlots, unique(metadataAdapRM[,c(metadataColsToMerge)]),
+#                   by = "ExpUnit", all.x = TRUE)
+
+cazyRpkm$TimePoint <- factor(cazyRpkm$TimePoint, levels = c(timePoints))        
+
+cazyRpkmSub  <- cazyRpkm[which(cazyRpkm$SequenceID 
+                              %in% unique(cazyDataSub[,c("SequenceID")])), ]
+
+# this duplicate some of the enzymes that are in two groups
+cazyRpkmSub2 <- merge(cazyRpkmSub, cazyDataSub[,c("CazyFam", "SequenceID")],  
+                      by = "SequenceID", all.x = TRUE)
+
+cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, cazyRpkmSub2$SequenceID, sep = "-")
+
+nameReadDGEcsv <- "countsReadDGE_TopHat_SecretedCAZy.csv"
+write.table(cazyRpkmSub2, file = file.path(sharedPathAn, nameReadDGEcsv),
+            sep = ",", row.names = TRUE, col.names = NA, quote = FALSE) 
 ```
 
 Finding potential house-keeping (HK) genes
@@ -1702,108 +1797,109 @@ This is to prerform a BLAST on the best candidate House Keeping genes
 # 
 # cmd <- paste(ncbiBlastnPath,
 #              " -db ",     ncbiDbPath,
-#              " -query ",  paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta",
-#                                 sep = ""),
+#              " -query ",  paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep = ""),
 #              " -evalue  1.00E-90", 
-#         #     " -max_target_seqs ", maxTargetsSeqs,
 #              " -gilist ", sharedPathAn,   "Blast_HK/gilist.txt",
 #              " -outfmt '6 ", paste(blastnOutFrmt, collapse=" "), "'",
-#         #     " -outfmt 6", 
-#              " -out ",    paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt.tab",
-#                                 sep = ""),
+#              " -out ",    paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt.tab", sep = ""),
 #              sep = "")
 # 
 # system(cmd)
-
 ```
 
-**** Over here!!!! 28July2016
+Andre did the next chunk, it's not working for me due to library("spider") error. 
 This is to get the names of the genes and select/sort  the results by BLAST statistics
 ```{r}
-install.packages("ape")
-install.packages("dplyr")
-install.packages("pegas")
-install.packages("liblapack-dev")
-
-subsetHKinterestPath <- paste(sharedPath, analysis, 
-                              "HiSeq_Analyses/Blast_HK/HK_InterestSubsetNt.tab", sep = "")
-
-hitsHK <- read.table(subsetHKinterestPath, sep = "\t", header = FALSE,
-                     comment.char = "", quote = "", as.is = TRUE) 
-colnames(hitsHK) <- blastnOutFrmt
-
-library("spider")
-hitSeqHK <- read.GB(hitsHK$sacc, seq.names = hitsHK$sacc, species.names = TRUE, gene = TRUE,
-                    access = TRUE, as.character = FALSE)
-rm("hitSeqHK")
-
-hitGenesHK <- data.frame(attr(hitSeqHK, "gene"), attr(hitSeqHK, "accession_num"), 
-                           stringsAsFactors = FALSE)
-
-colnames(hitGenesHK) <- c("gene", "sacc")
-length(unique(hitGenesHK$sacc))
-
-hitsHK <- merge(unique(hitGenesHK), hitsHK, by  = "sacc",  all.y= TRUE)
-
-temp <- hitsHK[-grep("unnamed|hypothetical",hitsHK$gene),]
-temp <- temp[order(temp$qseqid,temp$evalue,-temp$bitscore),] 
-
-write.table(temp, 
-            file = file.path(paste(sharedPathAn, sep = ""), "potential_houseKeepingGenes_BLAST.csv"), 
-            append = FALSE, sep = ",", col.names = NA)
+# library("spider")
+# subsetHKinterestPath <- paste(sharedPath, analysis, 
+#                               "HiSeq_Analyses/Blast_HK/HK_InterestSubsetNt.tab", 
+#                               sep = "")
+# 
+# hitsHK <- read.table(subsetHKinterestPath, sep = "\t", header = FALSE,
+#                      comment.char = "", quote = "", as.is = TRUE) 
+# colnames(hitsHK) <- blastnOutFrmt
+# 
+# hitSeqHK <- read.GB(hitsHK$sacc, seq.names = hitsHK$sacc, species.names = TRUE, gene = TRUE,
+#                     access = TRUE, as.character = FALSE)
+# rm("hitSeqHK")
+# 
+# hitGenesHK <- data.frame(attr(hitSeqHK, "gene"), attr(hitSeqHK, "accession_num"), 
+#                            stringsAsFactors = FALSE)
+# 
+# colnames(hitGenesHK) <- c("gene", "sacc")
+# length(unique(hitGenesHK$sacc))
+# 
+# hitsHK <- merge(unique(hitGenesHK), hitsHK, by  = "sacc",  all.y= TRUE)
+# temp   <- hitsHK[-grep("unnamed|hypothetical",hitsHK$gene),]
+# temp   <- temp[order(temp$qseqid,temp$evalue,-temp$bitscore),] 
+# 
+# write.table(temp, 
+#             file = file.path(paste(sharedPathAn, sep=""),"potential_houseKeepingGenes_BLAST.csv"),
+#             append = FALSE, sep = ",", col.names = NA)
 ```
 
-This pulls the first line of each BLAST hits.  Because they were sorted, the one with the lowest 
-evalue and highest bit score is kept.
+**** Over here - Andre, recall at line 1852, we swapped temp and temp2 - I fixed this again
+when I realized that you were trying to remove duplicate rows in the same temp, not pulling
+stuff out from temp 2 for temp. I just made both variables "temp".
+This pulls the first line of each of the BLAST hits.  Because they were sorted, the one with 
+the lowest evalue and highest bit score is kept.
 ```{r}
-bestHitHK <- temp[!duplicated(temp2$qseqid), ]
-
+# Emily had to skip some above and import Andre's tables directly 
+# (import temp, from csv read.csv(), collect names, then):
+genesHKNames <- paste(sharedPath, analysis, "HiSeq_Analyses/potential_houseKeepingGenes_BLAST.csv", 
+                      sep = "")
+temp         <- read.csv(genesHKNames, stringsAsFactors = FALSE)
+bestHitHK    <- temp[!duplicated(temp$qseqid), ]  # duplicate removal
 bestHitHK$HK_gene <- sub("_\\[.*","",bestHitHK$gene)
+rpkmHSCount  <- rpkmCount[bestHitHK$qseqid, ]
 
-HS_rpkmCount <- rpkmCount[bestHitHK$qseqid, ]
+rpkmHSforBarPlots <- melt(rpkmHSCount, id.vars = colnames(rpkmHSCount))
+colnames(rpkmHSforBarPlots)[1] <- "SequenceID"
+colnames(rpkmHSforBarPlots)[2] <- "ExpUnit"
+colnames(rpkmHSforBarPlots)[3] <- "Read_Counts"
 
-HS_rpkmForBarPlots <- melt(HS_rpkmCount, id.vars = colnames(HS_rpkmCount))
-colnames(HS_rpkmForBarPlots)[1] <- "SequenceID"
-colnames(HS_rpkmForBarPlots)[2] <- "ExpUnit"
-colnames(HS_rpkmForBarPlots)[3] <- "Read_Counts"
-
-# temp <- merge(HS_rpkmForBarPlots, bestHitHKs, by  = "sacc",  all.y= TRUE)
+# temp <- merge(rpkmHSforBarPlots, bestHitHKs, by  = "sacc",  all.y= TRUE)
 
 # I took out library name because we added two libraries
 metadataColsToMerge <- c("TimePoint", "RNASeq_Replicate", "ExpUnit") 
 
-HS_rpkmForBarPlots <- merge(HS_rpkmForBarPlots, unique(metadataAdapRM[,c(metadataColsToMerge)]), 
-                            by = "ExpUnit", all.x = TRUE)
+# For paired-end not merged:
+rpkmHSforBarPlots <- merge(rpkmHSforBarPlots, 
+                           unique(metadataAdapRem[,c(metadataColsToMerge)]), 
+                           by = "ExpUnit", all.x = TRUE)
 
-unique(HS_rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y"
-HS_rpkmForBarPlots <- HS_rpkmForBarPlots[HS_rpkmForBarPlots$ExpUnit!="y",]
+# # For merged or single-end reads:
+# rpkmHSforBarPlots <- merge(rpkmHSforBarPlots, unique(metadataAdapRM[,c(metadataColsToMerge)]), 
+#                            by = "ExpUnit", all.x = TRUE)
+
+unique(rpkmHSforBarPlots$ExpUnit) # Notice ExpUnit "y"
+rpkmHSforBarPlots <- rpkmHSforBarPlots[rpkmHSforBarPlots$ExpUnit!="y",]
 unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y" is gone
 
-HS_rpkmForBarPlots$TimePoint <- factor(HS_rpkmForBarPlots$TimePoint, levels = c(timePoints))        
+rpkmHSforBarPlots$TimePoint <- factor(rpkmHSforBarPlots$TimePoint, levels = c(timePoints))        
 
-HS_rpkmForBarPlots <- merge(HS_rpkmForBarPlots, bestHitHK[,c("HK_gene", "qseqid")],  
-                      by.x = "SequenceID", by.y = "qseqid", all.x = TRUE)
+rpkmHSforBarPlots <- merge(rpkmHSforBarPlots, bestHitHK[,c("HK_gene", "qseqid")],
+                           by.x = "SequenceID", by.y = "qseqid", all.x = TRUE)
 
-HS_rpkmForBarPlots$House_Keeping_genes <- paste(HS_rpkmForBarPlots$SequenceID, 
-                                                HS_rpkmForBarPlots$HK_gene, sep = "-")
+rpkmHSforBarPlots$House_Keeping_genes <- paste(rpkmHSforBarPlots$SequenceID,
+                                               rpkmHSforBarPlots$HK_gene, sep = "-")
 ```
-#####################################################################################################
+
+**** Over here there is a problem - for Andre
 Housekeeping Bar plots
 ```{r}
+library("ggplot2")
 dir.create(paste(sharedPathAn, "HK_ggplots", sep = ""), showWarnings = TRUE, recursive = FALSE)
 ggplotsPath <- paste(sharedPathAn, "HK_ggplots/", sep = "")
 
-library("ggplot2")
-
 for(i in 1:length(cazyFam)){
 temp <- subset(cazyRpkmSub2, cazyRpkmSub2$CazyFam == cazyFam[i])
-
-pdf(file   = paste(ggplotsPath, "HK_plots", ".pdf", sep = ""), width = 8, height = 24)
-
-bp <- ggplot(aes(y = Read_Counts, x = TimePoint), data  = HS_rpkmForBarPlots) +
-  theme_bw() +
+pdf(file   = paste(ggplotsPath, "HK_plots", ".pdf", sep = ""), 
+    width  = 8, 
+    height = 24)
+bp  <- ggplot(aes(y = Read_Counts, x = TimePoint), data = rpkmHSforBarPlots) + 
+  theme_bw() + 
   scale_y_log10(breaks=c(10, 100,1000)) +
-  #coord_trans(y = "log10") +
   theme(axis.text.y = element_text(size  = 6, 
                                    hjust = 1, 
                                    vjust = 0.4)) +
@@ -1837,8 +1933,7 @@ bp <- ggplot(aes(y = Read_Counts, x = TimePoint), data  = HS_rpkmForBarPlots) +
                shape = 5, 
                size  = 1, 
                position = position_dodge(0.8))  +
-  facet_wrap(~House_Keeping_genes, 
-       #      scales = "fixed", 
+  facet_wrap(~House_Keeping_genes,
              ncol = 4) +
   theme(strip.text.x = element_text(size   = 4, 
                                     face   = 'bold', 
@@ -1848,124 +1943,8 @@ print(bp)
 dev.off()
 }
 ```
-#####################################################################################################
-*** Over here!!! Script edited up to this point (not including HK portion), 19July2016
-Selecting the subset of reads that are to be analysed (experiment-specific)
-```{r}
-# To look at all CAZy in Pyuu, not just secreted:
-allCazyFasta     <- paste(referencesPath, "Secretome/all_CAZy.fasta", sep = "")
-allCazy          <- readAAStringSet(paste(allCazyFasta), format = "fasta")
-allCazyNames     <- names(allCazy)
-allCazyPyuuNames <- subset(allCazyNames, grepl("^Pyuu_", allCazyNames))
-allCazyPyuuNames <- sub("_secreted$", "", allCazyPyuuNames)
 
-# To look at only secreted CAZy in Pyuu:
-secCazyFasta <- paste(referencesPath, "Secretome/CAZy_secreted.fasta", sep = "")
-secretedCAZyAll   <- readAAStringSet(paste(secCazyFasta), format = "fasta")
-secretedNames     <- names(secretedCAZyAll)
-secretedPyuuNames <- subset(secretedNames, grepl("^Pyuu_", secretedNames))
-
-# Name the names file from the above options that will be analyzed:
-namesForPlots <- secretedPyuuNames
-# namesForPlots <- allCazyPyuuNames
-
-cazyDataSub <- data.frame(matrix(unlist(strsplit(as.character(namesForPlots), "_")), 
-                                nrow  = length(namesForPlots), 
-                                byrow = TRUE), stringsAsFactors = FALSE)
-
-cazyDataSub$SequenceID   <- paste(cazyDataSub$X3, cazyDataSub$X4, sep = "_")
-colnames(cazyDataSub)[2] <- "CazyFam"
-cazyFam <- unique(cazyDataSub$CazyFam)
-```
-
-Counts per million from the gene counts from TopHat for Cazy data 
-```{r}
-library(openxlsx)
-
-# cazyData <- read.xlsx(paste(referencesPath, 
-#                             "CAZYexpression-Secretome_details_emily.xlsx", 
-#                             sep = ""), 
-#                       sheet    = "Sheet2", 
-#                       startRow = 2, 
-#                       rows     = c(1:412), 
-#                       colNames = TRUE)
-# 
-# sapply(cazyData, class)
-# 
-# # just the secreted CZAy genes
-# cazyDataSub <- subset(cazyData, cazyData[,33] == "Y")
-
-countsForBarPlots <- melt(cpms, id.vars = colnames(cpms))
-
-colnames(countsForBarPlots)[1] <- "SequenceID"
-colnames(countsForBarPlots)[2] <- "ExpUnit"
-colnames(countsForBarPlots)[3] <- "Read_Counts"
-
-metadataColsToMerge <- c("LibraryName", 
-                         "TimePoint", 
-                         "RNASeq_Replicate", 
-                         "ExpUnit") 
-
-cazyCounts <- merge(countsForBarPlots, 
-                    unique(metadataAdapRM[,c(metadataColsToMerge)]),  
-                    by    = "ExpUnit", 
-                    all.x = TRUE)
-# cazyCounts$ExpUnit
-cazyCounts$TimePoint <- factor(cazyCounts$TimePoint, levels = c(timePoints))        
-
-length(unique(cazyCounts$TimePoint))
-
-cazyCountsSub <- cazyCounts[which(cazyCounts$SequenceID 
-                                  %in% unique(cazyDataSub[,c("SequenceID")])), ]
-
-```
-
-rpkmCount for Cazy
-```{r}
-
-rpkmForBarPlots <- melt(rpkmCount, id.vars = colnames(rpkmCount))
-colnames(rpkmCount)
-length(unique(rpkmForBarPlots$Var2)) 
-colnames(rpkmForBarPlots)[1] <- "SequenceID"
-colnames(rpkmForBarPlots)[2] <- "ExpUnit"
-colnames(rpkmForBarPlots)[3] <- "Read_Counts"
-
-unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y"
-rpkmForBarPlots <- rpkmForBarPlots[rpkmForBarPlots$ExpUnit!="y",]
-unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y" is gone
-
-#I took out library name because we added two libraries
-metadataColsToMerge <- c("TimePoint", 
-                         "RNASeq_Replicate", 
-                         "ExpUnit") 
-
-cazyRpkm <- merge(rpkmForBarPlots, 
-                  unique(metadataAdapRM[,c(metadataColsToMerge)]),
-                  by    = "ExpUnit", 
-                  all.x = TRUE)
-
-cazyRpkm$TimePoint <- factor(cazyRpkm$TimePoint, levels = c(timePoints))        
-
-cazyRpkmSub  <- cazyRpkm[which(cazyRpkm$SequenceID 
-                              %in% unique(cazyDataSub[,c("SequenceID")])), ]
-
-# this duplicate some of the enzymes that are in two groups
-cazyRpkmSub2 <- merge(cazyRpkmSub, cazyDataSub[,c("CazyFam", "SequenceID")],  
-                      by    = "SequenceID", 
-                      all.x = TRUE)
-
-cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, 
-                                    cazyRpkmSub2$SequenceID, 
-                                    sep = "-")
-nameReadDGEcsv <- "countsReadDGE_TopHat_SecretedCAZy.csv"
-write.table(cazyRpkmSub2,
-            file = file.path(sharedPathAn, nameReadDGEcsv),
-            sep       = ",",
-            row.names = TRUE, 
-            col.names = NA, 
-            quote     = FALSE) 
-```
-
+*** Over here - Andre, I did this, but I'm not sure anymore if we wanted this inlog-scale too?
 Bar plots per CAZy family group:
 ```{r}
 library("ggplot2")
@@ -2034,21 +2013,15 @@ dev.off()
 ```
 
 
+*** Over here - Andre, I did this, but I'm not sure anymore if we wanted this inlog-scale too?
 Individual multiple Bar plots
 ```{r}
-dir.create(paste(sharedPathAn, "ggplots", sep = ""), 
-           showWarnings = TRUE, 
-           recursive    = FALSE)
-
+library("ggplot2")
+dir.create(paste(sharedPathAn, "ggplots", sep = ""), showWarnings = TRUE, recursive = FALSE)
 ggplotsPath <- paste(sharedPathAn, "ggplots/", sep = "")
 
-library("ggplot2")
-
-cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, 
-                                    cazyRpkmSub2$SequenceID, 
-                                    sep = "-")
+cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, cazyRpkmSub2$SequenceID, sep = "-")
 forPlot <- unique(cazyRpkmSub2$Secreted_CAZy) 
-
 i <- 1
 for(i in 1:length(forPlot)){
   temp <- subset(cazyRpkmSub2, cazyRpkmSub2$Secreted_CAZy == forPlot[i])
@@ -2103,9 +2076,13 @@ for(i in 1:length(forPlot)){
   print(bp)
   dev.off()
 }
-
 ```
-
+#####################################################################################################
+*** Over here - for Emily - I left up to here 29July2016
+This I had done manually when I ran the script for merging the HiSeq reads - After looking at plots, 
+I narrowed in on those genes that had similar diff. expression in both oosporogenesis and oospore 
+conversion time-course - I'll need to see about repeating this for the Hi-Seq_Analyses2 with reads 
+not merged.
 ```{r}
 
 cazyInterestList <- c("PYU1_T010810", "PYU1_T003056", "PYU1_T006946", 
@@ -2191,6 +2168,8 @@ suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
 RemoveQsubTempFiles(sharedPathAn, prefix)
 ```
 
+
+**** Over here - Andre, can we delete the next chunk?
 Subset of table for Edge R (not relevant anymore I think)
 ```{r}
 # Just the secreted Cazy genes
@@ -2203,6 +2182,7 @@ rpkmCountCazySub <- rpkmCountCazy[ , -which(colnames(rpkmCountCazy) %in% c("T0-1
 #dat_agg2 <- dat_agg[order(dat_agg$Group.2, -as.numeric(as.factor(dat_agg$Group.1)), dat_agg$Group.3,  decreasing=c(F,F,F)),] 
 ```
 
+**** Over here - Andre, can we delete the next chunk? This was for oosporogenesis.
 Create Sample sheet
 ```{r}
 samples <- data.frame(colnames(rpkmCountCazySub))
@@ -2222,7 +2202,7 @@ samples$Treatment <- paste(samples$Condition, samples$TimePoint, sep="-")
                       
 ```
                       
-                                      
+**** Over here - Andre, can we delete the next chunk?                                      
 ```{r}
 colnames(rpkmCountCazySub)
 samples
@@ -2297,7 +2277,8 @@ dev.off()
 #Save the result table as a CSV file: 
 write.table(ttTopH$table,file=file.path(paste(sharedPathAn,results,sep=""),"toptags_edgeR_TopHat.annotated-T3.csv"), append = FALSE, sep =",", col.names=NA)                      
 ```
-                      
+
+**** Over here - Andre, can we delete the next chunk?                     
 Read Cazy data and merge some data
 ```{r}
 cazyData <- read.xlsx(paste(sharedPathAn, "References/Final\ Table\ CAZyme\ 050813.xlsx", sep=""), sheetName="Pyuu", startRow=2, header=TRUE,  stringsAsFactors = FALSE)
@@ -2306,7 +2287,7 @@ cazyCounts <- subset(as.data.frame(cpms), rownames(cpms) %in% cazyData$SequenceI
 
 length(unique(cazyData$SequenceID))
 ```
-
+**** Over here - Andre, can we delete the next chunk?
 Prepare data for bar plot
 ```{r}
 cazyCounts$gene <- rownames(cazyCounts)
