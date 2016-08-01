@@ -1567,9 +1567,45 @@ countsTopHat <- readDGE(countsListTopHat)$counts
 
 colnames(countsTopHat) <- basename(colnames(countsTopHat))
 
-write.table(countsTopHat, file = file.path(sharedPathAn, "counts_readDGE_TopHat.annotated.csv"),
+write.table(data.frame(countsTopHat), file = file.path(sharedPathAn, "counts_readDGE_TopHat.annotated2.csv"),
             sep = ",", row.names = TRUE, col.names = NA, quote = FALSE) 
 ```
+
+
+* First option to branch for plotting since we have the same csv table for both oospore genesis and oospore conversion
+countsTopHat[c(3166:3170),]
+
+
+I thought there were a problem with the read readDGE.  The following would replace it but it did not help as the problem was before readDGE step
+Kind of useless now but nice to see we can replace readDGE kind of manually.
+```{r}
+
+countsListTopHat <- paste(sharedPathAn, metadataAdapRem$LibraryName, "/", metadataAdapRem$LibraryName,
+                          ".TopHat", topHatDate, "/", metadataAdapRem$countfTopHat, sep = "")
+
+i <- 1
+test <- list()
+for(i in 1:length(countsListTopHat)){
+test[[i]] <- read.table(file = countsListTopHat[i], sep = "\t", stringsAsFactors = FALSE)
+#rownames(test[[i]]) <- unlist(test[[i]][1])
+colnames(test[[i]])[2]   <- basename(countsListTopHat[i])
+#test[[i]][1] <- NULL
+print(nrow(test[[i]]))
+}
+
+
+DF_test2 <- Reduce(function(x, y) merge(x, y, by="V1", all=TRUE), test)
+
+grep("PYU1_T003129",DF_test2)
+
+
+```
+
+
+
+
+
+
 
 Only for this set of data, extract control columns based on their names.
 ```{r}
@@ -1641,12 +1677,19 @@ temp2      <- merge(countsTopHatGenes, geneLength, by.x = 0, by.y = 0)
 rownames(temp2) <- temp2$Row.names
 temp2$Row.names <- NULL
 
+write.table(temp2, file = file.path(paste(sharedPathAn, sep = ""), "readDGEcountsWithGeneLength.csv"),
+            append = FALSE, sep = ",", col.names = NA)
+```
+
+
+* Second option to Branch  for plotting but we do not have that csv for oospore genesis *
+
+RPKM normalization
+```{r}
 # *** User, look at temp2 and count columns to select all up to y.
 rpkmCount <- rpkm(temp2[,1:18], # All columns except y, in HiSeq it's col 19
                   gene.length = temp2$y, normalized.lib.sizes = TRUE) 
 
-write.table(temp2, file = file.path(paste(sharedPathAn, sep = ""), "readDGEcountsWithGeneLength.csv"),
-            append = FALSE, sep = ",", col.names = NA)
 ```
 
 Setting up for Differential Analysis: Generating CAZy families, all Secreted and CAZy secreted, 
