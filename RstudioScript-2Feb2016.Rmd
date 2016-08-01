@@ -229,8 +229,8 @@ hiSeqPathraw <- paste(sharedPath, "Hi.3651-restricted_permissions", "/", sep = "
 **Pull out HiSeq data**
 ```{r}
 # Genome Quebec csv (gQcsv) files are now in raw data folders
-# gQcsv1 <- list.files(path = hiSeqPathcsv, pattern = glob2rx("HiSeq_Lane1_*.csv"), full.names=TRUE)
-# gQcsv2 <- list.files(path = hiSeqPathcsv, pattern = glob2rx("HiSeq_Lane2_*.csv"), full.names=TRUE)
+gQcsv1 <- list.files(path = hiSeqPathcsv, pattern = glob2rx("HiSeq_Lane1_*.csv"), full.names=TRUE)
+gQcsv2 <- list.files(path = hiSeqPathcsv, pattern = glob2rx("HiSeq_Lane2_*.csv"), full.names=TRUE)
 
 # read that csv file
 gQmetadata1         <- read.csv(gQcsv1, stringsAsFactors = FALSE)
@@ -282,6 +282,8 @@ metadata              <-  read.table(paste(sharedPathAn, metadataFileAlternate, 
 ```
 
 Generating a function to make qsub jobs and a bash script to submit them:
+ "need to figure out a way to get the log files sent to the prefix folder"
+
 ```{r}
 # This makes a function that generates qsub commands and a bash to submit them in parallel on 
 # processors on the biocluster using 3 inputs (will be used often throughout the script whenever a
@@ -1457,11 +1459,14 @@ system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat retu
 RemoveQsubTempFiles(sharedPathAn, prefix)
 ```
 
-To run Samtools on the Tophat folder that has the right date
+Setting up the folder date
 ```{r}
 # could have automatic search for most recent
 topHatDate <- ".2016-07-19"
+```
 
+To run Samtools on the Tophat folder that has the right date
+```{r}
 prefix <- "K_SamtoolsSortQsub"
 # cmd <- with(metadataAdapRM, # For merged or single-end reads
 cmd <- with(metadataAdapRem,  # For paired-end not merged
@@ -1757,85 +1762,94 @@ write.table(potentialHK,
 The following was done by Andre, and the shared path was not the same. I can't get "rentrez" to 
 work for me, so I won't repeat this. Instead I will refer to tab-delinited file with the genes 
 using a hard path reference.
+This is to generate a list of Gi queries to search for BLAST (makes it a lot faster)
+```{r}
+# Make a list of potential HK genes:
+interestListHK <- rownames(potentialHK)
+
+dir.create(paste(sharedPathAn, "Blast_HK", sep = ""), showWarnings = TRUE, recursive = FALSE)
+
+# Read all transcripts:
+interestHK <- readAAStringSet(pyuuProteins, format = "fasta") 
+
+# fixes the names to match list
+names(interestHK) <- gsub(" .*", "", names(interestHK), ignore.case = FALSE)
+
+# makes a subset of only the potential
+interestHK <- interestHK[which(names(interestHK) %in% interestListHK)]
+
+writeXStringSet(interestHK, 
+                file   = paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep = ""), 
+                append = FALSE, format = "fasta") 
+
+install.packages("rentrez")
+library("rentrez") # Error in library("rentrez") : there is no package called ‘rentrez’
+query <- "(Oomycetes[ORGN])"
+
+webEnvSearch <- entrez_search(db = "protein", query, retmax = 999999)
+webEnvSearch
+length(webEnvSearch$ids)
+write.table(webEnvSearch$ids, 
+            file = paste(sharedPathAn,"Blast_HK/gilist.txt", sep = ""), 
+            append = FALSE, quote = FALSE, row.names = FALSE, col.names = FALSE)
+```
+
 This is to prerform a BLAST on the best candidate House Keeping genes
 ```{r}
-# # Make a list of potential HK genes:
-# interestListHK <- rownames(potentialHK)
-# 
-# dir.create(paste(sharedPathAn, "Blast_HK", sep = ""), showWarnings = TRUE, recursive = FALSE)
-# 
-# # Read all transcripts:
-# interestHK <- readAAStringSet(pyuuProteins, format = "fasta") 
-# 
-# # fixes the names to match list
-# names(interestHK) <- gsub(" .*", "", names(interestHK), ignore.case = FALSE)
-# 
-# # makes a subset of only the potential
-# interestHK <- interestHK[which(names(interestHK) %in% interestListHK)]
-# 
-# writeXStringSet(interestHK, 
-#                 file   = paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep = ""), 
-#                 append = FALSE, format = "fasta") 
-# 
-# install.packages("rentrez")
-# library("rentrez") # Error in library("rentrez") : there is no package called ‘rentrez’
-# query <- "(Oomycetes[ORGN])"
-# 
-# webEnvSearch <- entrez_search(db = "protein", query, retmax = 999999)
-# webEnvSearch
-# length(webEnvSearch$ids)
-# write.table(webEnvSearch$ids, 
-#             file = paste(sharedPathAn,"Blast_HK/gilist.txt", sep = ""), 
-#             append = FALSE, quote = FALSE, row.names = FALSE, col.names = FALSE)
-# 
-# ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nr/nr"
-# ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastp"
-# blastnOutFrmt  <-  c("sseqid", "qseqid", "sacc", "pident", "length",
-#                      "mismatch", "gapopen", "qstart", "qend", "sstart",
-#                      "send", "evalue", "bitscore")
-# maxTargetsSeqs <- 3
-# 
-# cmd <- paste(ncbiBlastnPath,
-#              " -db ",     ncbiDbPath,
-#              " -query ",  paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep = ""),
-#              " -evalue  1.00E-90", 
-#              " -gilist ", sharedPathAn,   "Blast_HK/gilist.txt",
-#              " -outfmt '6 ", paste(blastnOutFrmt, collapse=" "), "'",
-#              " -out ",    paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt.tab", sep = ""),
-#              sep = "")
-# 
-# system(cmd)
+ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nr/nr"
+ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastp"
+blastnOutFrmt  <-  c("sseqid", "qseqid", "sacc", "pident", "length",
+                     "mismatch", "gapopen", "qstart", "qend", "sstart",
+                     "send", "evalue", "bitscore")
+#maxTargetsSeqs <- 3
+prefix   <- "Blast_HK"  # need to clean up by inserting below
+node <- 1
+
+cmd <- paste(ncbiBlastnPath,
+             " -db ",     ncbiDbPath,
+             " -query ",  paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep = ""),
+             " -evalue  1.00E-90", 
+             " -num_threads ", node,
+             " -gilist ", sharedPathAn,   "Blast_HK/gilist.txt",
+             " -outfmt '6 ", paste(blastnOutFrmt, collapse=" "), "'",
+             " -out ",    paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt2.tab", sep = ""),
+             sep = "")
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+
 ```
+
 
 Andre did the next chunk, it's not working for me due to library("spider") error. 
 This is to get the names of the genes and select/sort  the results by BLAST statistics
 ```{r}
-# library("spider")
-# subsetHKinterestPath <- paste(sharedPath, analysis, 
-#                               "HiSeq_Analyses/Blast_HK/HK_InterestSubsetNt.tab", 
-#                               sep = "")
-# 
-# hitsHK <- read.table(subsetHKinterestPath, sep = "\t", header = FALSE,
-#                      comment.char = "", quote = "", as.is = TRUE) 
-# colnames(hitsHK) <- blastnOutFrmt
-# 
-# hitSeqHK <- read.GB(hitsHK$sacc, seq.names = hitsHK$sacc, species.names = TRUE, gene = TRUE,
-#                     access = TRUE, as.character = FALSE)
-# rm("hitSeqHK")
-# 
-# hitGenesHK <- data.frame(attr(hitSeqHK, "gene"), attr(hitSeqHK, "accession_num"), 
-#                            stringsAsFactors = FALSE)
-# 
-# colnames(hitGenesHK) <- c("gene", "sacc")
-# length(unique(hitGenesHK$sacc))
-# 
-# hitsHK <- merge(unique(hitGenesHK), hitsHK, by  = "sacc",  all.y= TRUE)
-# temp   <- hitsHK[-grep("unnamed|hypothetical",hitsHK$gene),]
-# temp   <- temp[order(temp$qseqid,temp$evalue,-temp$bitscore),] 
-# 
-# write.table(temp, 
-#             file = file.path(paste(sharedPathAn, sep=""),"potential_houseKeepingGenes_BLAST.csv"),
-#             append = FALSE, sep = ",", col.names = NA)
+install.packages("spider")
+library("spider")
+subsetHKinterestPath <- paste(sharedPath, analysis, 
+                              "HiSeq_Analyses/Blast_HK/HK_InterestSubsetNt.tab", 
+                              sep = "")
+
+hitsHK <- read.table(subsetHKinterestPath, sep = "\t", header = FALSE,
+                     comment.char = "", quote = "", as.is = TRUE) 
+colnames(hitsHK) <- blastnOutFrmt
+
+hitSeqHK <- read.GB(hitsHK$sacc, seq.names = hitsHK$sacc, species.names = TRUE, gene = TRUE,
+                    access = TRUE, as.character = FALSE)
+#rm("hitSeqHK")
+
+hitGenesHK <- data.frame(attr(hitSeqHK, "gene"), attr(hitSeqHK, "accession_num"), 
+                           stringsAsFactors = FALSE)
+
+colnames(hitGenesHK) <- c("gene", "sacc")
+length(unique(hitGenesHK$sacc))
+
+hitsHK <- merge(unique(hitGenesHK), hitsHK, by  = "sacc",  all.y= TRUE)
+temp   <- hitsHK[-grep("unnamed|hypothetical",hitsHK$gene),]
+temp   <- temp[order(temp$qseqid,temp$evalue,-temp$bitscore),] 
+
+write.table(temp, 
+            file = file.path(paste(sharedPathAn, sep=""),"potential_houseKeepingGenes_BLAST.csv"),
+            append = FALSE, sep = ",", col.names = NA)
 ```
 
 **** Over here - Andre, recall at line 1852, we swapped temp and temp2 - I fixed this again
@@ -1851,53 +1865,51 @@ genesHKNames <- paste(sharedPath, analysis, "HiSeq_Analyses/potential_houseKeepi
 temp         <- read.csv(genesHKNames, stringsAsFactors = FALSE)
 bestHitHK    <- temp[!duplicated(temp$qseqid), ]  # duplicate removal
 bestHitHK$HK_gene <- sub("_\\[.*","",bestHitHK$gene)
-rpkmHSCount  <- rpkmCount[bestHitHK$qseqid, ]
+rpkmHKCount  <- rpkmCount[bestHitHK$qseqid, ]
 
-rpkmHSforBarPlots <- melt(rpkmHSCount, id.vars = colnames(rpkmHSCount))
-colnames(rpkmHSforBarPlots)[1] <- "SequenceID"
-colnames(rpkmHSforBarPlots)[2] <- "ExpUnit"
-colnames(rpkmHSforBarPlots)[3] <- "Read_Counts"
+rpkmHKforBarPlots <- melt(rpkmHKCount, id.vars = colnames(rpkmHKCount))
+colnames(rpkmHKforBarPlots)[1] <- "SequenceID"
+colnames(rpkmHKforBarPlots)[2] <- "ExpUnit"
+colnames(rpkmHKforBarPlots)[3] <- "Read_Counts"
 
-# temp <- merge(rpkmHSforBarPlots, bestHitHKs, by  = "sacc",  all.y= TRUE)
+# temp <- merge(rpkmHKforBarPlots, bestHitHKs, by  = "sacc",  all.y= TRUE)
 
 # I took out library name because we added two libraries
 metadataColsToMerge <- c("TimePoint", "RNASeq_Replicate", "ExpUnit") 
 
 # For paired-end not merged:
-rpkmHSforBarPlots <- merge(rpkmHSforBarPlots, 
+rpkmHKforBarPlots <- merge(rpkmHKforBarPlots, 
                            unique(metadataAdapRem[,c(metadataColsToMerge)]), 
                            by = "ExpUnit", all.x = TRUE)
 
 # # For merged or single-end reads:
-# rpkmHSforBarPlots <- merge(rpkmHSforBarPlots, unique(metadataAdapRM[,c(metadataColsToMerge)]), 
+# rpkmHKforBarPlots <- merge(rpkmHKforBarPlots, unique(metadataAdapRM[,c(metadataColsToMerge)]), 
 #                            by = "ExpUnit", all.x = TRUE)
 
-unique(rpkmHSforBarPlots$ExpUnit) # Notice ExpUnit "y"
-rpkmHSforBarPlots <- rpkmHSforBarPlots[rpkmHSforBarPlots$ExpUnit!="y",]
+unique(rpkmHKforBarPlots$ExpUnit) # Notice ExpUnit "y"
+rpkmHKforBarPlots <- rpkmHKforBarPlots[rpkmHKforBarPlots$ExpUnit!="y",]
 unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y" is gone
 
-rpkmHSforBarPlots$TimePoint <- factor(rpkmHSforBarPlots$TimePoint, levels = c(timePoints))        
+rpkmHKforBarPlots$TimePoint <- factor(rpkmHKforBarPlots$TimePoint, levels = c(timePoints))        
 
-rpkmHSforBarPlots <- merge(rpkmHSforBarPlots, bestHitHK[,c("HK_gene", "qseqid")],
+rpkmHKforBarPlots <- merge(rpkmHKforBarPlots, bestHitHK[,c("HK_gene", "qseqid")],
                            by.x = "SequenceID", by.y = "qseqid", all.x = TRUE)
 
-rpkmHSforBarPlots$House_Keeping_genes <- paste(rpkmHSforBarPlots$SequenceID,
-                                               rpkmHSforBarPlots$HK_gene, sep = "-")
+rpkmHKforBarPlots$House_Keeping_genes <- paste(rpkmHKforBarPlots$SequenceID,
+                                               rpkmHKforBarPlots$HK_gene, sep = "-")
 ```
 
-**** Over here there is a problem - for Andre
+**** Over here there is a problem - for Andre ( I left a useless loop there - sorry! André)
 Housekeeping Bar plots
 ```{r}
 library("ggplot2")
 dir.create(paste(sharedPathAn, "HK_ggplots", sep = ""), showWarnings = TRUE, recursive = FALSE)
 ggplotsPath <- paste(sharedPathAn, "HK_ggplots/", sep = "")
 
-for(i in 1:length(cazyFam)){
-temp <- subset(cazyRpkmSub2, cazyRpkmSub2$CazyFam == cazyFam[i])
 pdf(file   = paste(ggplotsPath, "HK_plots", ".pdf", sep = ""), 
     width  = 8, 
     height = 24)
-bp  <- ggplot(aes(y = Read_Counts, x = TimePoint), data = rpkmHSforBarPlots) + 
+bp  <- ggplot(aes(y = Read_Counts, x = TimePoint), data = rpkmHKforBarPlots) + 
   theme_bw() + 
   scale_y_log10(breaks=c(10, 100,1000)) +
   theme(axis.text.y = element_text(size  = 6, 
@@ -1941,10 +1953,11 @@ bp  <- ggplot(aes(y = Read_Counts, x = TimePoint), data = rpkmHSforBarPlots) +
                                     angle  = 0))
 print(bp)
 dev.off()
-}
+
 ```
 
 *** Over here - Andre, I did this, but I'm not sure anymore if we wanted this inlog-scale too?
+  Emily -  Not sure what you mean by inlog scale.  These plots are not on log scale like the HK genes
 Bar plots per CAZy family group:
 ```{r}
 library("ggplot2")
@@ -2112,7 +2125,37 @@ cazyInterestList <- c("PYU1_T010810", "PYU1_T003056", "PYU1_T006946",
 length(cazyInterestList)
 unique(cazyInterestList)
 
+```
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+I think this is junk.  André
+```{r}
 # To look at only secreted CAZy in Pyuu:
 # secCazyFasta <- paste(referencesPath, "Secretome/CAZy_secreted.fasta", sep = "")
 # secretedCAZyAll   <- readAAStringSet(paste(secCazyFasta), format = "fasta")
@@ -2169,8 +2212,25 @@ RemoveQsubTempFiles(sharedPathAn, prefix)
 ```
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 **** Over here - Andre, can we delete the next chunk?
 Subset of table for Edge R (not relevant anymore I think)
+Emily.  These will spit out p-values.  Not there yet for model testing.  André
+
 ```{r}
 # Just the secreted Cazy genes
 rpkmCountCazy <- rpkmCount[which(rownames(rpkmCount) %in% unique(cazyDataSub[,c(3)])), ]
