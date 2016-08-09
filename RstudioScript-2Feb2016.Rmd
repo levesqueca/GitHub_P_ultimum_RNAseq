@@ -1607,6 +1607,17 @@ grep("PYU1_T003129",DF_test2)
 
 
 
+Read the equivalent of "countToTophat" that was exported as tsv file
+Read metadata table as well
+Convert first column into row names
+
+test <- read.table(file = countsListTopHat[i], sep = "\t", stringsAsFactors = FALSE)
+rownames(test) <- test[1,]
+test[1,] <- NULL
+
+do "as.matrix" if other do not work as data frame
+
+
 
 
 
@@ -1784,7 +1795,9 @@ cazyRpkmSub2 <- merge(cazyRpkmSub, cazyDataSub[,c("CazyFam", "SequenceID")],
 
 cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, cazyRpkmSub2$SequenceID, sep = "-")
 
-nameReadDGEcsv <- "countsReadDGE_TopHat_SecretedCAZy.csv"
+cazyRpkmSub2$Experiment <- "Oospore_Conversion"
+
+nameReadDGEcsv <- "countsReadDGE_TopHat_SecretedCAZy_XX.csv"
 write.table(cazyRpkmSub2, file = file.path(sharedPathAn, nameReadDGEcsv),
             sep = ",", row.names = TRUE, col.names = NA, quote = FALSE) 
 ```
