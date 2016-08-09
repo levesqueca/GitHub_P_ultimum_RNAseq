@@ -1567,8 +1567,12 @@ countsTopHat <- readDGE(countsListTopHat)$counts
 
 colnames(countsTopHat) <- basename(colnames(countsTopHat))
 
-write.table(data.frame(countsTopHat), file = file.path(sharedPathAn, "counts_readDGE_TopHat.annotated2.csv"),
-            sep = ",", row.names = TRUE, col.names = NA, quote = FALSE) 
+write.table(data.frame(countsTopHat), file = file.path(sharedPathAn, "counts_readDGE_TopHat.annotated2.tab.tsv"),
+            # sep  = ",", 
+            sep = "\t", 
+            row.names = TRUE, 
+            col.names = NA, 
+            quote = FALSE)
 ```
 
 
