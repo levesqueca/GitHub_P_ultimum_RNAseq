@@ -1836,8 +1836,8 @@ cazyRpkmSub4$Timepoint_Condition <- paste(cazyRpkmSub4$TimePoint,cazyRpkmSub4$Co
 cazyRpkmSub4$Timepoint_Condition <- sub("_NA","", cazyRpkmSub4$Timepoint_Condition, ignore.case = FALSE)
 
 # order the factors so they get in the right order in the plot
-cazyCounts$cazyRpkmSub4$Timepoint_Condition <- 
-  factor(cazyCounts$cazyRpkmSub4$Timepoint_Condition, levels = c(timePoints,
+cazyRpkmSub4$Timepoint_Condition <- 
+  factor(cazyRpkmSub4$Timepoint_Condition, levels = c(timePoints,
         "3_Control", "3_Cholesterol","7_Control","7_Cholesterol","24_Control","24_Cholesterol"))
 
 # Over here!!!
