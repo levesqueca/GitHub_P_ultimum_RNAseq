@@ -1820,8 +1820,25 @@ csvOoGen <- read.table(file = readDGEcsvOoGen, sep = ",", header = TRUE, comment
 csvOoGen$Experiment <- "Oosporogenesis" # This is to make it like the oospore conversion csv
 csvOoGen$LibraryName <- paste(csvOoGen$ExpUnit, "_", csvOoGen$RNASeq_Replicate, "rep", sep = "")
 
-cazyRpkmSub4 <- rbind(cazyRpkmSub2, csvOoGen)
-unique(cazyRpkmSub4$TimePoint)
+library("plyr")
+
+colnames(csvOoGen)
+colnames(cazyRpkmSub2)
+
+#because there is no condition for covversion
+cazyRpkmSub2$Condition <- NA
+
+#rbind fill fixed the issue of the extra column.  It put NA for the missing values.
+cazyRpkmSub4 <- rbind.fill(cazyRpkmSub2, csvOoGen)
+
+# creates a new column with conditions and time combined
+cazyRpkmSub4$Timepoint_Condition <- paste(cazyRpkmSub4$TimePoint,cazyRpkmSub4$Condition,sep="_")
+cazyRpkmSub4$Timepoint_Condition <- sub("_NA","", cazyRpkmSub4$Timepoint_Condition, ignore.case = FALSE)
+
+# order the factors so they get in the right order in the plot
+cazyCounts$cazyRpkmSub4$Timepoint_Condition <- 
+  factor(cazyCounts$cazyRpkmSub4$Timepoint_Condition, levels = c(timePoints,
+        "3_Control", "3_Cholesterol","7_Control","7_Cholesterol","24_Control","24_Cholesterol"))
 
 # Over here!!!
 # > cazyRpkmSub4 <- rbind(cazyRpkmSub2, csvOoGen)
@@ -2074,7 +2091,7 @@ pdf(file   = paste(ggplotsByCazyFamPath, cazyFam[i], ".pdf", sep = ""),
     width  = 8, 
     height = 7*ceiling(nrow(temp)/90))
 
-bp <- ggplot(aes(y = Read_Counts, x = TimePoint), data  = temp) +
+bp <- ggplot(aes(y = Read_Counts, x = Timepoint_Condition), data  = temp) +
   theme_bw() +
   theme(axis.text.y = element_text(size  = 6, 
                                    hjust = 1, 
@@ -2111,9 +2128,8 @@ bp <- ggplot(aes(y = Read_Counts, x = TimePoint), data  = temp) +
                position = position_dodge(0.8))  +
 #   facet_wrap(~SequenceID, 
 #   facet_grid(SequenceID~Experiment,
-  facet_grid(Experiment~SequenceID,
-             scales = "free", 
-             ncol = 5) +
+  facet_grid(SequenceID~Experiment,
+             scales = "free") +
   theme(strip.text.x = element_text(size   = 6, 
                                     face   = 'bold.italic', 
                                     colour = "black", 
