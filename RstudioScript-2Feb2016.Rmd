@@ -1597,11 +1597,9 @@ colnames(test[[i]])[2]   <- basename(countsListTopHat[i])
 print(nrow(test[[i]]))
 }
 
-
 DF_test2 <- Reduce(function(x, y) merge(x, y, by="V1", all=TRUE), test)
 
 grep("PYU1_T003129",DF_test2)
-
 
 ```
 
@@ -1616,10 +1614,6 @@ rownames(test) <- test[1,]
 test[1,] <- NULL
 
 do "as.matrix" if other do not work as data frame
-
-
-
-
 
 
 Only for this set of data, extract control columns based on their names.
@@ -1804,12 +1798,40 @@ cazyRpkmSub2 <- merge(cazyRpkmSub, cazyDataSub[,c("CazyFam", "SequenceID")],
 cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, cazyRpkmSub2$SequenceID, sep = "-")
 
 cazyRpkmSub2$Experiment <- "OosporeConversion"
+cazyRpkmSub2$Condition  <- "OosporeConversion" 
+# I'm adding this because the oosporogenesis has a column called Condition and 
+# I can't do rbind if not the same
 
 
 nameReadDGEcsv <- "countsReadDGE.TopHat.SecretedCAZy.HiSeqAnalyses2.OosporeConversion.csv"
 write.table(cazyRpkmSub2, file = file.path(sharedPathAn, nameReadDGEcsv),
-            sep = ",", row.names = TRUE, col.names = NA, quote = FALSE) 
+            sep = ",", row.names = TRUE, col.names = NA, quote = FALSE)
+
+# Try to get a csv that looks like cazyRpkmSub2
+readDGEcsvOoGen  <- paste(sharedPath, "EmilyTryingtoMakeLikeOosConHiSeq2Layout_counts_readDGE_TopHat_secreted_CAZy.csv", sep = "")
+readDGEcsvOoConv <- paste(sharedPathAn, 
+                          "countsReadDGE.TopHat.SecretedCAZy.HiSeqAnalyses2.OosporeConversion.csv",
+                          sep = "") 
+
+
+csvOoGen <- read.table(file = readDGEcsvOoGen, sep = ",", header = TRUE, comment.char = "", 
+                       quote = "", as.is = TRUE, stringsAsFactors = FALSE)
+
+csvOoGen$Experiment <- "Oosporogenesis" # This is to make it like the oospore conversion csv
+csvOoGen$LibraryName <- paste(csvOoGen$ExpUnit, "_", csvOoGen$RNASeq_Replicate, "rep", sep = "")
+
+cazyRpkmSub4 <- rbind(cazyRpkmSub2, csvOoGen)
+unique(cazyRpkmSub4$TimePoint)
+
+# Over here!!!
+# > cazyRpkmSub4 <- rbind(cazyRpkmSub2, csvOoGen)
+# Warning message:
+# In `[<-.factor`(`*tmp*`, ri, value = c(24L, 3L, 3L, 7L, 3L, 3L,  :
+#   invalid factor level, NA generated
+
 ```
+
+
 
 Finding potential house-keeping (HK) genes
 ```{r}
@@ -2028,16 +2050,25 @@ Bar plots per CAZy family group:
 ```{r}
 library("ggplot2")
 
-dir.create(paste(sharedPathAn, "ggplotsByCazyFam", sep = ""),
+dirPlotName <- "ggplotsOosCon_and_OoGen"
+
+# dir.create(paste(sharedPathAn, "ggplotsByCazyFam", sep = ""),
+#            showWarnings = TRUE,
+#            recursive    = FALSE)
+
+# For plots for both time courses merged:
+dir.create(paste(sharedPath, dirPlotName, sep = ""),
            showWarnings = TRUE,
            recursive    = FALSE)
 
-ggplotsByCazyFamPath <- paste(sharedPathAn, "ggplotsByCazyFam/", sep = "")
+#ggplotsByCazyFamPath <- paste(sharedPathAn, "ggplotsByCazyFam/", sep = "")
+ggplotsByCazyFamPath <- paste(sharedPath, dirPlotName, "/", sep = "")
 
 i <- 1
 
 for(i in 1:length(cazyFam)){
-temp <- subset(cazyRpkmSub2, cazyRpkmSub2$CazyFam == cazyFam[i])
+# temp <- subset(cazyRpkmSub2, cazyRpkmSub2$CazyFam == cazyFam[i])
+temp <- subset(cazyRpkmSub4, cazyRpkmSub4$CazyFam == cazyFam[i])
 
 pdf(file   = paste(ggplotsByCazyFamPath, cazyFam[i], ".pdf", sep = ""),
     width  = 8, 
@@ -2078,7 +2109,9 @@ bp <- ggplot(aes(y = Read_Counts, x = TimePoint), data  = temp) +
                shape = 5, 
                size  = 1, 
                position = position_dodge(0.8))  +
-  facet_wrap(~SequenceID, 
+#   facet_wrap(~SequenceID, 
+#   facet_grid(SequenceID~Experiment,
+  facet_grid(Experiment~SequenceID,
              scales = "free", 
              ncol = 5) +
   theme(strip.text.x = element_text(size   = 6, 
