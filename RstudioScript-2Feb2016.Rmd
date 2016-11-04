@@ -1187,3 +1187,65 @@ cmd <- with(metadataAdapRem,
 
 suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
 ```
+MUST DO CLEAN UP OF TMP FILES WITHIN FOLDERS
+- fix the matching to temp tophat files to be removed
+```{r}
+# For paired-end not merged
+cmd <- with(metadataAdapRem, paste("rm -r ", sharedPathAn, metadataAdapRem$LibraryName, "/", 
+                                   metadataAdapRem$LibraryName, ".TopHat.2016-07-19/tmp", sep = ""))
+
+# # For merged or single-end reads:
+# cmd <- with(metadataAdapRM, paste("rm -r ", sharedPathAn, metadataAdapRM$LibraryName, "/", 
+#                                   metadataAdapRM$LibraryName, ".TopHat.2016-07-10/tmp", sep = ""))
+system(cmd)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Setting up the folder date
+```{r}
+# could have automatic search for most recent
+topHatDate <- ".2016-07-19"
+```
+
+To run Samtools on the Tophat folder that has the right date
+```{r}
+prefix <- "K_SamtoolsSortQsub"
+# cmd <- with(metadataAdapRM, # For merged or single-end reads
+cmd <- with(metadataAdapRem,  # For paired-end not merged
+            (paste(samtools1Path, " sort",   " -n ", 
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", "accepted_hits.bam ", sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn", sep = ""),
+                   "\n",
+                   samtools1Path, " view ", " -o ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn.bam", sep = ""),
+                   "\n",
+                   samtools1Path, " sort ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", "accepted_hits.bam ", sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_s", sep = ""),
+                   "\n",
+                   samtools1Path, " index ", 
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat",
+                         topHatDate, "/", LibraryName, "_s.bam", sep = ""),
+                   sep = "")))
+node   <- 1
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
