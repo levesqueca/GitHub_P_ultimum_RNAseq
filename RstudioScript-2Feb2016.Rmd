@@ -1139,7 +1139,7 @@ with different names:
 ```{r}
 # Specify which metadata table you've been using:
 finalMetadata <- metadataAdapRem
-finalName <- "Final_metadataTable_afterProcessing.csv"
+finalName <- "OosporeConversion_Final_metadataTable_afterProcessing.csv"
 write.table(finalMetadata, file = finalName, 
             append = FALSE, quote = FALSE, 
             sep = ",", row.names = FALSE)
