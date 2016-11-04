@@ -7,9 +7,25 @@ Getting started in R:
 Set the working directory > setwd("~/")
 Check version installed
 ```{r}
-# library(knitr)
-# source("http://www.Bioconductor.org/biocLite.R")
-# biocLite("BiocUpgrade")
+library(knitr)
+```
+
+This will help us when finding our files to source functions
+```{r}
+install.packages("rprojroot")
+library(rprojroot)
+# We specify ours is an RStudio project
+# The root object contains a function that will help us locate our package r files
+# regarless of our current working directory
+root <- rprojroot::is_rstudio_project
+scriptsPath <- root$make_fix_file(".")("R")
+scripts <- dir(root$find_file("R", path = root$find_file()))
+scriptsl <- paste(scriptsPath, scripts, sep = "//")
+lapply(scriptsl, source)
+```
+
+Setting up the system environment to run qsub jobs from within RStudio
+```{r}
 Sys.setenv(SGE_ROOT="/opt/gridengine")
 Sys.setenv(SGE_CELL="default")
 Sys.setenv(SGE_ARCH="linux-x64")
@@ -17,6 +33,10 @@ Sys.setenv(SGE_EXECD_PORT="537")
 Sys.setenv(SGE_QMASTER_PORT="536")
 ```
 
+Source functions in package:
+```{r}
+source("R/MakeQsubs")
+```
 Many of the commands and approach are from:
 Simon Anders et al., 2013. Count-based differential expression analysis of 
 RNA sequencing data using R and Bioconductor. Nature protocols | VOL.8 NO.9 | 2013
