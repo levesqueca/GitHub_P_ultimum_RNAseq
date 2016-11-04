@@ -128,15 +128,12 @@ located, this depends on the directories actually having been put there:
 toolsDirPath     <- paste(sharedPath, "tools/",      sep="")
 referencesPath   <- paste(sharedPath, "References/", sep="")
 cazyPath         <- paste(sharedPath, "CAZy/",       sep="")
-binPath          <- paste(sharedPath, "bin/bash/",   sep="")
 bowtie2BuildPath <- "/opt/bio/bowtie2/bowtie2-build"
-deconSeqPath     <- "/opt/bio/DeconSeq/deconseq.pl"
 htseqCountPath   <- "/opt/bio/HTSeq/bin/htseq-count"
 prinSeqPath      <- "/opt/bio/prinseq-lite/prinseq-lite"
 prinSeqGraphPath <- "/opt/bio/prinseq-lite/prinseq-graphs"
 samtools1Path    <- "/opt/bio/samtools1/bin/samtools1"
 seqPrepPath      <- "/opt/bio/SeqPrep/SeqPrep"
-starPath         <- "/opt/bio/STAR/STAR"
 tophat2Path      <- "/opt/bio/tophat/bin/tophat2"
 pyuuRefPath      <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.fa", sep = "")
 pyuugff3Path     <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.gff3", sep = "")
@@ -177,27 +174,6 @@ getwd()
 # Create fastq directory in sharedPath folder based on "seqDataDir":
 dir.create(paste(sharedPath, analysis, seqDataDir, sep = ""), showWarnings=TRUE, recursive=FALSE)
 pathFastq <- paste(sharedPath, analysis, seqDataDir, "/", sep = "")
-```
-
-STAR
-Set-up for STAR:
-```{r}
-# Makes the directory "GenomeDir" on the shared drive:
-dir.create(paste(sharedPath, "GenomeDir", sep = ""), showWarnings = TRUE, recursive = FALSE)
-
-genomeDirPath    <- paste(sharedPath, "GenomeDir/", sep = "")
-gff3StarOverhang <- 280 #needs to be max len -1, of R1 and R2 pair
-gtfStarTag       <- "Parent"
-
-cmd <- paste(starPath,
-              "--runMode",  "genomeGenerate",
-              "--genomeDir", genomeDirPath,
-              "--outFileNamePrefix", genomeDirPath,
-              "--genomeFastaFiles",  pyuuRefPath,
-              "--sjdbGTFtagExonParentTranscript", gtfStarTag,
-              "--sjdbGTFfile",  pyuugff3Path,
-              "--sjdbOverhang", gff3StarOverhang)
-#system(cmd)
 ```
 
 Bowtie:
