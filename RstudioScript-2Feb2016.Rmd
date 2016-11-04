@@ -115,23 +115,6 @@ fwdAdap      <- fwdAdapMiSeq
 revAdap      <- revAdapMiSeq
 ```
 
-User:
-Will user produce their own metadata table or use the script here tailored for HiSeq csv files given 
-by Genome Quebec? 
-TRUE:  Have this script generate the metadata file
-FALSE: Import your own metadata file
-```{r eval=TRUE, echo=FALSE}
-
-makeHiSeqMetadata <- FALSE
-```
-User:
-Paired end Illumina reads are to be merged after adapter removal with SeqPrep:
-TRUE:  merge reads
-FALSE: do not merge reads
-```{r eval=TRUE, echo=FALSE}
-mergePESeqPrep <- TRUE # This isn't working yet (makes use of chunk options)
-```
-
 User to specify the time-points, if any, for the RNA-Seq experiment:
 ```{r}
 timePoints <- c("0", "12" , "24", "48", "72", "120", "240")
@@ -1144,6 +1127,22 @@ To remove the output files after you are done:
 ```{r}
 system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
 RemoveQsubTempFiles(sharedPathAn, prefix3)
+```
+
+To complete the Processing Stage, write the metadata table to future record and for when 
+continuing on to data analysis:
+Note, for the oospore conversion timecourse off the HiSeq in the folder HiSeq_Analyses2, we
+saved the final metadata table a couple of times and now have files with the same infor but 
+with different names:
+"Final_metadataTable_afterProcessing.csv"
+"metadataAdapRemOosporeConvHiSeqAnalyses2.tab.tsv"
+```{r}
+# Specify which metadata table you've been using:
+finalMetadata <- metadataAdapRem
+finalName <- "Final_metadataTable_afterProcessing.csv"
+write.table(finalMetadata, file = finalName, 
+            append = FALSE, quote = FALSE, 
+            sep = ",", row.names = FALSE)
 ```
 
 TopHat:
