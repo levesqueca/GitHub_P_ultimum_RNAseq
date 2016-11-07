@@ -51,6 +51,7 @@ metadataAdapRem$countfTopHat = paste(metadataAdapRem$LibraryName, "TopHat2Count"
 # metadataAdapRM$countfTopHat = paste(metadataAdapRM$LibraryName, "TopHat2Count", sep = ".")
 ```
 
+
 Read count with HT-Seq:
 ```{r}
 # Set HT-Seq options:
@@ -88,14 +89,53 @@ cmd <- paste( "find ", sharedPathAn, " -type d -exec chmod 770 {} + ", sep = "")
 cmd <- paste( "find ", sharedPathAn, " -type f -exec chmod 770 {} + ", sep = ""); system(cmd)
 ```
 
-Get all data together and add the counts for libraries representing the same treatments:
+
+
+
+
+
+Get all data together for oosporogenesis and oospore conversion and add the counts for libraries representing the same treatments:
+```{r}
+
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+
+metafile1 <- "Oosporogenesis_Final_metadataTable_afterProcessing.csv"
+metadataAdapRem1 <- read.csv(paste(shared_path,metafile1, sep=""), stringsAsFactors=FALSE)
+metadataAdapRem1$countfTopHat <- paste(metadataAdapRem1$LibraryName, ".TopHat2_count", sep="")
+metadataAdapRem1$Experiment <- "Oosporogenesis"
+
+metafile2 <- "OosporeConversion_Final_metadataTable_afterProcessing.csv"
+Conversion_path   <- "Oospore_Conversion_TimeCourse/HiSeq_Analyses2/"
+metadataAdapRem2 <- read.csv(paste(shared_path,Conversion_path,metafile2, sep=""), stringsAsFactors=FALSE)
+topHatDate <- ".2016-07-19"
+metadataAdapRem2$TopHatOutPath <- paste(sharedPath,Conversion_path,metadataAdapRem2$LibraryName,"/",
+            metadataAdapRem2$LibraryName, ".TopHat", topHatDate,"/", sep = "")
+metadataAdapRem2$countfTopHat <- paste(metadataAdapRem2$LibraryName, ".TopHat2Count", sep="")
+metadataAdapRem2$Experiment <- "OosporeConversion"
+
+common_cols <- intersect(colnames(metadataAdapRem1),colnames(metadataAdapRem2))
+
+Metadata_2exp <- rbind(
+  subset(metadataAdapRem1, select = common_cols), 
+  subset(metadataAdapRem2, select = common_cols)
+)
+
+write.table(Metadata_2exp, file = file.path(sharedPath, "Metadata.Oospore_genesis_conversion.csv"),
+            sep  = ",", 
+            # sep = "\t", 
+            row.names = TRUE, 
+            col.names = NA, 
+            quote = FALSE)
+```
+
+
+EdgeR on combines datasets
 ```{r}
 library("edgeR")
 # Identify the count files and read them into R using readDGE:
 
 # For paired-end not merged:
-countsListTopHat <- paste(sharedPathAn, metadataAdapRem$LibraryName, "/", metadataAdapRem$LibraryName,
-                          ".TopHat", topHatDate, "/", metadataAdapRem$countfTopHat, sep = "")
+countsListTopHat <- paste(Metadata_2exp$TopHatOutPath, Metadata_2exp$countfTopHat, sep = "")
 
 # # For merged or single-end reads:
 # countsListTopHat <- paste(sharedPathAn, metadataAdapRM$LibraryName, "/", metadataAdapRM$LibraryName,
@@ -106,9 +146,11 @@ countsTopHat <- readDGE(countsListTopHat)$counts
 
 colnames(countsTopHat) <- basename(colnames(countsTopHat))
 
-write.table(data.frame(countsTopHat), file = file.path(sharedPathAn, "counts_readDGE_TopHat.annotated2.tab.tsv"),
-            # sep  = ",", 
-            sep = "\t", 
+colnames(countsTopHat) <- sub("\\.TopHat.*","",colnames(countsTopHat))
+
+write.table(data.frame(countsTopHat), file = file.path(sharedPath, "counts_readDGE_TopHat.Oospore_genesis_conversion.annotated2.csv"),
+            sep  = ",", 
+            # sep = "\t", 
             row.names = TRUE, 
             col.names = NA, 
             quote = FALSE)
@@ -144,26 +186,36 @@ grep("PYU1_T003129",DF_test2)
 
 
 
-Read the equivalent of "countToTophat" that was exported as tsv file
-Read metadata table as well
-Convert first column into row names
-
-test <- read.table(file = countsListTopHat[i], sep = "\t", stringsAsFactors = FALSE)
-rownames(test) <- test[1,]
-test[1,] <- NULL
-
-do "as.matrix" if other do not work as data frame
 
 
-Only for this set of data, extract control columns based on their names.
+Extract control or unwanted columns based on their names 
+was there anything.
 ```{r}
 # List the controls that you want to drop from count analyses, if there are none do: c("","") 
 controlToDrop <- c("T7-c3_BC30_a1", "T7-c3_BC30_a2", "T7-c3_BC31_a1", "T7-c3_BC31_a2", 
-                   "Tneg-H2O_BC32_a1", "Tneg-H2O_BC32_a2", "T48-2_BC22_a1", "T48-2_BC22_a2") 
+                   "Tneg-H2O_BC32_a1", "Tneg-H2O_BC32_a2", "T48-2_BC22_a1", "T48-2_BC22_a2",
+                   "T7-c3_BC29_a1", "T7-c3_BC29_a2") 
 tempCountsTopHat <- data.frame(countsTopHat)
 colnames(tempCountsTopHat) <- colnames(countsTopHat)
 countsTopHatDf   <- tempCountsTopHat[, !(colnames(tempCountsTopHat) %in% controlToDrop)]
+
+#drop it in metadata too
+Metadata_2exp_reduced   <- Metadata_2exp[!Metadata_2exp$LibraryName %in% controlToDrop, ]
+
+write.table(Metadata_2exp_reduced, file = file.path(sharedPath, "Metadata.Oospore_genesis_conversion_reduced.csv"),
+            sep  = ",", 
+            # sep = "\t", 
+            row.names = TRUE, 
+            col.names = NA, 
+            quote = FALSE)
+
+
 ```
+
+
+
+
+
 
 The trick was from here
 http://stackoverflow.com/questions/19321053/sum-together-columns-of-data-frame-based-on-name-type
@@ -172,16 +224,29 @@ columns have the same name. Then a row sum for each unique name is done. When a 
 twice, the numbers will be added up.
 ```{r}
 library("reshape2")
-# For paired-end not merged:
-metadataAdapRem$ExpUnit <- sub("_.*", "", metadataAdapRem$LibraryName)
-metadataName <- "metadataAdapRemOosporeConvHiSeqAnalyses2.tab.tsv"
-write.table(data.frame(metadataAdapRem), file = file.path(sharedPathAn, metadataName),
-            # sep  = ",", 
-            sep = "\t", 
+# to make sure that the T0 oosporogenesis does not get lumped with T0 Oospore conversion, adds a "c"
+for (j in 1:nrow(Metadata_2exp_reduced)) {
+if (Metadata_2exp_reduced$Experiment[j] == "Oosporogenesis") {
+   Metadata_2exp_reduced$LibraryName[j] <- sub("^T0-","T0-c",Metadata_2exp_reduced$LibraryName[j])
+} else { 
+}}
+
+# Must do the same on columns of data frame of counts, does the sub command on those selected only to add a c
+colnames(countsTopHatDf)[grep("T0-1_BC01|T0-1_BC02|T0-2_Lib1|T0-4_BC02", colnames(countsTopHatDf))] <-
+   sub("^T0-","T0-c",colnames(countsTopHatDf)[grep("T0-1_BC01|T0-1_BC02|T0-2_Lib1|T0-4_BC02", colnames(countsTopHatDf))])
+
+
+# 
+# # For paired-end not merged:
+Metadata_2exp_reduced$ExpUnit <- sub("_.*", "", Metadata_2exp_reduced$LibraryName)
+metadataName <- "metadata_2exp_reduced.csv"
+write.table(data.frame(Metadata_2exp_reduced), file = file.path(sharedPath, metadataName),
+            sep  = ",", 
+            # sep = "\t", 
             row.names = TRUE, 
             col.names = NA, 
             quote = FALSE)
-
+# 
 
 # # For merged or single-end reads:
 # metadataAdapRM$ExpUnit <- sub("_.*", "", metadataAdapRM$LibraryName)
@@ -191,7 +256,7 @@ countsTopHatMelt    <- melt(countsTopHatDf)
 colnames(countsTopHatMelt)[2] <- "LibraryName"
 
 # For paired-end not merged:
-df <- merge(countsTopHatMelt, metadataAdapRem[,c("LibraryName", "ExpUnit")], 
+df <- merge(countsTopHatMelt, Metadata_2exp_reduced[,c("LibraryName", "ExpUnit")], 
             by = "LibraryName", all.x = TRUE)
 
 # # For merged or single-end reads:
@@ -204,7 +269,7 @@ rownames(countsTopHatSum) <- countsTopHatSum$gene
 countsTopHatSum$gene      <- NULL
 ```
 
-Normalization after removing rDNA data.  Not sure if this is the best approach.
+Normalization after removing rDNA data.  Best approach to compare with Levesque et al 2010.
 ```{r}
 library(Biostrings)
 library("edgeR")
@@ -224,6 +289,9 @@ countsTopHatDf$gene <- NULL
 mean(colSums(countsTopHatGenes)/colSums(countsTopHatDf))
 
 cpms <- cpm(countsTopHatGenes)  # counts per million
+
+pyuuTranscripts  <- paste(sharedPath, "References/pythium_ultimum_transcripts.fasta", sep = "")
+
 tempPyuuTrans <- readDNAStringSet(pyuuTranscripts)
 namesTranscripts <- sub(" .*$", "", names(tempPyuuTrans))
 
@@ -233,7 +301,7 @@ temp2      <- merge(countsTopHatGenes, geneLength, by.x = 0, by.y = 0)
 rownames(temp2) <- temp2$Row.names
 temp2$Row.names <- NULL
 
-write.table(temp2, file = file.path(paste(sharedPathAn, sep = ""), "readDGEcountsWithGeneLength.csv"),
+write.table(temp2, file = file.path(paste(sharedPath, sep = ""), "readDGEcountsWithGeneLength_2exp.csv"),
             append = FALSE, sep = ",", col.names = NA)
 ```
 
@@ -247,6 +315,42 @@ rpkmCount <- rpkm(temp2[,1:18], # All columns except y, in HiSeq it's col 19
                   gene.length = temp2$y, normalized.lib.sizes = TRUE) 
 
 ```
+
+
+
+
+Get Data from Levesque et al
+```{r}
+
+
+library(openxlsx)
+
+LEV_2010_rpkm <- read.xlsx(paste(sharedPath,"References/Genome_Biology_paper_AdditionalDataFile3.xlsx",sep=""), sheet="S9", startRow = 2)
+
+T_G_conversion_table <- read.csv(paste(sharedPath,"References/T_G_name_conversion_from_gff_file.csv", sep=""), stringsAsFactors=FALSE)
+colnames(T_G_conversion_table)[colnames(T_G_conversion_table)=="G_code"] <- "Locus"
+
+length(unique(T_G_conversion_table[,1]))
+length(unique(T_G_conversion_table[,2]))
+
+T_G_conversion_table$Locus[duplicated(T_G_conversion_table[,2])]
+
+df <- merge(T_G_conversion_table, LEV_2010_rpkm, by = "Locus", all.x = TRUE)
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
 
 Setting up for Differential Analysis: Generating CAZy families, all Secreted and CAZy secreted, 
 as well as House-Keeping subsets
