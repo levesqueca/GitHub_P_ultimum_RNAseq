@@ -14,6 +14,18 @@ scriptsl <- paste(scriptsPath, scripts, sep = "//")
 lapply(scriptsl, source)
 ```
 
+Read in the metadata tables that contain all the information on the processing
+outputs from time-course sets.
+```{r}
+
+ooGenMetaPath <- paste(sharedPath, 
+                       "Oosporogenesis_Final_metadataTable_afterProcessing.csv",
+                       sep = "")
+ooConvMetaPath <- paste(sharedPathAn,
+                        "OosporeConversion_Final_metadataTable_afterProcessing.csv",
+                        sep = "")
+
+```
 **** Significant contamination observed, majority of reads unmapped - see which 
 top species are the majority of our contamination from. 
 ```{r}
