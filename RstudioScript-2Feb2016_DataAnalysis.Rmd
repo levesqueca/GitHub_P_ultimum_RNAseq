@@ -14,6 +14,31 @@ scriptsl <- paste(scriptsPath, scripts, sep = "//")
 lapply(scriptsl, source)
 ```
 
+Chunk: Path Setting
+The following paths are to directories where the references, tools and general requirements are 
+located, this depends on the directories actually having been put there:
+```{r}
+referencesPath   <- paste(sharedPath, "References/", sep="")
+cazyPath         <- paste(sharedPath, "CAZy/",       sep="")
+htseqCountPath   <- "/opt/bio/HTSeq/bin/htseq-count"
+pyuuRefPath      <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.fa", sep = "")
+pyuugff3Path     <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.gff3", sep = "")
+pyuuTranscripts  <- paste(referencesPath, "pythium_ultimum_transcripts.fasta", sep = "")
+pyuuProteins     <- paste(referencesPath, "pythium_ultimum_proteins.fasta", sep = "")
+```
+
+Read in the metadata tables that contain all the information on the processing
+outputs from time-course sets.
+```{r}
+
+ooGenMetaPath <- paste(sharedPath, 
+                       "Oosporogenesis_Final_metadataTable_afterProcessing.csv",
+                       sep = "")
+ooConvMetaPath <- paste(sharedPathAn,
+                        "OosporeConversion_Final_metadataTable_afterProcessing.csv",
+                        sep = "")
+
+```
 **** Significant contamination observed, majority of reads unmapped - see which 
 top species are the majority of our contamination from. 
 ```{r}
