@@ -113,11 +113,13 @@ for(i in 1:length(dbCANList)){
   test[[i]]$Species <- sub(".out.dm.ps", "", test[[i]]$Species)
   print(nrow(test[[i]]))
 }
+
 summary(test)
 View(test[[1]])
 lapply(test, function(i) setkey(i))
 testAll <- Reduce(function(...) merge(..., all = T), test)
 cazyCaptureSubset <- subset(testAll, testAll$family.hmm %in% cazyCaptureList)
+cazyCaptureSubset$family.hmm <- sub(".hmm", "", cazyCaptureSubset$family.hmm)
 write.table(cazyCaptureSubset, 
            file = file.path(paste(sharedPathAn, "dbCAN_CAZySubset_AllRefs.csv", sep = "")),
            append    = FALSE, 
@@ -125,4 +127,19 @@ write.table(cazyCaptureSubset,
            quote     = FALSE,
            row.names = TRUE,
            col.names = NA)
+
+library("ggplot2")
+library("plyr")
+countCAZyFam <- count(cazyCaptureSubset, vars = "family.hmm")
+countCAZySpecies <- count(cazyCaptureSubset, vars = c("family.hmm", "Species"))
+
+data <- ddply(countCAZySpecies, .(family.hmm), 
+   transform, pos = cumsum(freq) - (0.5 * freq)
+)
+
+plotTest <- ggplot(data = data, aes(x = family.hmm, y = freq)) +
+            geom_bar(aes(fill = Species), stat = "identity") +
+            geom_text(aes(label = freq, y = pos), size = 2)
+
+
 ```
