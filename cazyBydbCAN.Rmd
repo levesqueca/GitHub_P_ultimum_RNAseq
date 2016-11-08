@@ -1,0 +1,128 @@
+Retrieval of CAZy families of Oomycete references with dbCAN
+============================================================
+
+This will help us when finding our files to source functions:
+```{r}
+install.packages("rprojroot")
+library(rprojroot)
+# We specify ours is an RStudio project
+# The root object contains a function that will help us locate our package r files
+# regarless of our current working directory
+root <- rprojroot::is_rstudio_project
+scriptsPath <- root$make_fix_file(".")("R")
+scripts <- dir(root$find_file("R", path = root$find_file()))
+scriptsl <- paste(scriptsPath, scripts, sep = "//")
+lapply(scriptsl, source)
+```
+Paths specific to dbCAN pipeline with hmmer3 dependencies:
+Note: 
+hmmer3 is already on the biocluster
+dbCAN downloads were placed in our shared folder References directory
+```{r}
+dbCANpath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/References/CAZyTools/dbCAN-fam-HMMs.txt"
+hmmPress <- "/opt/bio/hmmer3/bin/hmmpress"
+hmmScanPath <- "/opt/bio/hmmer3/bin/hmmscan"
+hmmParser <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/References/CAZyTools/hmmscan-parser.sh"
+```
+
+
+Set the path for analysis qsub outputs:
+```{r}
+sharedPathAn <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/CAZy_prediction_test/output/"
+dir.create(paste(projPath, "output", sep = ""), showWarnings = TRUE, recursive = FALSE)
+```
+
+Paths to relevant transcriptomes:
+```{r}
+refListPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/CAZy_prediction_test/List_ReferenceProteinsFasta.txt"
+projPath    <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/CAZy_prediction_test/"
+projRefPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/CAZy_prediction_test/referenceTranscriptomes/"
+refMetadata <- read.table(file = refListPath, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+pyuuProteins <- paste(referencesPath, "pythium_ultimum_proteins.fasta", sep = "")
+```
+Setting things up for dbCAN:
+```{r}
+cmd <- paste(hmmPress, " ", dbCANpath, sep = "")
+system(cmd)
+```
+
+Create a directory in the output directory for each reference species 
+Run hmmscan for each reference species
+```{r}
+prefix <- "A_dbCAN_all_refs"
+node <- 1
+
+for(j in 1:length(refMetadata$Species)) {
+  dir.create(paste(sharedPathAn, refMetadata$Species[j], sep = ""),
+             showWarnings = TRUE, recursive = FALSE)
+}
+
+cmd <- with(refMetadata,
+            paste(hmmScanPath,
+                  " --domtblout ", paste(sharedPathAn, Species, "/", Species, ".CAZy.out.dm", sep = ""),
+                  " ", dbCANpath, " ", paste(projRefPath, ProteinsFasta, sep = ""),
+                  " > ", paste(sharedPathAn, Species, "/", Species, ".out", sep = ""),
+                  sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+
+refMetadata$domtblout <- paste(refMetadata$Species, ".CAZy.out.dm", sep = "")
+refMetadata$domtbloutPath <- paste(sharedPathAn, refMetadata$Species, "/", refMetadata$domtblout, sep = "")
+refMetadata$dbHmmScanOut <- paste(refMetadata$Species, ".out", sep = "")
+refMetadata$dbScanOutPath <- paste(sharedPathAn, refMetadata$Species, "/", refMetadata$dbHmmScanOut, sep = "")
+```
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Run the hmmscan parser on the hmmscan output for each reference species:
+```{r}
+prefix <- "B_dbCAN_hmmscanParser"
+
+cmd <- with(refMetadata,
+            paste(" sh ", hmmParser,
+                  " ", domtbloutPath, 
+                  " > ", paste(sharedPathAn, Species, "/", Species, ".out.dm.ps", sep = ""),
+                  sep = ""))
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+refMetadata$Parseddmtbl <- paste(refMetadata$Species, ".out.dm.ps", sep = "")
+refMetadata$ParsedmtblPath <- paste(sharedPathAn, refMetadata$Species, "/", refMetadata$Parseddmtbl, sep = "")
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Would like to generate a table with the captured CAZy proteins, for specific CAZy families:
+```{r}
+library(reshape2)
+library(data.table)
+
+cazyCaptureList <- c("CBM21.hmm", "GH3.hmm", "GH7.hmm", "GH15.hmm",
+                     "GH16.hmm", "GH17.hmm", "GH72.hmm")
+dbCANList <- refMetadata$ParsedmtblPath
+for(i in 1:length(dbCANList)){
+  test[[i]] <- fread(dbCANList[i], sep = "auto", header = FALSE)
+  colnames(test[[i]]) <- c("family.hmm", "hmm.length", "query.id", "query.length", "e.val",
+                           "hmm.start", "hmm.end", "query.start", "query.end", "coverage")
+  test[[i]]$Species <- basename(dbCANList[i])
+  test[[i]]$Species <- sub(".out.dm.ps", "", test[[i]]$Species)
+  print(nrow(test[[i]]))
+}
+summary(test)
+View(test[[1]])
+lapply(test, function(i) setkey(i))
+testAll <- Reduce(function(...) merge(..., all = T), test)
+cazyCaptureSubset <- subset(testAll, testAll$family.hmm %in% cazyCaptureList)
+write.table(cazyCaptureSubset, 
+           file = file.path(paste(sharedPathAn, "dbCAN_CAZySubset_AllRefs.csv", sep = "")),
+           append    = FALSE, 
+           sep       = ",",
+           quote     = FALSE,
+           row.names = TRUE,
+           col.names = NA)
+```
