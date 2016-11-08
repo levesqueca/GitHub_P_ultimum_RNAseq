@@ -89,6 +89,13 @@ cmd <- with(refMetadata,
 suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
 refMetadata$Parseddmtbl <- paste(refMetadata$Species, ".out.dm.ps", sep = "")
 refMetadata$ParsedmtblPath <- paste(sharedPathAn, refMetadata$Species, "/", refMetadata$Parseddmtbl, sep = "")
+write.table(refMetadata, 
+           file = file.path(paste(projPath, "referencesMetadataFinal.csv", sep = "")),
+           append    = FALSE, 
+           sep       = ",",
+           quote     = FALSE,
+           row.names = TRUE,
+           col.names = NA)
 ```
 
 To remove the output files after you are done:
