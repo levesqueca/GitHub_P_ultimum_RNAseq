@@ -147,6 +147,27 @@ data <- ddply(countCAZySpecies, .(family.hmm),
 plotTest <- ggplot(data = data, aes(x = family.hmm, y = freq)) +
             geom_bar(aes(fill = Species), stat = "identity") +
             geom_text(aes(label = freq, y = pos), size = 2)
-
-
 ```
+
+
+GH15: All the proteins classified as GH15 in dbCAN that are from NCBI-nr:
+```{r}
+library(data.table)
+ncbiGH15List <- fread(paste(projPath, "GH15_canDB_list_NCBI-nr.txt", sep = ""),
+                      sep = "auto", header="auto")
+parsedID <- setDT(ncbiGH15List)[, paste0("ID", 1:5) := tstrsplit(ID, "|", type.convert = TRUE, fixed = TRUE)]
+
+giSet <- data.frame(parsedID$ID4)
+colnames(giSet) <- "Accession"
+length(giSet$Accession)
+giSet$Accession <- sub("\\.[1-9]$", "", giSet$Accession)
+write.table(giSet$Accession, file = file.path(paste(projPath, "GH15_AccessionList.txt", sep = "")),
+            append = FALSE,
+            quote  = FALSE,
+            row.names = FALSE,
+            col.names = FALSE)
+
+
+
+
+
