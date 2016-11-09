@@ -114,12 +114,8 @@ cmd <- paste( "find ", sharedPathAn, " -type d -exec chmod 770 {} + ", sep = "")
 cmd <- paste( "find ", sharedPathAn, " -type f -exec chmod 770 {} + ", sep = ""); system(cmd)
 ```
 
-
-
-
-
-
-Get all data together for oosporogenesis and oospore conversion and add the counts for libraries representing the same treatments:
+Get all data together for oosporogenesis and oospore conversion and add the counts for 
+libraries representing the same treatments:
 ```{r}
 
 sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
@@ -173,7 +169,9 @@ colnames(countsTopHat) <- basename(colnames(countsTopHat))
 
 colnames(countsTopHat) <- sub("\\.TopHat.*","",colnames(countsTopHat))
 
-write.table(data.frame(countsTopHat), file = file.path(sharedPath, "counts_readDGE_TopHat.Oospore_genesis_conversion.annotated2.csv"),
+write.table(data.frame(countsTopHat), 
+            file = file.path(sharedPath, 
+                             "counts_readDGE_TopHat.Oospore_genesis_conversion.annotated2.csv"),
             sep  = ",", 
             # sep = "\t", 
             row.names = TRUE, 
@@ -181,15 +179,12 @@ write.table(data.frame(countsTopHat), file = file.path(sharedPath, "counts_readD
             quote = FALSE)
 ```
 
-
-* First option to branch for plotting since we have the same csv table for both oospore genesis and oospore conversion
+* First option to branch for plotting since we have the same csv table for both oosporogenesis and oospore conversion
 countsTopHat[c(3166:3170),]
-
 
 I thought there were a problem with the read readDGE.  The following would replace it but it did not help as the problem was before readDGE step
 Kind of useless now but nice to see we can replace readDGE kind of manually.
 ```{r}
-
 countsListTopHat <- paste(sharedPathAn, metadataAdapRem$LibraryName, "/", metadataAdapRem$LibraryName,
                           ".TopHat", topHatDate, "/", metadataAdapRem$countfTopHat, sep = "")
 
@@ -206,12 +201,7 @@ print(nrow(test[[i]]))
 DF_test2 <- Reduce(function(x, y) merge(x, y, by="V1", all=TRUE), test)
 
 grep("PYU1_T003129",DF_test2)
-
 ```
-
-
-
-
 
 Extract control or unwanted columns based on their names 
 was there anything.
@@ -233,14 +223,7 @@ write.table(Metadata_2exp_reduced, file = file.path(sharedPath, "Metadata.Oospor
             row.names = TRUE, 
             col.names = NA, 
             quote = FALSE)
-
-
 ```
-
-
-
-
-
 
 The trick was from here
 http://stackoverflow.com/questions/19321053/sum-together-columns-of-data-frame-based-on-name-type
@@ -260,8 +243,6 @@ if (Metadata_2exp_reduced$Experiment[j] == "Oosporogenesis") {
 colnames(countsTopHatDf)[grep("T0-1_BC01|T0-1_BC02|T0-2_Lib1|T0-4_BC02", colnames(countsTopHatDf))] <-
    sub("^T0-","T0-c",colnames(countsTopHatDf)[grep("T0-1_BC01|T0-1_BC02|T0-2_Lib1|T0-4_BC02", colnames(countsTopHatDf))])
 
-
-# 
 # # For paired-end not merged:
 Metadata_2exp_reduced$ExpUnit <- sub("_.*", "", Metadata_2exp_reduced$LibraryName)
 metadataName <- "metadata_2exp_reduced.csv"
@@ -271,7 +252,6 @@ write.table(data.frame(Metadata_2exp_reduced), file = file.path(sharedPath, meta
             row.names = TRUE, 
             col.names = NA, 
             quote = FALSE)
-# 
 
 # # For merged or single-end reads:
 # metadataAdapRM$ExpUnit <- sub("_.*", "", metadataAdapRM$LibraryName)
@@ -330,8 +310,7 @@ write.table(temp2, file = file.path(paste(sharedPath, sep = ""), "readDGEcountsW
             append = FALSE, sep = ",", col.names = NA)
 ```
 
-
-* Second option to Branch  for plotting but we do not have that csv for oospore genesis *
+* Second option to Branch for plotting but we do not have that csv for oosporogenesis *
 
 RPKM normalization
 ```{r}
@@ -341,13 +320,8 @@ rpkmCount <- rpkm(temp2[,1:18], # All columns except y, in HiSeq it's col 19
 
 ```
 
-
-
-
 Get Data from Levesque et al
 ```{r}
-
-
 library(openxlsx)
 
 LEV_2010_rpkm <- read.xlsx(paste(sharedPath,"References/Genome_Biology_paper_AdditionalDataFile3.xlsx",sep=""), sheet="S9", startRow = 2)
@@ -361,21 +335,7 @@ length(unique(T_G_conversion_table[,2]))
 T_G_conversion_table$Locus[duplicated(T_G_conversion_table[,2])]
 
 df <- merge(T_G_conversion_table, LEV_2010_rpkm, by = "Locus", all.x = TRUE)
-
-
-
-
-
 ```
-
-
-
-
-
-
-
-
-
 
 Setting up for Differential Analysis: Generating CAZy families, all Secreted and CAZy secreted, 
 as well as House-Keeping subsets
@@ -517,7 +477,6 @@ cazyRpkmSub4$Timepoint_Condition <-
 ```
 
 
-
 Finding potential house-keeping (HK) genes
 ```{r}
 colnames(rpkmCount)
@@ -592,9 +551,7 @@ cmd <- paste(ncbiBlastnPath,
              sep = "")
 
 suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
-
 ```
-
 
 Andre did the next chunk, it's not working for me due to library("spider") error. 
 This is to get the names of the genes and select/sort  the results by BLAST statistics
@@ -729,7 +686,6 @@ print(bp)
 dev.off()
 
 ```
-
 
 Bar plots per CAZy family group:
 ```{r}
@@ -911,16 +867,6 @@ unique(cazyInterestList)
 ```
 
 
-
-
-
-
-
-
-
-
-
-
 I think this is junk.  André
 ```{r}
 # To look at only secreted CAZy in Pyuu:
@@ -979,25 +925,9 @@ RemoveQsubTempFiles(sharedPathAn, prefix)
 ```
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 **** Over here - Andre, can we delete the next chunk?
 Subset of table for Edge R (not relevant anymore I think)
 Emily.  These will spit out p-values.  Not there yet for model testing.  André
-
 ```{r}
 # Just the secreted Cazy genes
 rpkmCountCazy <- rpkmCount[which(rownames(rpkmCount) %in% unique(cazyDataSub[,c(3)])), ]
