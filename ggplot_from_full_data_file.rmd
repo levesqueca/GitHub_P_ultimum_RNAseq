@@ -48,7 +48,7 @@ dir.create(paste(sharedPath, mainFolder , sep = ""),
 
 Create a folder for the plot outputs:
 ```{r}
-analysisDir <- "from_Emily_7_november"
+analysisDir <- "from_Emily_10_november"
 dir.create(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""), 
            showWarnings = TRUE, recursive = FALSE)
 analysisPath <- paste(sharedPath, mainFolder , "/", analysisDir, sep = "")
@@ -59,8 +59,9 @@ The list could have 2 column, one with better labels.
 ```{r}
 listName <- "Loci_list.txt"
 listName <- "listRefCandidates.txt"
+listName <- "cazy_of_interest"
 
-listLoci <- fread(paste(analysisPath, "/", listName, sep = ""), 
+listLoci <- fread(paste(analysisPath, "/", listName, ".txt", sep = ""), 
                   sep = "\t", header = TRUE,  
                   stringsAsFactors = FALSE)
 colnames(listLoci)[1] <- "SequenceID"

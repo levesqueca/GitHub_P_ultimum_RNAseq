@@ -144,9 +144,92 @@ data <- ddply(countCAZySpecies, .(family.hmm),
    transform, pos = cumsum(freq) - (0.5 * freq)
 )
 
+png(file = paste("/home/AAFC-AAC/girouxem/GitHub_P_ultimum_RNAseq/data/ggplotOfAllSppCAZyFamUp.png", sep = ""))
 plotTest <- ggplot(data = data, aes(x = family.hmm, y = freq)) +
             geom_bar(aes(fill = Species), stat = "identity") +
             geom_text(aes(label = freq, y = pos), size = 2)
+print(plotTest)
+dev.off()
+```
+
+
+```{r}
+install.packages("stargazer")
+library(stargazer)
+install.packages("formattable")
+library(formattable)
+colnames(countCAZyFam) <- c("CAZyFamily", "Frequency")
+summary(countCAZyFam)
+cazyFamily <- as.list(countCAZyFam$CAZyFamily)
+frequency <- as.list(countCAZyFam$Frequency)
+mydata <- cbind(cazyFamily, frequency)
+
+mydata <- table(countCAZyFam)
+
+stargazer(mydata, type = "html",
+          title = "CAZy family freq",
+          out = "tab1-stargazer.htm",
+          summary = FALSE,
+          header = TRUE,
+          flip = FALSE)
+
+View(countCAZySpecies)
+cazyFam <- unique(countCAZySpecies$family.hmm)
+cazyFamily <- as.list(countCAZySpecies$family.hmm)
+frequency  <- as.list(countCAZySpecies$freq)
+species    <- as.list(countCAZySpecies$Species)
+cazySpTbl  <- cbind(cazyFamily, species, frequency)
+
+formattable(cazySpTbl, list(Frequency=color_bar("blue", proportion),
+                            "sparkline"=function(z){
+                              sapply(
+                                z,
+                                function(zz){
+                                  knitr::knit(
+                                    text = sprintf(
+                                      '`r sparkline(c(%s))`',
+                                      paste0(
+                                        cazySpTbl[which(cazySpTbl$cazyFamily == zz), "Frequency"],
+                                        collapse = ","
+                                        )
+                                      ),
+                                    quiet = TRUE
+                                    )
+                                  }
+                                )
+                              }
+                            )
+            )
+
+
+
+stargazer(cazySpTbl, type = "html",
+          title = "CAZy family freq by species",
+          out = "CAZy_family_freq_by_species.txt",
+          summary = FALSE,
+          header = TRUE,
+          flip = FALSE)
+```
+
+
+A function to generate tables. This is good to keep as an example of how 
+you can generate this programmatically.
+```{r, results = 'asis'}
+library(knitr)
+rmarkdownTable <- function(df){
+  cat(paste(names(df), collapse = "|"))
+  cat("\n")
+  cat(paste(rep("-", ncol(df)), collapse = "|"))
+  cat("\n")
+  
+  for(i in 1:nrow(df)){
+    cat(paste(df[i,], collapse = "|"))
+    cat("\n")
+    }
+invisible(NULL)
+}
+rmarkdownTable(head(countCAZyFam))
+
 ```
 
 
