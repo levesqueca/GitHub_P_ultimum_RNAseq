@@ -1,0 +1,181 @@
+Title
+========================================================
+This will help us when finding our files to source functions:
+```{r}
+install.packages("rprojroot")
+install.packages("data.table")
+install.packages("seqinr")
+install.packages("Biostrings")
+```
+
+```{r}
+library(rprojroot)
+# We specify ours is an RStudio project
+# The root object contains a function that will help us locate our package r files
+# regarless of our current working directory
+root <- rprojroot::is_rstudio_project
+scriptsPath <- root$make_fix_file(".")("R")
+scripts <- dir(root$find_file("R", path = root$find_file()))
+scriptsl <- paste(scriptsPath, scripts, sep = "//")
+lapply(scriptsl, source)
+```
+
+
+Selecting the subset of reads that are to be analysed (experiment-specific)
+```{r}
+dataPath <- root$make_fix_file(".")("data")
+
+# To look at all CAZy in Pyuu, not just secreted:
+allCazyFasta     <- paste(dataPath, "/all_CAZy.fasta.gz", sep = "")
+allCazy          <- readAAStringSet(paste(allCazyFasta), format = "fasta")
+allCazyNames     <- names(allCazy)
+allCazyPyuuNames <- subset(allCazyNames, grepl("^Pyuu_", allCazyNames))
+allCazyPyuuNames <- sub("_secreted$", "", allCazyPyuuNames)
+
+# To look at only secreted CAZy in Pyuu:
+secCazyFasta      <- paste(dataPath, "/CAZy_secreted.fasta.gz", sep = "")
+secretedCAZyAll   <- readAAStringSet(paste(secCazyFasta), format = "fasta")
+secretedNames     <- names(secretedCAZyAll)
+secretedPyuuNames <- subset(secretedNames, grepl("^Pyuu_", secretedNames))
+
+# Name the names file from the above options that will be analyzed:
+namesForPlots <- secretedPyuuNames
+# namesForPlots <- allCazyPyuuNames
+cazyDataSub <- data.frame(matrix(unlist(strsplit(as.character(namesForPlots), "_")), 
+                                nrow  = length(namesForPlots), 
+                                byrow = TRUE), stringsAsFactors = FALSE)
+
+cazyDataSub$SequenceID   <- paste(cazyDataSub$X3, cazyDataSub$X4, sep = "_")
+colnames(cazyDataSub)[2] <- "CazyFam"
+cazyFam <- unique(cazyDataSub$CazyFam)
+```
+
+Collect the protein sequences of specific CAZy families:
+This is where we narrow in on specific CAZy families.
+In the next chunk we refer to the file "dbCAN_CAZySubset_AllRefs.csv"
+I generated this file 
+```{r}
+library(data.table)
+famCAZSubsetPath <- paste(dataPath, "/dbCAN_CAZySubset_AllRefs.csv", sep = "")
+famCAZSubsetTbl  <- fread(famCAZSubsetPath)
+cazyFam          <- unique(famCAZSubsetTbl$family.hmm)
+```
+
+We retrieved the protien fasta files of several species that we want to 
+include for our analyses.
+We collected all the species on the Pythium Genome Database,
+these include:
+Species                                 | DAOM/Accn.      | Spp.Abbr. | Database                      | Website url
+--------------------------------------- | --------------- | --------- | ----------------------------- | ---------------------------------------
+*Pythium ultimum* var. *ultimum*        | DAOM BR144      | pyuu      | Pythium Genome Database       | *www.pythium.plantbiology.msu.edu*
+*Pythium ultimum* var. *sporangiiferum* | DAOM BR650      | pyus      | Pythium Genome Database       | *www.pythium.plantbiology.msu.edu*
+*Pythium aphanidermatum*                | DAOM BR444      | pyap      | Pythium Genome Database       | *www.pythium.plantbiology.msu.edu*
+*Pythium arrhenomanes*                  | ATCC 12531      | pyar      | Pythium Genome Database       | *www.pythium.plantbiology.msu.edu*
+*Pythium irregulare*                    | DAOM BR486      | pyir      | Pythium Genome Database       | *www.pythium.plantbiology.msu.edu*
+*Pythium iwayamai*                      | DAOM BR242034   | pyiw      | Pythium Genome Database       | *www.pythium.plantbiology.msu.edu*
+*Pythium vexans*                        | DAOM BR484      | pyve      | Pythium Genome Database       | *www.pythium.plantbiology.msu.edu*
+*Arabidopsis thaliana*                  | TAIR10          | Ath       | Ensembl                       | *www.plants.ensembl.org*
+*Dictyostelium discoideum*              | dicty_2.7       | Ddi       | Ensembl                       | *www.protists.ensembl.org*
+*Emiliania huxleyi*                     | GCA_000372725.1 | Ehux      | Ensembl                       | *www.protists.ensembl.org*
+*Hyaloperonospora arabidopsis*          | HyaAraEmoy2_2.0 | Ha        | Ensembl                       | *www.protists.ensembl.org*
+*Phaeodactylum tricornutum*             | ASM15095v2      | Phatr     | Ensembl                       | *www.protists.ensembl.org*
+*Phytophthora infestans*                | ASM14294v1      | Phin      | Ensembl                       | *www.protists.ensembl.org*
+*Phytophthora nicotianea*               | ASM148301v1     | Phni      | Ensembl                       | *www.protists.ensembl.org*
+*Phytophthora parasitica*               | GCA_000365505.1 | Phpa      | Ensembl                       | *www.protists.ensembl.org*
+*Phytophthora sojae*                    | P_sojae_V3_0    | Phso      | Ensembl                       | *www.protists.ensembl.org*
+*Phytophthora ramorum*                  | ASM14973v1      | Phra      | Ensembl                       | *www.protists.ensembl.org*
+*Saccharomyces cerevisiae* S288C        | ATCC 204508     | Sce       | Saccharomyces Genome Database | *www.yeastgenome.org*
+*Thalassiosira pseudonana*              | ASM14940v2      | Thaps     | Ensembl                       | *www.protists.ensembl.org*
+
+
+We searched the proteomes of the our species for the CAZy domains CBM21, GH15, GH16, GH17, GH3, GH7 and GH72
+using the dbCAN tool.
+We searched for these families specifically because we noticed differential expression of members of these
+families in our *Pythium ultimum* var. *ultimum* oospore conversion time-course.
+The purpose of this script is to collect the genes of these families from oomycete species and to include 
+outgroup species from plants, fungi and diatoms in order to investigate gene phylogeny with respect
+to our gene candidates from *Pythium ultimum* var. *ultimum*.
+```{r}
+protRefPath <- paste(dataPath, "/referenceProteomes/", sep = "")
+```
+
+The following chunk goes through each reference protein fasta file we
+have put in our directory. 
+```{r}
+protRef <- list.files(protRefPath)
+j <- 1
+for(j in 1:length(cazyFam)){
+  tempGH <- famCAZSubsetTbl[famCAZSubsetTbl$family.hmm == cazyFam[j],]
+  for(k in 1:length(protRef)){
+    tempPro <- readAAStringSet(paste(protRefPath, protRef[k], sep = ""),
+                               format = "fasta")
+    tempNames <- names(tempPro)
+    tempNamesTrunc <- sub(" .*", "", tempNames)
+    names(tempPro) <- tempNamesTrunc
+    tempProGH3 <- tempPro[which(names(tempPro) %in% tempGH$query.id)]
+    writeXStringSet(tempProGH3,
+                    file = paste(dataPath,"/", cazyFam[j], ".fasta", sep = ""),
+                    append = TRUE,
+                    format = "fasta"
+                    )
+    }
+  # tempProGH <- AAStringSet(tempProGH3, start = tempGH$hmm.start, end = tempGH$hmm.end, width = NA, use.names = TRUE)
+}
+```
+
+```{r}
+fastaCAZy <- list.files(dataPath, pattern = "\\.fasta$", recursive = FALSE) 
+myCazyFullSet <- AAStringSet()
+for(i in 1:length(fastaCAZy)){
+  temp <- readAAStringSet(paste(dataPath, "/", fastaCAZy[i], sep = ""), format = "fasta")
+  myCazyFullSet <- c(temp, myCazyFullSet)
+}
+
+
+
+```
+
+Trim the reference proteins in our list using the start and end position of 
+the CAZy domain location on the protein:
+```{r}
+library(seqinr)
+
+famCAZSubsetTbl_temp <- famCAZSubsetTbl
+famCAZSubsetTbl_temp <- famCAZSubsetTbl_temp[!famCAZSubsetTbl_temp$family.hmm == "CBM21", ]
+
+tempNames <- names(myCazyFullSet)
+tempNamesTrunc <- sub(" .*", "", tempNames)
+names(myCazyFullSet) <- tempNamesTrunc
+
+j <- nrow(famCAZSubsetTbl_temp)
+subSeqDF <- data.frame( x=rep(0, j), y=rep(0,j))
+
+for(i in 1:length(famCAZSubsetTbl_temp)){
+  x      <- famCAZSubsetTbl_temp$query.id[i]
+  seq    <- unique(myCazyFullSet[names(myCazyFullSet) %in% x])
+  start  <- famCAZSubsetTbl_temp$hmm.start[i]
+  end    <- famCAZSubsetTbl_temp$hmm.end[i]
+  y <- AAStringSet(seq, start = start, end = end, width = NA, use.names = TRUE)
+  y <- toString(as.character(y))
+  subSeqDF[i, ] = c(x, y)
+  }
+
+# There's a problem here, need to do something about duplicate rows in the famcazy table.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

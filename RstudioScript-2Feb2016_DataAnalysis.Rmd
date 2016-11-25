@@ -179,10 +179,11 @@ write.table(data.frame(countsTopHat),
             quote = FALSE)
 ```
 
-* First option to branch for plotting since we have the same csv table for both oosporogenesis and oospore conversion
-countsTopHat[c(3166:3170),]
+* First option to branch for plotting since we have the same csv table for both 
+oosporogenesis and oospore conversion countsTopHat[c(3166:3170),]
 
-I thought there were a problem with the read readDGE.  The following would replace it but it did not help as the problem was before readDGE step
+I thought there were a problem with the read readDGE.  The following would 
+replace it but it did not help as the problem was before readDGE step
 Kind of useless now but nice to see we can replace readDGE kind of manually.
 ```{r}
 countsListTopHat <- paste(sharedPathAn, metadataAdapRem$LibraryName, "/", metadataAdapRem$LibraryName,
@@ -203,8 +204,7 @@ DF_test2 <- Reduce(function(x, y) merge(x, y, by="V1", all=TRUE), test)
 grep("PYU1_T003129",DF_test2)
 ```
 
-Extract control or unwanted columns based on their names 
-was there anything.
+Extract control or unwanted columns based on their names:
 ```{r}
 # List the controls that you want to drop from count analyses, if there are none do: c("","") 
 controlToDrop <- c("T7-c3_BC30_a1", "T7-c3_BC30_a2", "T7-c3_BC31_a1", "T7-c3_BC31_a2", 
@@ -214,10 +214,11 @@ tempCountsTopHat <- data.frame(countsTopHat)
 colnames(tempCountsTopHat) <- colnames(countsTopHat)
 countsTopHatDf   <- tempCountsTopHat[, !(colnames(tempCountsTopHat) %in% controlToDrop)]
 
-#drop it in metadata too
+# Drop it in metadata as well:
 Metadata_2exp_reduced   <- Metadata_2exp[!Metadata_2exp$LibraryName %in% controlToDrop, ]
 
-write.table(Metadata_2exp_reduced, file = file.path(sharedPath, "Metadata.Oospore_genesis_conversion_reduced.csv"),
+write.table(Metadata_2exp_reduced, 
+            file = file.path(sharedPath, "Metadata.Oospore_genesis_conversion_reduced.csv"),
             sep  = ",", 
             # sep = "\t", 
             row.names = TRUE, 
@@ -235,15 +236,20 @@ library("reshape2")
 # to make sure that the T0 oosporogenesis does not get lumped with T0 Oospore conversion, adds a "c"
 for (j in 1:nrow(Metadata_2exp_reduced)) {
 if (Metadata_2exp_reduced$Experiment[j] == "Oosporogenesis") {
-   Metadata_2exp_reduced$LibraryName[j] <- sub("^T0-","T0-c",Metadata_2exp_reduced$LibraryName[j])
+  Metadata_2exp_reduced$LibraryName[j] <- sub("^T0-","T0-c", Metadata_2exp_reduced$LibraryName[j])
 } else { 
 }}
 
-# Must do the same on columns of data frame of counts, does the sub command on those selected only to add a c
-colnames(countsTopHatDf)[grep("T0-1_BC01|T0-1_BC02|T0-2_Lib1|T0-4_BC02", colnames(countsTopHatDf))] <-
-   sub("^T0-","T0-c",colnames(countsTopHatDf)[grep("T0-1_BC01|T0-1_BC02|T0-2_Lib1|T0-4_BC02", colnames(countsTopHatDf))])
+# Must do the same on columns of data frame of counts, does 
+# the sub command on those selected only to add a c
+colnames(countsTopHatDf)[grep(
+  "T0-1_BC01|T0-1_BC02|T0-2_Lib1|T0-4_BC02",
+  colnames(countsTopHatDf))] <- sub("^T0-","T0-c", 
+                                    colnames(countsTopHatDf)
+                                    [grep("T0-1_BC01|T0-1_BC02|T0-2_Lib1|T0-4_BC02", 
+                                          colnames(countsTopHatDf))])
 
-# # For paired-end not merged:
+# For paired-end not merged:
 Metadata_2exp_reduced$ExpUnit <- sub("_.*", "", Metadata_2exp_reduced$LibraryName)
 metadataName <- "metadata_2exp_reduced.csv"
 write.table(data.frame(Metadata_2exp_reduced), file = file.path(sharedPath, metadataName),
@@ -253,7 +259,7 @@ write.table(data.frame(Metadata_2exp_reduced), file = file.path(sharedPath, meta
             col.names = NA, 
             quote = FALSE)
 
-# # For merged or single-end reads:
+# For merged or single-end reads:
 # metadataAdapRM$ExpUnit <- sub("_.*", "", metadataAdapRM$LibraryName)
 
 countsTopHatDf$gene <- rownames(countsTopHatDf)
@@ -274,7 +280,8 @@ rownames(countsTopHatSum) <- countsTopHatSum$gene
 countsTopHatSum$gene      <- NULL
 ```
 
-Normalization after removing rDNA data.  Best approach to compare with Levesque et al 2010.
+Normalization after removing rDNA data.  
+The best approach to compare with Levesque et al 2010.
 ```{r}
 library(Biostrings)
 library("edgeR")
@@ -320,14 +327,22 @@ rpkmCount <- rpkm(temp2[,1:18], # All columns except y, in HiSeq it's col 19
 
 ```
 
-Get Data from Levesque et al
+Get data from Levesque et al.:
 ```{r}
 library(openxlsx)
 
-LEV_2010_rpkm <- read.xlsx(paste(sharedPath,"References/Genome_Biology_paper_AdditionalDataFile3.xlsx",sep=""), sheet="S9", startRow = 2)
+LEV_2010_rpkm <- read.xlsx(paste(sharedPath, 
+                                 "References/Genome_Biology_paper_AdditionalDataFile3.xlsx", 
+                                 sep = ""), 
+                           sheet = "S9", 
+                           startRow = 2)
 
-T_G_conversion_table <- read.csv(paste(sharedPath,"References/T_G_name_conversion_from_gff_file.csv", sep=""), stringsAsFactors=FALSE)
-colnames(T_G_conversion_table)[colnames(T_G_conversion_table)=="G_code"] <- "Locus"
+T_G_conversion_table <- read.csv(paste(sharedPath, 
+                                       "References/T_G_name_conversion_from_gff_file.csv", 
+                                       sep = ""), 
+                                 stringsAsFactors = FALSE)
+
+colnames(T_G_conversion_table)[colnames(T_G_conversion_table) == "G_code"] <- "Locus"
 
 length(unique(T_G_conversion_table[,1]))
 length(unique(T_G_conversion_table[,2]))
@@ -494,9 +509,7 @@ write.table(potentialHK,
             append = FALSE, sep = ",", col.names = NA)
 ```
 
-The following was done by Andre, and the shared path was not the same. I can't get "rentrez" to 
-work for me, so I won't repeat this. Instead I will refer to tab-delinited file with the genes 
-using a hard path reference.
+
 This is to generate a list of GI queries to search for BLAST (makes it a lot faster)
 ```{r}
 # Make a list of potential HK genes:
@@ -556,8 +569,12 @@ suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
 Andre did the next chunk, it's not working for me due to library("spider") error. 
 This is to get the names of the genes and select/sort  the results by BLAST statistics
 ```{r}
+install.packages('http://cran.r-project.org/src/contrib/Archive/Rcpp/Rcpp_0.12.5.tar.gz')
+# manually delete: "/home/AAFC-AAC/girouxem/R/x86_64-unknown-linux-gnu-library/3.1/00LOCK-Rcpp"
+install.packages('http://cran.r-project.org/src/contrib/Archive/Rcpp/Rcpp_0.12.5.tar.gz')
 install.packages("spider")
 library("spider")
+
 subsetHKinterestPath <- paste(sharedPath, analysis, 
                               "HiSeq_Analyses/Blast_HK/HK_InterestSubsetNt.tab", 
                               sep = "")
@@ -764,8 +781,6 @@ dev.off()
 
 ```
 
-
-*** Over here - Andre, I did this, but I'm not sure anymore if we wanted this inlog-scale too?
 Individual multiple Bar plots
 ```{r}
 library("ggplot2")
@@ -829,239 +844,10 @@ for(i in 1:length(forPlot)){
   dev.off()
 }
 ```
-#####################################################################################################
-*** Over here - for Emily - I left up to here 29July2016
-This I had done manually when I ran the script for merging the HiSeq reads - After looking at plots, 
-I narrowed in on those genes that had similar diff. expression in both oosporogenesis and oospore 
-conversion time-course - I'll need to see about repeating this for the Hi-Seq_Analyses2 with reads 
-not merged.
-```{r}
-
-cazyInterestList <- c("PYU1_T010810", "PYU1_T003056", "PYU1_T006946", 
-                      "PYU1_T006947", "PYU1_T009144", "PYU1_T004665", 
-                      "PYU1_T006327", "PYU1_T013821", "PYU1_T014660", 
-                      "PYU1_T009505", "PYU1_T006194", "PYU1_T006546",
-                      "PYU1_T010982", "PYU1_T010437", "PYU1_T006878",
-                      "PYU1_T007490", "PYU1_T000471", "PYU1_T000490",
-                      "PYU1_T010809", "PYU1_T003515", "PYU1_T013496",
-                      "PYU1_T008966", "PYU1_T000955", "PYU1_T012530",
-                      "PYU1_T001495", "PYU1_T001658", "PYU1_T001170",
-                      "PYU1_T006485", "PYU1_T012512", "PYU1_T015040",
-                      "PYU1_T005056", "PYU1_T005072", "PYU1_T011896",
-                      "PYU1_T001346", "PYU1_T005252", "PYU1_T005445",
-                      "PYU1_T014041", "PYU1_T005135", "PYU1_T014584",
-                      "PYU1_T000438", "PYU1_T005971", "PYU1_T005972",
-                      "PYU1_T005973", "PYU1_T006030", "PYU1_T003173",
-                      "PYU1_T009242", "PYU1_T010978", "PYU1_T004531",
-                      "PYU1_T004532", "PYU1_T001515", "PYU1_T005968",
-                      "PYU1_T008740", "PYU1_T009220", "PYU1_T009223", 
-                      "PYU1_T009228", "PYU1_T002046", "PYU1_T002299", 
-                      "PYU1_T008222", "PYU1_T013005", "PYU1_T002412",
-                      "PYU1_T012179", "PYU1_T001053", "PYU1_T002541",
-                      "PYU1_T002542", "PYU1_T007532", "PYU1_T012442", 
-                      "PYU1_T012455", "PYU1_T004680")
-
-length(cazyInterestList)
-unique(cazyInterestList)
-
-```
 
 
-I think this is junk.  André
-```{r}
-# To look at only secreted CAZy in Pyuu:
-# secCazyFasta <- paste(referencesPath, "Secretome/CAZy_secreted.fasta", sep = "")
-# secretedCAZyAll   <- readAAStringSet(paste(secCazyFasta), format = "fasta")
-# pyuuAllTranscript <- readAAStringSet(paste(pyuuTranscripts), format = "fasta")
-pyuuInterestFastaPath <- paste(sharedPathAn, "pyuuCazyInterestSubset.fasta", sep = "")
-pyuuCazyInterest <- readAAStringSet(paste(pyuuInterestFastaPath), format = "fasta")
-# secretedNames     <- names(secretedCAZyAll)
-pyuuInterestNames <- names(pyuuCazyInterest)
-
-# Read in the Pythium ultimum transcriptome file from the Pythium Genome Browser
-# (We did this earlier in the script)
-# my_names_pyuu <- gsub(" .*", "", names(Pyuu_fasta_seqs), ignore.case = FALSE)
-pyuuNamesTranscript <- gsub(" .*", "", names(pyuuAllTranscript), ignore.case = FALSE)
-
-#now take vector of names, and make these the names to refer to for readAAstringsset, recall, we put our readAAStringSet into Pyuu_fasta_seqs
-# names(Pyuu_fasta_seqs) <- my_names_pyuu
-names(pyuuAllTranscript) <- pyuuNamesTranscript
-
-#now we can match signalp4 names to fasta names because they are in the same format
-# pyuu_subset_signalp4 <- Pyuu_fasta_seqs[which(names(Pyuu_fasta_seqs) %in% list_gff_seq_names_sp4)]
-pyuuCazyInterestSubset <- pyuuAllTranscript[which(names(pyuuAllTranscript) %in% cazyInterestList)]
 
 
-# writeXStringSet(pyuu_subset_signalp4, file=paste(signalp4_gff_path, "pyuu_subset_signalp4.fasta", sep=""), append=FALSE, format="fasta") 
-writeXStringSet(pyuuCazyInterestSubset, file=paste(sharedPathAn, "pyuuCazyInterestSubsetNt.fasta", sep=""), append=FALSE, format="fasta") 
 
-
-ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nt/nt"
-ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastn"
-blastnOutFrmt  <- paste(" '", 
-                        "6", " qseqid", " sallacc", " pident", " length", 
-                        " mismatch", " gapopen", " qstart", " qend", " sstart", 
-                        " send", " evalue", " bitscore", 
-                        "'",
-                        sep = "") 
-maxTargetsSeqs <- 1
-
-prefix <- "pyuuCazyInterestSubset"
-cmd <- paste(ncbiBlastnPath,
-             " -db ",     ncbiDbPath,
-             " -query ",  paste(sharedPathAn, "pyuuCazyInterestSubsetNt.fasta",
-                                sep = ""),
-             " -max_target_seqs ", maxTargetsSeqs,
-             " -outfmt ", blastnOutFrmt,
-             " -out ",    paste(sharedPathAn, "pyuuCazyInterestSubsetNt.fasta.bls",
-                                sep = ""),
-             sep = "")
-
-suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
-```
-
-```{r}
-RemoveQsubTempFiles(sharedPathAn, prefix)
-```
-
-
-**** Over here - Andre, can we delete the next chunk?
-Subset of table for Edge R (not relevant anymore I think)
-Emily.  These will spit out p-values.  Not there yet for model testing.  André
-```{r}
-# Just the secreted Cazy genes
-rpkmCountCazy <- rpkmCount[which(rownames(rpkmCount) %in% unique(cazyDataSub[,c(3)])), ]
-
-# keep only certain columnms because of principal components analysis of PlotMDS
-rpkmCountCazySub <- rpkmCountCazy[ , -which(colnames(rpkmCountCazy) %in% c("T0-1",  "T0-2",  "T0-4"))]
-
-# Had to turn cholesterol/control as numeric by making them factors and then numbers 
-#dat_agg2 <- dat_agg[order(dat_agg$Group.2, -as.numeric(as.factor(dat_agg$Group.1)), dat_agg$Group.3,  decreasing=c(F,F,F)),] 
-```
-
-**** Over here - Andre, can we delete the next chunk? This was for oosporogenesis.
-Create Sample sheet
-```{r}
-samples <- data.frame(colnames(rpkmCountCazySub))
-colnames(samples)[1] <- "shortname"
-
-samples$Condition <- samples$shortname
-samples$Condition  <- sub("^T.*-", "", samples$Condition, ignore.case = FALSE)
-samples$Condition  <- sub("[1-9]$", "", samples$Condition, ignore.case = FALSE)
-samples$Condition  <- sub("c", "Control", samples$Condition, ignore.case = FALSE)
-samples$Condition  <- sub("x", "Cholesterol", samples$Condition, ignore.case = FALSE)
-
-samples$TimePoint <- samples$shortname
-samples$TimePoint  <- sub("^T", "", samples$TimePoint, ignore.case = FALSE)
-samples$TimePoint  <- sub("-.*$", "", samples$TimePoint, ignore.case = FALSE)
-
-samples$Treatment <- paste(samples$Condition, samples$TimePoint, sep="-")
                       
-```
-                      
-**** Over here - Andre, can we delete the next chunk?                                      
-```{r}
-colnames(rpkmCountCazySub)
-samples
 
-#### HTSEQ_COUNT RESULTS 
-# 4. Filter weakly expressed and noninformative (e.g., non-aligned) features: 
-# noint <- rownames(countsTopHat) %in% c("__no_feature","__ambiguous","__too_low_aQual", 
-#                                 "__not_aligned","__alignment_not_unique") 
-# In edgeR, it is recommended to remove features without  
-# at least 1 read per million in n of the samples,  
-# where n is the size of the smallest group of replicates,  
-#keep = rowSums(cpms >1) >=3  
-#dim(countsTopHatGenes) ## the number of features you started with 
-#countsTopHatGenes = countsTopHatGenes[keep,] 
-#dim(countsTopHatGenes) ## count counts of features you have left over after initial filter 
-#colnames(countsTopHatGenes) = metadataProcessed$LibraryName 
-#Create a DGEList object (edgeR's container for RNA-seq count data): 
-dTopH = DGEList(counts=rpkmCountCazySub, group=samples$Treatments) 
-#Estimate normalization factors using, RNA composition and adjust for read depth: 
-dTopH = calcNormFactors(dTopH)
-#Inspect the relationships between samples using a multidimensional scaling (MDS) plot, as shown in Figure 4:
-results <- "3-March-2016-TopHat-edgeR"
-dir.create(paste(sharedPathAn, results, sep=""), showWarnings = TRUE, recursive = FALSE)
-pdf(file.path(paste(sharedPathAn,results,sep=""),"MDS-edgeR_TopHat-T3.pdf")) 
-plotMDS(dTopH, labels=colnames(rpkmCountCazySub), 
-        col = rainbow(length(levels(factor(samples$Treatments))))[factor(samples$Treatments)],cex=0.6, main="MDS") 
-dev.off() 
-
-# edgeR - using glm 
-#Create a design matrix to specify the factors that are expected to affect expression levels: 
-designTopH = model.matrix( ~ Group.1, dat_agg2[c(10:15),]) ## samples is your sample sheet, treatment is a column in the sample sheet 
-designTopH 
-
-### Here it is pH6 - pH2.5 (so positive fold change indicates higher expression in Normal, negative is higher in Affected) 
-#Estimate dispersion values, relative to the design matrix, using the Cox-Reid (CR)-adjusted likelihood 
-d2TopH = estimateGLMCommonDisp(dTopH, designTopH) 
-d2TopH = estimateGLMTrendedDisp(d2TopH, designTopH) 
-d2TopH = estimateGLMTagwiseDisp(d2TopH, designTopH) 
-
-#plot the mean-variance relationship: 
-pdf(file.path(paste(sharedPathAn,results,sep=""),"mean.variance-edgeR_TopHat.pdf")) 
-
-# Plot the relationship between mean expression and variance of expression 
-plotMeanVar(d2TopH, show.tagwise.vars=TRUE, NBline=TRUE,main="MeanVar") 
-
-# Plot the Biological Coefficient of Variation (as opposed to technical coefficient of variation) 
-plotBCV(d2TopH,main="BCV") 
-dev.off() 
-
-#Given the design matrix and dispersion estimates, fit a GLM to each feature: 
-fTopH = glmFit(d2TopH, designTopH) 
-
-#Perform a likelihood ratio test, specifying the difference of interest 
-deTopH = glmLRT(fTopH, coef=2) ## Treatment coefficient 
-
-#Use the topTags function to present a tabular summary of the differential expression statistics 
-ttTopH = topTags(deTopH, n=nrow(dTopH)) ## all tags, sorted 
-head(ttTopH$table) ## Check result 
-table(ttTopH$table$FDR< 0.05) ## the number of "Statistically Differentially Expressed Genes" at an FDR of 0.05 
-
-#Inspect the depth-adjusted reads per million for some of the top differentially expressed genes: 
-ncTopH = cpm(dTopH, normalized.lib.sizes=TRUE) 
-rnTopH = rownames(ttTopH$table) 
-head(ncTopH[rnTopH,order(dat_agg2$Group.1[10:15])],5) 
-
-#Plot the M (log-fold change) versus A (log-average expression) 
-degTopH = rnTopH[ttTopH$table$FDR < .05] 
-pdf(file.path(paste(sharedPathAn,results,sep=""),"smear-edgeR_TopHat-T3.pdf")) 
-plotSmear(dTopH, de.tags=degTopH,main="Smear") 
-dev.off() 
- 
-#Save the result table as a CSV file: 
-write.table(ttTopH$table,file=file.path(paste(sharedPathAn,results,sep=""),"toptags_edgeR_TopHat.annotated-T3.csv"), append = FALSE, sep =",", col.names=NA)                      
-```
-
-**** Over here - Andre, can we delete the next chunk?                     
-Read Cazy data and merge some data
-```{r}
-cazyData <- read.xlsx(paste(sharedPathAn, "References/Final\ Table\ CAZyme\ 050813.xlsx", sep = ""), 
-                      sheetName = "Pyuu", startRow = 2, header = TRUE,  stringsAsFactors = FALSE)
-
-cazyCounts <- subset(as.data.frame(cpms), rownames(cpms) %in% cazyData$SequenceID)
-
-length(unique(cazyData$SequenceID))
-```
-**** Over here - Andre, can we delete the next chunk?
-Prepare data for bar plot
-```{r}
-cazyCounts$gene <- rownames(cazyCounts)
-cazyDataMelt <- melt(cazyCounts)
-
-cazyCounts <- merge(cpms, cazyData[,c(1,3,5,6,7,8,9,20)],  
-                    by.x = 0, 
-                    by.y = "SequenceID", 
-                    all = FALSE, 
-                    all.y = TRUE)
-
-#countsTopHatMelt <- countsTopHatMelt[countsTopHatMelt$value>0,]
-colnames(countsTopHatMelt)[2] <- "LibraryName"
-df <- merge(countsTopHatMelt, metadataProcessed[,c(1,8)], by= "LibraryName", all.x=TRUE)
-
-countsTopHatSum <- dcast(data = df[,2:4], gene ~ ExpUnit, sum, value.var="value")
-
-cazyCountsT <- t(cazyCounts)
-```
