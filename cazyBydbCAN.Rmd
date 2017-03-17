@@ -77,6 +77,48 @@ system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat retu
 RemoveQsubTempFiles(sharedPathAn, prefix)
 ```
 
+See how many CAZy were pulled out for Pyuu: look for this in the .CAZy.out.dm file
+```{r}
+library(reshape2)
+library(data.table)
+# test[[i]] <- fread(dbCANList[i], sep = "auto", header = FALSE)
+cazyPyuuAll <- fread(paste(projPath, 
+                        "output/Pythium_ultimum_var_ultimum/Pythium_ultimum_var_ultimum.CAZy.out.dm", 
+                        sep = ""),
+                  sep = "auto", header = TRUE, fill=TRUE)
+cazyPyuuAll <- cazyPyuuAll[-c(1, 2), ]
+
+# rename some columns:
+colnames(cazyPyuuAll)[1] <- "cazyFam"
+# get the unique cazy families:
+cazyFams <- unique(cazyPyuuAll$cazyFam)
+# get the unique genes
+pyuuCazyGenes <- unique(cazyPyuuAll$sequence)
+length(pyuuCazyGenes)
+# Now make a new table that has only the cazyFam and sequence columns
+cazyFamGene <- subset(cazyPyuuAll, select=c("cazyFam", "sequence"))
+cazyFamGene$cazyFam <- sub(".hmm", "", cazyFamGene$cazyFam)
+# Now collapse rows that have duplicates to one row
+library("dplyr")
+cazyFamGene <- distinct(cazyFamGene)
+length(cazyFams)
+# Sort by CAZy family
+sort1 <- with(cazyFamGene, cazyFamGene[order(-cazyFam, sequence)  , ])
+sort2 <- with(cazyFamGene, cazyFamGene[order(sequence, cazyFam)  , ])
+cazyFamGene <- sort1
+#write this to a table:
+library(stargazer)
+#install.packages("formattable")
+#library(formattable)
+stargazer(cazyFamGene, type = "html",
+          title = "Putative CAZy genes of Pythium ultimum var. ultimum",
+          out = "tab-PyuuGenes_AllCazy_stargazer.htm",
+          summary = FALSE,
+          header = TRUE,
+          flip = FALSE)
+
+```
+
 Run the hmmscan parser on the hmmscan output for each reference species:
 ```{r}
 prefix <- "B_dbCAN_hmmscanParser"

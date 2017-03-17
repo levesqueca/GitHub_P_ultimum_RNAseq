@@ -99,30 +99,33 @@ to our gene candidates from *Pythium ultimum* var. *ultimum*.
 protRefPath <- paste(dataPath, "/referenceProteomes/", sep = "")
 ```
 
+*** Over here!! Don't run the next chunk, the files are not pushed to the repo.
 The following chunk goes through each reference protein fasta file we
 have put in our directory. 
 ```{r}
-protRef <- list.files(protRefPath)
-j <- 1
-for(j in 1:length(cazyFam)){
-  tempGH <- famCAZSubsetTbl[famCAZSubsetTbl$family.hmm == cazyFam[j],]
-  for(k in 1:length(protRef)){
-    tempPro <- readAAStringSet(paste(protRefPath, protRef[k], sep = ""),
-                               format = "fasta")
-    tempNames <- names(tempPro)
-    tempNamesTrunc <- sub(" .*", "", tempNames)
-    names(tempPro) <- tempNamesTrunc
-    tempProGH3 <- tempPro[which(names(tempPro) %in% tempGH$query.id)]
-    writeXStringSet(tempProGH3,
-                    file = paste(dataPath,"/", cazyFam[j], ".fasta", sep = ""),
-                    append = TRUE,
-                    format = "fasta"
-                    )
-    }
-  # tempProGH <- AAStringSet(tempProGH3, start = tempGH$hmm.start, end = tempGH$hmm.end, width = NA, use.names = TRUE)
-}
+# protRef <- list.files(protRefPath)
+# j <- 1
+# for(j in 1:length(cazyFam)){
+#   tempGH <- famCAZSubsetTbl[famCAZSubsetTbl$family.hmm == cazyFam[j],]
+#   for(k in 1:length(protRef)){
+#     tempPro <- readAAStringSet(paste(protRefPath, protRef[k], sep = ""),
+#                                format = "fasta")
+#     tempNames <- names(tempPro)
+#     tempNamesTrunc <- sub(" .*", "", tempNames)
+#     names(tempPro) <- tempNamesTrunc
+#     tempProGH3 <- tempPro[which(names(tempPro) %in% tempGH$query.id)]
+#     writeXStringSet(tempProGH3,
+#                     file = paste(dataPath,"/", cazyFam[j], ".fasta", sep = ""),
+#                     append = TRUE,
+#                     format = "fasta"
+#                     )
+#     }
+#   # tempProGH <- AAStringSet(tempProGH3, start = tempGH$hmm.start, end = tempGH$hmm.end, width = NA, use.names = TRUE)
+# }
 ```
 
+In the following all the cazy families' fasta files extracted by dbCan for all references
+are read into an AAStringSet:
 ```{r}
 fastaCAZy <- list.files(dataPath, pattern = "\\.fasta$", recursive = FALSE) 
 myCazyFullSet <- AAStringSet()
@@ -131,7 +134,7 @@ for(i in 1:length(fastaCAZy)){
   myCazyFullSet <- c(temp, myCazyFullSet)
 }
 
-
+# alternative is to read them as separate AASting sets:
 
 ```
 
@@ -161,7 +164,7 @@ for(i in 1:length(famCAZSubsetTbl_temp)){
   }
 
 # There's a problem here, need to do something about duplicate rows in the famcazy table.
-
+```
 
 
 

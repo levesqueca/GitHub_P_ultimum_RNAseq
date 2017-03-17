@@ -1,0 +1,20 @@
+Species,DAOMorAccn.,Spp.Abbr.,Database,Website url
+Pythium ultimum var. ultimum,DAOM BR144,pyuu,Pythium Genome Database,www.pythium.plantbiology.msu.edu
+Pythium ultimum var. sporangiiferum,DAOM BR650,pyus,Pythium Genome Database,www.pythium.plantbiology.msu.edu
+Pythium aphanidermatum,DAOM BR444,pyap,Pythium Genome Database,www.pythium.plantbiology.msu.edu
+Pythium arrhenomanes,ATCC 12531,pyar,Pythium Genome Database,www.pythium.plantbiology.msu.edu
+Pythium irregulare,DAOM BR486,pyir,Pythium Genome Database,www.pythium.plantbiology.msu.edu
+Pythium iwayamai,DAOM BR242034,pyiw,Pythium Genome Database,www.pythium.plantbiology.msu.edu
+Pythium vexans,DAOM BR484,pyve,Pythium Genome Database,www.pythium.plantbiology.msu.edu
+Arabidopsis thaliana,TAIR10,Ath,Ensembl,www.plants.ensembl.org
+Dictyostelium discoideum,dicty_2.7,Ddi,Ensembl,www.protists.ensembl.org
+Emiliania huxleyi,GCA_000372725.1,Ehux,Ensembl,www.protists.ensembl.org
+Hyaloperonospora arabidopsis,HyaAraEmoy2_2.0,Ha,Ensembl,www.protists.ensembl.org
+Phaeodactylum tricornutum,ASM15095v2,Phatr,Ensembl,www.protists.ensembl.org
+Phytophthora infestans,ASM14294v1,Phin,Ensembl,www.protists.ensembl.org
+Phytophthora nicotianea,ASM148301v1,Phni,Ensembl,www.protists.ensembl.org
+Phytophthora parasitica,GCA_000365505.1,Phpa,Ensembl,www.protists.ensembl.org
+Phytophthora sojae,P_sojae_V3_0,Phso,Ensembl,www.protists.ensembl.org
+Phytophthora ramorum,ASM14973v1,Phra,Ensembl,www.protists.ensembl.org
+Saccharomyces cerevisiae S288C,ATCC 204508,Sce,Saccharomyces Genome Database,www.yeastgenome.org
+Thalassiosira pseudonana,ASM14940v2,Thaps,Ensembl,www.protists.ensembl.org
