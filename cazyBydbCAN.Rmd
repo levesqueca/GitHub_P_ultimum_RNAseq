@@ -25,6 +25,11 @@ hmmScanPath <- "/opt/bio/hmmer3/bin/hmmscan"
 hmmParser <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/References/CAZyTools/hmmscan-parser.sh"
 ```
 
+Set the paths for output plots, tables, figures, and graphs:
+```{r}
+figPath <- root$make_fix_file(".")("Figures")
+dataPath <- root$make_fix_file(".")("data")
+```
 
 Set the path for analysis qsub outputs:
 ```{r}
@@ -106,17 +111,40 @@ length(cazyFams)
 sort1 <- with(cazyFamGene, cazyFamGene[order(-cazyFam, sequence)  , ])
 sort2 <- with(cazyFamGene, cazyFamGene[order(sequence, cazyFam)  , ])
 cazyFamGene <- sort1
+
 #write this to a table:
 library(stargazer)
-#install.packages("formattable")
-#library(formattable)
 stargazer(cazyFamGene, type = "html",
           title = "Putative CAZy genes of Pythium ultimum var. ultimum",
-          out = "tab-PyuuGenes_AllCazy_stargazer.htm",
+          out = paste(figPath, "/tab-PyuuGenes_AllCazy_stargazer.htm", sep = ""),
           summary = FALSE,
           header = TRUE,
           flip = FALSE)
 
+# I'm interested in what a pie graph of the CAZy families in Pyuu would look like?
+summary(cazyFamGene)
+library("plyr")
+cazyFamAll <- unique(as.list(cazyFamGene$cazyFam))
+cazyFamTbl <- count(cazyFamGene, "cazyFam")
+# I want to group the auxiliar activities CAZy families together into one AA group:
+cazyFamGeneTemp <- cazyFamGene
+cazyFamGeneTemp$cazyFam <- gsub('AA.*', "AA", cazyFamGeneTemp$cazyFam)
+# Let's see the frequency table for the cazy families:
+cazyFamTbl <- count(cazyFamGeneTemp, "cazyFam")
+# Let's make a pie graph for this data:
+# First make a count table:
+cazyFamTbleCount <- table(cazyFamGeneTemp$cazyFam)
+# Now create the labels:
+labs <- paste("(",names(cazyFamTbleCount),")","\n", cazyFamTbleCount, sep = "")
+# Get the label percents:
+# how can we do this? 
+# pcr <-
+# now we plot:
+# can we plot this and get labels only for the largets groups? or any ideas?
+png(file = paste(figPath, "/piePyuuCAZyAll.png", sep = ""))
+piePlot <- pie(cazyFamTbleCount, labels = labs, main = "Pie chart of CAZy families in Pyuu")
+print(piePlot)
+dev.off()
 ```
 
 Run the hmmscan parser on the hmmscan output for each reference species:
@@ -170,7 +198,7 @@ testAll <- Reduce(function(...) merge(..., all = T), test)
 cazyCaptureSubset <- subset(testAll, testAll$family.hmm %in% cazyCaptureList)
 cazyCaptureSubset$family.hmm <- sub(".hmm", "", cazyCaptureSubset$family.hmm)
 write.table(cazyCaptureSubset, 
-           file = file.path(paste(sharedPathAn, "dbCAN_CAZySubset_AllRefs.csv", sep = "")),
+           file = file.path(paste(dataPath, "/dbCAN_CAZySubset_AllRefs.csv", sep = "")),
            append    = FALSE, 
            sep       = ",",
            quote     = FALSE,
@@ -186,7 +214,7 @@ data <- ddply(countCAZySpecies, .(family.hmm),
    transform, pos = cumsum(freq) - (0.5 * freq)
 )
 
-png(file = paste("/home/AAFC-AAC/girouxem/GitHub_P_ultimum_RNAseq/data/ggplotOfAllSppCAZyFamUp.png", sep = ""))
+png(file = paste(figPath, "/ggplotOfAllSppCAZyFamUp.png", sep = ""))
 plotTest <- ggplot(data = data, aes(x = family.hmm, y = freq)) +
             geom_bar(aes(fill = Species), stat = "identity") +
             geom_text(aes(label = freq, y = pos), size = 2)
@@ -202,15 +230,17 @@ install.packages("formattable")
 library(formattable)
 colnames(countCAZyFam) <- c("CAZyFamily", "Frequency")
 summary(countCAZyFam)
+
 cazyFamily <- as.list(countCAZyFam$CAZyFamily)
 frequency <- as.list(countCAZyFam$Frequency)
 mydata <- cbind(cazyFamily, frequency)
 
 mydata <- table(countCAZyFam)
 
+# The following no longer works:
 stargazer(mydata, type = "html",
           title = "CAZy family freq",
-          out = "tab1-stargazer.htm",
+          out = paste(figPath, "/tab3-stargazer.htm", sep = ""),
           summary = FALSE,
           header = TRUE,
           flip = FALSE)

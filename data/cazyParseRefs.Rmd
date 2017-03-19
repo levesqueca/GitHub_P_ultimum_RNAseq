@@ -20,11 +20,14 @@ scriptsl <- paste(scriptsPath, scripts, sep = "//")
 lapply(scriptsl, source)
 ```
 
+Set the paths for output plots, tables, figures, and graphs:
+```{r}
+figPath <- root$make_fix_file(".")("Figures")
+dataPath <- root$make_fix_file(".")("data")
+```
 
 Selecting the subset of reads that are to be analysed (experiment-specific)
 ```{r}
-dataPath <- root$make_fix_file(".")("data")
-
 # To look at all CAZy in Pyuu, not just secreted:
 allCazyFasta     <- paste(dataPath, "/all_CAZy.fasta.gz", sep = "")
 allCazy          <- readAAStringSet(paste(allCazyFasta), format = "fasta")
