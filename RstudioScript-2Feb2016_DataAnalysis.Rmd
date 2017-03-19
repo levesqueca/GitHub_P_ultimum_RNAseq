@@ -18,6 +18,8 @@ Chunk: Path Setting
 The following paths are to directories where the references, tools and general requirements are 
 located, this depends on the directories actually having been put there:
 ```{r}
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+sharedPathAn <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
 referencesPath   <- paste(sharedPath, "References/", sep="")
 cazyPath         <- paste(sharedPath, "CAZy/",       sep="")
 htseqCountPath   <- "/opt/bio/HTSeq/bin/htseq-count"
@@ -34,7 +36,8 @@ outputs from time-course sets.
 ooGenMetaPath <- paste(sharedPath, 
                        "Oosporogenesis_Final_metadataTable_afterProcessing.csv",
                        sep = "")
-ooConvMetaPath <- paste(sharedPathAn,
+Conversion_path   <- "Oospore_Conversion_TimeCourse/HiSeq_Analyses2/"
+ooConvMetaPath <- paste(sharedPath,Conversion_path,
                         "OosporeConversion_Final_metadataTable_afterProcessing.csv",
                         sep = "")
 
@@ -70,7 +73,7 @@ HTSeq-count for TopHat2 hits:
 Prepare the metadata table for recording TopHat counts:
 ```{r}
 # For paired-end not merged
-metadataAdapRem$countfTopHat = paste(metadataAdapRem$LibraryName, "TopHat2Count", sep = ".")
+# metadataAdapRem$countfTopHat = paste(metadataAdapRem$LibraryName, "TopHat2Count", sep = ".")
 
 # # For merged or single-end reads:
 # metadataAdapRM$countfTopHat = paste(metadataAdapRM$LibraryName, "TopHat2Count", sep = ".")
@@ -80,26 +83,26 @@ metadataAdapRem$countfTopHat = paste(metadataAdapRem$LibraryName, "TopHat2Count"
 Read count with HT-Seq:
 ```{r}
 # Set HT-Seq options:
-stranded <- "no"
-MINAQUAL <- 10
-prefix   <- "L_HTSeq_Qsub"
-node     <- 1
-
-# cmd <- with(metadataAdapRM, # For merged or single-end reads
-cmd <- with(metadataAdapRem,  # For paired-end not merged
-            paste(htseqCountPath, 
-                  " -s ", stranded,
-                  " -a ", MINAQUAL,
-                  " --idattr=Parent ", 
-                  paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
-                        topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
-                  pyuugff3Path, " > ",
-                  paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
-                        topHatDate, "/", metadataAdapRem$countfTopHat, sep = ""),  # PE not merged
-                        # topHatDate, "/", metadataAdapRM$countfTopHat, sep = ""), # Merged/SE reads
-                  sep = ""))
-
-suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+# stranded <- "no"
+# MINAQUAL <- 10
+# prefix   <- "L_HTSeq_Qsub"
+# node     <- 1
+# 
+# # cmd <- with(metadataAdapRM, # For merged or single-end reads
+# cmd <- with(metadataAdapRem,  # For paired-end not merged
+#             paste(htseqCountPath, 
+#                   " -s ", stranded,
+#                   " -a ", MINAQUAL,
+#                   " --idattr=Parent ", 
+#                   paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
+#                         topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
+#                   pyuugff3Path, " > ",
+#                   paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
+#                         topHatDate, "/", metadataAdapRem$countfTopHat, sep = ""),  # PE not merged
+#                         # topHatDate, "/", metadataAdapRM$countfTopHat, sep = ""), # Merged/SE reads
+#                   sep = ""))
+# 
+# suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
 ```
 
 To remove the output files after you are done:
@@ -122,21 +125,17 @@ cmd <- paste( "find ", sharedPathAn, " -type f -exec chmod 770 {} + ", sep = "")
 Get all data together for oosporogenesis and oospore conversion and add the counts for libraries representing the same treatments:
 ```{r}
 
-sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
-
-metafile1 <- "Oosporogenesis_Final_metadataTable_afterProcessing.csv"
-metadataAdapRem1 <- read.csv(paste(shared_path,metafile1, sep=""), stringsAsFactors=FALSE)
+metadataAdapRem1 <- read.csv(ooGenMetaPath, stringsAsFactors=FALSE)
 metadataAdapRem1$countfTopHat <- paste(metadataAdapRem1$LibraryName, ".TopHat2_count", sep="")
 metadataAdapRem1$Experiment <- "Oosporogenesis"
 
-metafile2 <- "OosporeConversion_Final_metadataTable_afterProcessing.csv"
-Conversion_path   <- "Oospore_Conversion_TimeCourse/HiSeq_Analyses2/"
-metadataAdapRem2 <- read.csv(paste(shared_path,Conversion_path,metafile2, sep=""), stringsAsFactors=FALSE)
+metadataAdapRem2 <- read.csv(ooConvMetaPath, stringsAsFactors=FALSE)
 topHatDate <- ".2016-07-19"
 metadataAdapRem2$TopHatOutPath <- paste(sharedPath,Conversion_path,metadataAdapRem2$LibraryName,"/",
             metadataAdapRem2$LibraryName, ".TopHat", topHatDate,"/", sep = "")
 metadataAdapRem2$countfTopHat <- paste(metadataAdapRem2$LibraryName, ".TopHat2Count", sep="")
-metadataAdapRem2$Experiment <- "OosporeConversion"
+colnames(metadataAdapRem2)[colnames(metadataAdapRem2)=="RNASeq_Replicate"] <- "RNA_Replicate"
+     metadataAdapRem2$Experiment <- "OosporeConversion"
 
 common_cols <- intersect(colnames(metadataAdapRem1),colnames(metadataAdapRem2))
 
@@ -151,6 +150,11 @@ write.table(Metadata_2exp, file = file.path(sharedPath, "Metadata.Oospore_genesi
             row.names = TRUE, 
             col.names = NA, 
             quote = FALSE)
+```
+
+
+```{r}
+rm(list=ls(pattern="metadataAdapRem"))
 ```
 
 
@@ -234,6 +238,7 @@ write.table(Metadata_2exp_reduced, file = file.path(sharedPath, "Metadata.Oospor
             col.names = NA, 
             quote = FALSE)
 
+remove(tempCountsTopHat)
 
 ```
 
@@ -292,6 +297,8 @@ countsTopHatSum <- dcast(data = df[,c("gene", "value", "ExpUnit")],
                          gene ~ ExpUnit, sum, value.var = "value")
 rownames(countsTopHatSum) <- countsTopHatSum$gene
 countsTopHatSum$gene      <- NULL
+
+remove(countsTopHatMelt)
 ```
 
 Normalization after removing rDNA data.  Best approach to compare with Levesque et al 2010.
@@ -313,7 +320,7 @@ countsTopHatGenes <- countsTopHatSum[-which(rownames(countsTopHatSum)
 countsTopHatDf$gene <- NULL
 mean(colSums(countsTopHatGenes)/colSums(countsTopHatDf))
 
-cpms <- cpm(countsTopHatGenes)  # counts per million
+# cpms <- cpm(countsTopHatGenes)  # counts per million
 
 pyuuTranscripts  <- paste(sharedPath, "References/pythium_ultimum_transcripts.fasta", sep = "")
 
@@ -336,8 +343,20 @@ write.table(temp2, file = file.path(paste(sharedPath, sep = ""), "readDGEcountsW
 RPKM normalization
 ```{r}
 # *** User, look at temp2 and count columns to select all up to y.
-rpkmCount <- rpkm(temp2[,1:18], # All columns except y, in HiSeq it's col 19
+colSums(temp2)
+min(colSums(temp2))
+max(colSums(temp2))
+mean(colSums(temp2[,1:37]))
+mean(temp2$y)
+
+rpkmCount <- rpkm(temp2[,1:37], # All columns except y, in HiSeq it's col 19
                   gene.length = temp2$y, normalized.lib.sizes = TRUE) 
+colSums(rpkmCount)
+min(colSums(rpkmCount))
+max(colSums(rpkmCount))
+mean_rpkm_2exp <- mean(colSums(rpkmCount))
+
+remove(temp2)
 
 ```
 
@@ -352,19 +371,242 @@ library(openxlsx)
 
 LEV_2010_rpkm <- read.xlsx(paste(sharedPath,"References/Genome_Biology_paper_AdditionalDataFile3.xlsx",sep=""), sheet="S9", startRow = 2)
 
+LEV_2010_rpkm[LEV_2010_rpkm=="NA"]  <- NA
+colnames(LEV_2010_rpkm)[5]  <- "YEB_Pilch"
+
+sapply(LEV_2010_rpkm,mode)
+sapply(LEV_2010_rpkm,class)
+
+LEV_2010_rpkm$Hypoxia = as.numeric(as.character(LEV_2010_rpkm$Hypoxia))
+LEV_2010_rpkm$At.Infection = as.numeric(as.character(LEV_2010_rpkm$At.Infection))
+LEV_2010_rpkm$YEB_Pilch = as.numeric(as.character(LEV_2010_rpkm$YEB_Pilch))
+LEV_2010_rpkm$Mefenoxam.T = as.numeric(as.character(LEV_2010_rpkm$Mefenoxam.T))
+LEV_2010_rpkm$Mefenoxam.C = as.numeric(as.character(LEV_2010_rpkm$Mefenoxam.C))
+LEV_2010_rpkm$Temp.0C = as.numeric(as.character(LEV_2010_rpkm$Temp.0C))
+LEV_2010_rpkm$Temp.35C = as.numeric(as.character(LEV_2010_rpkm$Temp.35C))
+LEV_2010_rpkm$Temp.Room = as.numeric(as.character(LEV_2010_rpkm$Temp.Room))
+
+sapply(LEV_2010_rpkm,mode)
+sapply(LEV_2010_rpkm,class)
+
+LEV_2010_rpkm$Locus[duplicated(LEV_2010_rpkm$Locus)]
+
+LEV_2010_rpkm_unique <- LEV_2010_rpkm[!duplicated(LEV_2010_rpkm[,"Locus"]),]
+                                                                
 T_G_conversion_table <- read.csv(paste(sharedPath,"References/T_G_name_conversion_from_gff_file.csv", sep=""), stringsAsFactors=FALSE)
+
+#T_G_conversion_table$TG <- paste(T_G_conversion_table$T_code, T_G_conversion_table$G_code,sep="_")
+
+length(unique(T_G_conversion_table$T_code))
+length(unique(T_G_conversion_table$G_code))
+
+T_G_conversion_table$G_code[duplicated(T_G_conversion_table$G_code)]
+T_G_conversion_table$T_codes[duplicated(T_G_conversion_table$T_code)]
+
 colnames(T_G_conversion_table)[colnames(T_G_conversion_table)=="G_code"] <- "Locus"
 
-length(unique(T_G_conversion_table[,1]))
-length(unique(T_G_conversion_table[,2]))
+LEV_2010_rpkm_df <- merge(T_G_conversion_table, LEV_2010_rpkm_unique, by = "Locus", all.x = TRUE)
 
-T_G_conversion_table$Locus[duplicated(T_G_conversion_table[,2])]
+LEV_2010_rpkm_df$T_code[duplicated(LEV_2010_rpkm_df$T_code)]
 
-df <- merge(T_G_conversion_table, LEV_2010_rpkm, by = "Locus", all.x = TRUE)
+rownames(LEV_2010_rpkm_df) <- LEV_2010_rpkm_df$T_code
+
+LEV_2010_rpkm_df <- LEV_2010_rpkm_df[, -3:-1]
+
+
+```
+
+
+
+```{r}
+
+Lev_2010_metadata <- data.frame(colnames(LEV_2010_rpkm_df), "Mycelium")
+
+colnames(Lev_2010_metadata)  <- c("ExpUnit","Experiment")
+Lev_2010_metadata$LibraryName <-  Lev_2010_metadata$ExpUnit
+Lev_2010_metadata$Condition	<-  "Various"
+Lev_2010_metadata$ShortName  <-  Lev_2010_metadata$ExpUnit
+Lev_2010_metadata$TimePoint <-  0
+Lev_2010_metadata$RNA_Replicate <-  1
+
+
+common_cols2 <- intersect(colnames(Metadata_2exp_reduced),colnames(Lev_2010_metadata))
+
+
+Metadata_3exp <- rbind(
+  subset(Metadata_2exp_reduced, select = common_cols2), 
+  subset(Lev_2010_metadata, select = common_cols2)
+)
+
+
+```
+
+
+
+```{r}
+
+rpkmCount_3exp <- merge(rpkmCount, LEV_2010_rpkm_df, by = "row.names", all.x = TRUE)
+
+# somewhow forcing rpkmCount matrix into data creates a Row.names column
+rownames(rpkmCount_3exp) <- rpkmCount_3exp$Row.names
+
+rpkmCount_3exp$Row.names <- NULL
+
+```
+
+
+
+***House Keeping Genes***
+Finding potential house-keeping (HK) genes from 3 experiments
+```{r}
+
+logRpkmCount      <- log10(rpkmCount_3exp+1)
+logRpkmCount$mean <- apply(logRpkmCount, 1, mean)
+logRpkmCount$min  <- apply(logRpkmCount, 1, min)
+logRpkmCount$max  <- apply(logRpkmCount, 1, max)
+logRpkmCount$SD   <- apply(logRpkmCount, 1, sd)
+
+potentialHK <- subset(logRpkmCount, min > 0 & SD < 0.25)
+potentialHK <- potentialHK[order(-potentialHK$mean),]  
+
+write.table(potentialHK, 
+            file   = file.path(paste(sharedPath, sep = ""), "potential_houseKeepingGenes.csv"),
+            append = FALSE, sep = ",", col.names = NA)
+```
+
+
+
+The following was done by Andre, and the shared path was not the same. I can't get "rentrez" to 
+work for me, so I won't repeat this. Instead I will refer to tab-delinited file with the genes 
+using a hard path reference.
+This is to generate a list of GI queries to search for BLAST (makes it a lot faster)
+```{r}
+# Make a list of potential HK genes:
+interestListHK <- rownames(potentialHK)
+
+dir.create(paste(sharedPath, "Blast_HK", sep = ""), showWarnings = TRUE, recursive = FALSE)
+
+# Read all transcripts:
+interestHK <- readAAStringSet(pyuuProteins, format = "fasta") 
+
+# fixes the names to match list
+names(interestHK) <- gsub(" .*", "", names(interestHK), ignore.case = FALSE)
+
+# makes a subset of only the potential
+interestHK <- interestHK[which(names(interestHK) %in% interestListHK)]
+
+writeXStringSet(interestHK, 
+                file   = paste(sharedPath, "Blast_HK/HK_InterestSubset.fasta", sep = ""), 
+                append = FALSE, format = "fasta") 
+
+install.packages("rentrez")
+library("rentrez") 
+query <- "(Oomycetes[ORGN])"
+
+webEnvSearch <- entrez_search(db = "protein", query, retmax = 999999)
+webEnvSearch
+length(webEnvSearch$ids)
+write.table(webEnvSearch$ids, 
+            file = paste(sharedPath,"Blast_HK/gilist.txt", sep = ""), 
+            append = FALSE, quote = FALSE, row.names = FALSE, col.names = FALSE)
+```
+
+This is to prerform a BLAST on the best candidate House Keeping genes
+```{r}
+ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nr/nr"
+ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastp"
+blastnOutFrmt  <-  c("sseqid", "qseqid", "sacc", "pident", "length",
+                     "mismatch", "gapopen", "qstart", "qend", "sstart",
+                     "send", "evalue", "bitscore")
+#maxTargetsSeqs <- 3
+prefix   <- "Blast_HK"  # need to clean up by inserting below
+node <- 1
+
+cmd <- paste(ncbiBlastnPath,
+             " -db ",     ncbiDbPath,
+             " -query ",  paste(sharedPath, "Blast_HK/HK_InterestSubset.fasta", sep = ""),
+             " -evalue  1.00E-90", 
+             " -num_threads ", node,
+             " -gilist ", sharedPath,   "Blast_HK/gilist.txt",
+             " -outfmt '6 ", paste(blastnOutFrmt, collapse=" "), "'",
+             " -out ",    paste(sharedPath, "Blast_HK/HK_InterestSubsetNt2.tab", sep = ""),
+             sep = "")
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+
+```
 
 
 
 
+Andre did the next chunk, it's not working for me due to library("spider") error. 
+This is to get the names of the genes and select/sort  the results by BLAST statistics
+```{r}
+install.packages("spider")
+library("spider"
+
+subsetHKinterestPath <- paste(sharedPath, 
+                              "Blast_HK/HK_InterestSubsetNt2.tab", 
+                              sep = "")
+
+hitsHK <- read.table(subsetHKinterestPath, sep = "\t", header = FALSE,
+                     comment.char = "", quote = "", as.is = TRUE) 
+colnames(hitsHK) <- blastnOutFrmt
+
+hitSeqHK <- read.GB(hitsHK$sacc, seq.names = hitsHK$sacc, species.names = TRUE, gene = TRUE,
+                    access = TRUE, as.character = FALSE)
+#rm("hitSeqHK")
+
+hitGenesHK <- data.frame(attr(hitSeqHK, "gene"), attr(hitSeqHK, "accession_num"), 
+                           stringsAsFactors = FALSE)
+
+colnames(hitGenesHK) <- c("gene", "sacc")
+length(unique(hitGenesHK$sacc))
+
+hitsHK <- merge(unique(hitGenesHK), hitsHK, by  = "sacc",  all.y= TRUE)
+temp   <- hitsHK[-grep("unnamed|hypothetical",hitsHK$gene),]
+temp   <- temp[order(temp$qseqid,temp$evalue,-temp$bitscore),] 
+
+write.table(temp, 
+            file = file.path(paste(sharedPathAn, sep=""),"potential_houseKeepingGenes_BLAST.csv"),
+            append = FALSE, sep = ",", col.names = NA)
+```
+
+
+*** Creating a big file for all plots ***
+
+rpkmCount for the three experiments
+```{r}
+temp_to_melt <- cbind(rownames(rpkmCount_3exp),rpkmCount_3exp)
+
+rpkmForBarPlots <- melt(temp_to_melt)
+
+
+colnames(rpkmForBarPlots)[1] <- "SequenceID"
+colnames(rpkmForBarPlots)[2] <- "ExpUnit"
+colnames(rpkmForBarPlots)[3] <- "Read_Counts"
+
+
+unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y"
+#rpkmForBarPlots <- rpkmForBarPlots[rpkmForBarPlots$ExpUnit!="y",]
+#unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y" is gone
+
+#I took out library name because we added two libraries
+metadataColsToMerge <- c("Experiment","TimePoint", "Condition", "RNA_Replicate", "ExpUnit") 
+
+# For paired-end not merged:
+rpkmForBarPlots_full <- merge(rpkmForBarPlots, unique(Metadata_3exp[, which(names(Metadata_3exp) %in% metadataColsToMerge)]),
+                  by = "ExpUnit", all.x = TRUE)
+
+
+# # For merged or single-end reads:
+# cazyRpkm <- merge(rpkmForBarPlots, unique(metadataAdapRM[,c(metadataColsToMerge)]),
+#                   by = "ExpUnit", all.x = TRUE)
+
+
+write.table(rpkmForBarPlots_full, 
+            file = file.path(paste(sharedPath, sep=""),"rpkmForBarPlots_full.csv"),
+            append = FALSE, sep = ",", col.names = NA)
 
 ```
 
@@ -373,6 +615,74 @@ df <- merge(T_G_conversion_table, LEV_2010_rpkm, by = "Locus", all.x = TRUE)
 
 
 
+Ignore for now
+
+
+```{r}
+
+
+
+
+
+cazyRpkmSub  <- cazyRpkm[which(cazyRpkm$SequenceID 
+                              %in% unique(cazyDataSub[,c("SequenceID")])), ]
+
+# this duplicate some of the enzymes that are in two groups
+cazyRpkmSub2 <- merge(cazyRpkmSub, cazyDataSub[,c("CazyFam", "SequenceID")],  
+                      by = "SequenceID", all.x = TRUE)
+
+cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, cazyRpkmSub2$SequenceID, sep = "-")
+
+cazyRpkmSub2$Experiment <- "OosporeConversion"
+cazyRpkmSub2$Condition  <- "OosporeConversion" 
+# I'm adding this because the oosporogenesis has a column called Condition and 
+# I can't do rbind if not the same
+
+
+nameReadDGEcsv <- "countsReadDGE.TopHat.SecretedCAZy.HiSeqAnalyses2.OosporeConversion.csv"
+write.table(cazyRpkmSub2, file = file.path(sharedPathAn, nameReadDGEcsv),
+            sep = ",", row.names = TRUE, col.names = NA, quote = FALSE)
+
+# Try to get a csv that looks like cazyRpkmSub2
+readDGEcsvOoGen  <- paste(sharedPath, "EmilyTryingtoMakeLikeOosConHiSeq2Layout_counts_readDGE_TopHat_secreted_CAZy.csv", sep = "")
+readDGEcsvOoConv <- paste(sharedPathAn, 
+                          "countsReadDGE.TopHat.SecretedCAZy.HiSeqAnalyses2.OosporeConversion.csv",
+                          sep = "") 
+
+
+csvOoGen <- read.table(file = readDGEcsvOoGen, sep = ",", header = TRUE, comment.char = "", 
+                       quote = "", as.is = TRUE, stringsAsFactors = FALSE)
+
+csvOoGen$Experiment <- "Oosporogenesis" # This is to make it like the oospore conversion csv
+csvOoGen$LibraryName <- paste(csvOoGen$ExpUnit, "_", csvOoGen$RNASeq_Replicate, "rep", sep = "")
+
+library("plyr")
+
+colnames(csvOoGen)
+colnames(cazyRpkmSub2)
+
+#because there is no condition for covversion
+cazyRpkmSub2$Condition <- NA
+
+#rbind fill fixed the issue of the extra column.  It put NA for the missing values.
+cazyRpkmSub4 <- rbind.fill(cazyRpkmSub2, csvOoGen)
+
+# creates a new column with conditions and time combined
+cazyRpkmSub4$Timepoint_Condition <- paste(cazyRpkmSub4$TimePoint,cazyRpkmSub4$Condition,sep="_")
+cazyRpkmSub4$Timepoint_Condition <- sub("_NA","", cazyRpkmSub4$Timepoint_Condition, ignore.case = FALSE)
+
+# order the factors so they get in the right order in the plot
+cazyRpkmSub4$Timepoint_Condition <- 
+  factor(cazyRpkmSub4$Timepoint_Condition, levels = c(timePoints,
+        "3_Control", "3_Cholesterol","7_Control","7_Cholesterol","24_Control","24_Cholesterol"))
+
+# Over here!!!
+# > cazyRpkmSub4 <- rbind(cazyRpkmSub2, csvOoGen)
+# Warning message:
+# In `[<-.factor`(`*tmp*`, ri, value = c(24L, 3L, 3L, 7L, 3L, 3L,  :
+#   invalid factor level, NA generated
+
+```
 
 
 
@@ -383,7 +693,7 @@ as well as House-Keeping subsets
 Selecting the subset of reads that are to be analysed (experiment-specific)
 ```{r}
 # To look at all CAZy in Pyuu, not just secreted:
-allCazyFasta     <- paste(referencesPath, "Secretome/all_CAZy.fasta", sep = "")
+allCazyFasta     <- paste(shared_path, "References/Secretome/all_CAZy.fasta", sep = "")
 allCazy          <- readAAStringSet(paste(allCazyFasta), format = "fasta")
 allCazyNames     <- names(allCazy)
 allCazyPyuuNames <- subset(allCazyNames, grepl("^Pyuu_", allCazyNames))
@@ -518,116 +828,6 @@ cazyRpkmSub4$Timepoint_Condition <-
 
 
 
-Finding potential house-keeping (HK) genes
-```{r}
-colnames(rpkmCount)
-logRpkmCount      <- data.frame(log10(rpkmCount[,1:17]+1))
-logRpkmCount$mean <- apply(logRpkmCount, 1, mean)
-logRpkmCount$min  <- apply(logRpkmCount, 1, min)
-logRpkmCount$max  <- apply(logRpkmCount, 1, max)
-logRpkmCount$SD   <- apply(logRpkmCount, 1, sd)
-
-potentialHK <- subset(logRpkmCount, min > 0 & SD < 0.25)
-potentialHK <- potentialHK[order(-potentialHK$mean),]  
-
-write.table(potentialHK, 
-            file   = file.path(paste(sharedPathAn, sep = ""), "potential_houseKeepingGenes.csv"),
-            append = FALSE, sep = ",", col.names = NA)
-```
-
-The following was done by Andre, and the shared path was not the same. I can't get "rentrez" to 
-work for me, so I won't repeat this. Instead I will refer to tab-delinited file with the genes 
-using a hard path reference.
-This is to generate a list of GI queries to search for BLAST (makes it a lot faster)
-```{r}
-# Make a list of potential HK genes:
-interestListHK <- rownames(potentialHK)
-
-dir.create(paste(sharedPathAn, "Blast_HK", sep = ""), showWarnings = TRUE, recursive = FALSE)
-
-# Read all transcripts:
-interestHK <- readAAStringSet(pyuuProteins, format = "fasta") 
-
-# fixes the names to match list
-names(interestHK) <- gsub(" .*", "", names(interestHK), ignore.case = FALSE)
-
-# makes a subset of only the potential
-interestHK <- interestHK[which(names(interestHK) %in% interestListHK)]
-
-writeXStringSet(interestHK, 
-                file   = paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep = ""), 
-                append = FALSE, format = "fasta") 
-
-install.packages("rentrez")
-library("rentrez") # Error in library("rentrez") : there is no package called ‘rentrez’
-query <- "(Oomycetes[ORGN])"
-
-webEnvSearch <- entrez_search(db = "protein", query, retmax = 999999)
-webEnvSearch
-length(webEnvSearch$ids)
-write.table(webEnvSearch$ids, 
-            file = paste(sharedPathAn,"Blast_HK/gilist.txt", sep = ""), 
-            append = FALSE, quote = FALSE, row.names = FALSE, col.names = FALSE)
-```
-
-This is to prerform a BLAST on the best candidate House Keeping genes
-```{r}
-ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nr/nr"
-ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastp"
-blastnOutFrmt  <-  c("sseqid", "qseqid", "sacc", "pident", "length",
-                     "mismatch", "gapopen", "qstart", "qend", "sstart",
-                     "send", "evalue", "bitscore")
-#maxTargetsSeqs <- 3
-prefix   <- "Blast_HK"  # need to clean up by inserting below
-node <- 1
-
-cmd <- paste(ncbiBlastnPath,
-             " -db ",     ncbiDbPath,
-             " -query ",  paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep = ""),
-             " -evalue  1.00E-90", 
-             " -num_threads ", node,
-             " -gilist ", sharedPathAn,   "Blast_HK/gilist.txt",
-             " -outfmt '6 ", paste(blastnOutFrmt, collapse=" "), "'",
-             " -out ",    paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt2.tab", sep = ""),
-             sep = "")
-
-suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
-
-```
-
-
-Andre did the next chunk, it's not working for me due to library("spider") error. 
-This is to get the names of the genes and select/sort  the results by BLAST statistics
-```{r}
-install.packages("spider")
-library("spider")
-subsetHKinterestPath <- paste(sharedPath, analysis, 
-                              "HiSeq_Analyses/Blast_HK/HK_InterestSubsetNt.tab", 
-                              sep = "")
-
-hitsHK <- read.table(subsetHKinterestPath, sep = "\t", header = FALSE,
-                     comment.char = "", quote = "", as.is = TRUE) 
-colnames(hitsHK) <- blastnOutFrmt
-
-hitSeqHK <- read.GB(hitsHK$sacc, seq.names = hitsHK$sacc, species.names = TRUE, gene = TRUE,
-                    access = TRUE, as.character = FALSE)
-#rm("hitSeqHK")
-
-hitGenesHK <- data.frame(attr(hitSeqHK, "gene"), attr(hitSeqHK, "accession_num"), 
-                           stringsAsFactors = FALSE)
-
-colnames(hitGenesHK) <- c("gene", "sacc")
-length(unique(hitGenesHK$sacc))
-
-hitsHK <- merge(unique(hitGenesHK), hitsHK, by  = "sacc",  all.y= TRUE)
-temp   <- hitsHK[-grep("unnamed|hypothetical",hitsHK$gene),]
-temp   <- temp[order(temp$qseqid,temp$evalue,-temp$bitscore),] 
-
-write.table(temp, 
-            file = file.path(paste(sharedPathAn, sep=""),"potential_houseKeepingGenes_BLAST.csv"),
-            append = FALSE, sep = ",", col.names = NA)
-```
-
 
 This pulls the first line of each of the BLAST hits.  Because they were sorted, the one with 
 the lowest evalue and highest bit score is kept.
@@ -729,6 +929,8 @@ print(bp)
 dev.off()
 
 ```
+
+
 
 
 Bar plots per CAZy family group:
