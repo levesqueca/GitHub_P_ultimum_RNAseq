@@ -48,7 +48,7 @@ dir.create(paste(sharedPath, mainFolder , sep = ""),
 
 Create a folder for the plot outputs:
 ```{r}
-analysisDir <- "from_Emily_10_november"
+analysisDir <- "from_Emily_19_March_2017"
 dir.create(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""), 
            showWarnings = TRUE, recursive = FALSE)
 analysisPath <- paste(sharedPath, mainFolder , "/", analysisDir, sep = "")
@@ -56,12 +56,15 @@ analysisPath <- paste(sharedPath, mainFolder , "/", analysisDir, sep = "")
 
 Dump list file as single column and read it.  
 The list could have 2 column, one with better labels.
+List was sent by e-mail we think
+Use next chunk instead
 ```{r}
-listName <- "Loci_list.txt"
+#listName <- "Loci_list.txt"
 listName <- "listRefCandidates.txt"
-listName <- "cazy_of_interest"
+#listName <- "cazy_of_interest"
 
-listLoci <- fread(paste(analysisPath, "/", listName, ".txt", sep = ""), 
+library(data.table)
+listLoci <- fread(paste(analysisPath, "/", listName, "", sep = ""), 
                   sep = "\t", header = TRUE,  
                   stringsAsFactors = FALSE)
 colnames(listLoci)[1] <- "SequenceID"
@@ -69,6 +72,67 @@ colnames(listLoci)[2] <- "CAZyFamily"
 
 listLoci$geneInfo <- paste(listLoci$SequenceID, listLoci$CAZyFamily, sep = " - ")
 ```
+
+Read CAZy of entire recent run of dbcan pipeline (from March 2016 version)
+```{r}
+
+library(data.table)
+# test[[i]] <- fread(dbCANList[i], sep = "auto", header = FALSE)
+cazyPyuuAll <- fread(paste(sharedPath, 
+                        "CAZy_prediction_test/output/Pythium_ultimum_var_ultimum/Pythium_ultimum_var_ultimum.CAZy.out.dm", 
+                        sep = ""),
+                  sep = "auto", header = TRUE, fill=TRUE)
+cazyPyuuAll <- cazyPyuuAll[-c(1, 2), ]
+
+# rename some columns:
+colnames(cazyPyuuAll)[1] <- "cazyFam"
+
+# Now make a new table that has only the cazyFam and sequence columns
+cazyFamGene <- subset(cazyPyuuAll, select=c("cazyFam", "sequence"))
+cazyFamGene$cazyFam <- sub(".hmm", "", cazyFamGene$cazyFam)
+
+library(openxlsx)
+LEV_2010_annotations <- read.xlsx(paste(sharedPath, 
+                                 "References/Genome_Biology_paper_AdditionalDataFile3.xlsx", 
+                                 sep = ""), 
+                           sheet = "S9", 
+                           startRow = 2)
+
+T_G_conversion_table <- read.csv(paste(sharedPath, 
+                                       "References/T_G_name_conversion_from_gff_file.csv", 
+                                       sep = ""), 
+                                 stringsAsFactors = FALSE)
+
+length(unique(T_G_conversion_table$T_code))
+length(unique(T_G_conversion_table$G_code))
+
+T_G_conversion_table$G_code[duplicated(T_G_conversion_table$G_code)]
+T_G_conversion_table$T_codes[duplicated(T_G_conversion_table$T_code)]
+
+colnames(T_G_conversion_table)[colnames(T_G_conversion_table)=="G_code"] <- "Locus"
+
+LEV_2010_df <- merge(T_G_conversion_table, LEV_2010_annotations, by = "Locus", all.x = TRUE)
+
+colnames(cazyFamGene)[2] <- "T_code"
+
+CAZy_of_interest <- merge(cazyFamGene, LEV_2010_df[,2:3], by = "T_code", all.x = TRUE)
+
+
+CAZy_of_interest$geneInfo <- paste(CAZy_of_interest$T_code, CAZy_of_interest$Functional.Annotation, sep = " - ")
+
+colnames(listLoci)
+listLoci <- data.frame(CAZy_of_interest$T_code,CAZy_of_interest$cazyFam,CAZy_of_interest$geneInfo) 
+colnames(listLoci) <- c("SequenceID", "CAZyFamily", "geneInfo")
+
+write.table(listLoci, paste(analysisPath, "/CAZy_of_interest_list.csv", sep = ""),
+            append = FALSE, sep = ",", col.names = NA)
+
+
+
+
+```
+
+
 
 Creates a data subset for plotting and exports this subset.  
 This can help us when we want to diagnosticate outliers.
