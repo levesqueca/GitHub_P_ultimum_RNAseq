@@ -1,0 +1,222 @@
+Generating plots of gene expression by time course and treatment
+================================================================
+
+Review paths to confirm they are still correct:
+```{r}
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+```
+
+Over here Emily to read the big file
+```{r}
+rpkmPlotsFullImport <- read.table(paste(sharedPath, 
+                                        "rpkmForBarPlots_full.csv", 
+                                        sep = ""), 
+                                  sep = ",", 
+                                  header = TRUE, 
+                                  as.is = FALSE, 
+                                  stringsAsFactors = FALSE)
+
+rpkmPlotsFullImport$xLab <- paste(rpkmPlotsFullImport$Condition,
+                                  rpkmPlotsFullImport$TimePoint, 
+                                  sep = "_")
+unique(rpkmPlotsFullImport$xLab)
+
+rpkmPlotsFullImport$xLab <- sub("OoCTimeCourse_", "", rpkmPlotsFullImport$xLab)
+rpkmPlotsFullImport$xLab <- sub("Various_0", "Various", rpkmPlotsFullImport$xLab)
+unique(rpkmPlotsFullImport$xLab)
+unique(rpkmPlotsFullImport$Experiment)
+
+labOrdered <- c("Various", "Control_0", "Control_3", "Cholesterol_3", 
+                "Control_7", "Cholesterol_7", "Control_24", "Cholesterol_24", 
+                "0", "12", "24", "48", "72", "120", "240") 
+rpkmPlotsFullImport$xLab <- factor(rpkmPlotsFullImport$xLab, levels = c(labOrdered))   
+levels(rpkmPlotsFullImport$xLab)
+
+expOrdered <- c("Mycelium", "Oosporogenesis", "OosporeConversion") 
+rpkmPlotsFullImport$Experiment <- factor(rpkmPlotsFullImport$Experiment, 
+                                         levels = c(expOrdered))   
+levels(rpkmPlotsFullImport$Experiment)
+```
+
+
+Create Main plot folder
+```{r}
+mainFolder <- "GGPLOTS_FROM_FULL_DATA"
+dir.create(paste(sharedPath, mainFolder , sep = ""), 
+           showWarnings = TRUE, recursive = FALSE)
+```
+
+Create a folder for the plot outputs:
+```{r}
+analysisDir <- "from_Emily_10_november"
+dir.create(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""), 
+           showWarnings = TRUE, recursive = FALSE)
+analysisPath <- paste(sharedPath, mainFolder , "/", analysisDir, sep = "")
+```
+
+Dump list file as single column and read it.  
+The list could have 2 column, one with better labels.
+```{r}
+listName <- "Loci_list.txt"
+listName <- "listRefCandidates.txt"
+listName <- "cazy_of_interest"
+
+listLoci <- fread(paste(analysisPath, "/", listName, ".txt", sep = ""), 
+                  sep = "\t", header = TRUE,  
+                  stringsAsFactors = FALSE)
+colnames(listLoci)[1] <- "SequenceID"
+colnames(listLoci)[2] <- "CAZyFamily"
+
+listLoci$geneInfo <- paste(listLoci$SequenceID, listLoci$CAZyFamily, sep = " - ")
+```
+
+Creates a data subset for plotting and exports this subset.  
+This can help us when we want to diagnosticate outliers.
+```{r}
+temp <- merge(listLoci, rpkmPlotsFullImport, by = "SequenceID", all.x = TRUE)
+temp$Experiment <- sub("OosporeConversion", "Oospore Conversion", temp$Experiment)
+
+# To order rows
+temp <- temp[order(temp$geneInfo, temp$xLab),] 
+
+# To select and order columns
+selectCol <- c("SequenceID", "CAZyFamily", "geneInfo", "ExpUnit", "Condition", 
+               "TimePoint", "RNA_Replicate", "Experiment", "xLab", "Read_Counts") 
+
+temp <- subset(temp, select = selectCol)
+
+write.table(temp, paste(analysisPath, "/", listName,".csv", sep = ""),
+            append = FALSE, sep = ",", col.names = NA)
+```
+
+Single file, multiple Bar plots for gene in listLoci
+```{r}
+library("ggplot2")
+
+pdf(file   = paste(analysisPath, "/", listName,  ".pdf", sep = ""),
+    width  = 8, 
+    height = 7*ceiling(nrow(temp)/90))
+
+bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp) +
+  theme_bw() +
+  theme(axis.text.y = element_text(size  = 6, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 6, 
+                                   angle  = 45, 
+                                   hjust  = 1, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads\n (rpkm-normalized)") + 
+  labs(x = "Treatment") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 0.2, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  -0.2, 
+                                    face   = 'bold')) +
+  geom_boxplot(position = position_dodge(0.8), 
+               width    = 0.8, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 1, 
+               position = position_dodge(0.8))  +
+#   facet_wrap(~SequenceID, 
+#   facet_grid(SequenceID~Experiment,
+  facet_grid(geneInfo~Experiment,
+             scales = "free", space = "free_x") +
+  theme(strip.text.x = element_text(size   = 6, 
+                                    face   = 'bold.italic', 
+                                    colour = "black", 
+                                    angle  = 0))
+print(bp)
+dev.off()
+```
+
+Chunk to generate bar plots for individual genes and output them
+to the specified folder for "analysisPath"
+```{r}
+library("ggplot2")
+
+pdf(file   = paste(analysisPath, "/", listName,  ".pdf", sep = ""),
+    width  = 8, 
+    height = 7*ceiling(nrow(temp)/90))
+
+dir.create(paste(analysisPath, "/Individual_plots", sep = ""), 
+           showWarnings = TRUE, recursive = FALSE)
+i<- 1
+for(i in 1:length(listLoci$geneInfo)){
+  temp2 <- subset(temp, temp$SequenceID == listLoci$SequenceID[i])
+  temp2$Experiment <- sub("Mycelium", "Mycel.", temp2$Experiment )
+  png(file   = paste(analysisPath, "/Individual_plots/", 
+                     listLoci$geneInfo[i], ".png", sep = ""), 
+      width  = 7, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+  bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp2) +
+  theme_bw() +
+  theme(axis.text.y = element_text(size  = 8, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 8, 
+                                   angle  = 45, 
+                                   hjust  = 1, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads\n(rpkm-normalized)") +
+  labs(x = "Treatment") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 8, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 1.5, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  0, 
+                                    face   = 'bold')) +
+  geom_boxplot(position = position_dodge(0.8), 
+               width    = 0.8, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 0.5, 
+               position = position_dodge(0.8))  +
+#   facet_wrap(~SequenceID, 
+#   facet_grid(SequenceID~Experiment,
+  facet_grid(geneInfo~Experiment,
+             scales = "free", space= "free_x") +
+  theme(strip.text.x = element_text(size   = 9, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = 0)) +
+  theme(strip.text.y = element_text(size   = 7, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = -90))
+print(bp)
+dev.off()
+}
+```
+

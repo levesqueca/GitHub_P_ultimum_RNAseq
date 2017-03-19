@@ -1,0 +1,328 @@
+Retrieval of CAZy families of Oomycete references with dbCAN
+============================================================
+
+This will help us when finding our files to source functions:
+```{r}
+install.packages("rprojroot")
+library(rprojroot)
+# We specify ours is an RStudio project
+# The root object contains a function that will help us locate our package r files
+# regarless of our current working directory
+root <- rprojroot::is_rstudio_project
+scriptsPath <- root$make_fix_file(".")("R")
+scripts <- dir(root$find_file("R", path = root$find_file()))
+scriptsl <- paste(scriptsPath, scripts, sep = "//")
+lapply(scriptsl, source)
+```
+Paths specific to dbCAN pipeline with hmmer3 dependencies:
+Note: 
+hmmer3 is already on the biocluster
+dbCAN downloads were placed in our shared folder References directory
+```{r}
+dbCANpath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/References/CAZyTools/dbCAN-fam-HMMs.txt"
+hmmPress <- "/opt/bio/hmmer3/bin/hmmpress"
+hmmScanPath <- "/opt/bio/hmmer3/bin/hmmscan"
+hmmParser <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/References/CAZyTools/hmmscan-parser.sh"
+```
+
+Set the paths for output plots, tables, figures, and graphs:
+```{r}
+figPath <- root$make_fix_file(".")("Figures")
+dataPath <- root$make_fix_file(".")("data")
+```
+
+Set the path for analysis qsub outputs:
+```{r}
+sharedPathAn <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/CAZy_prediction_test/output/"
+dir.create(paste(projPath, "output", sep = ""), showWarnings = TRUE, recursive = FALSE)
+```
+
+Paths to relevant transcriptomes:
+```{r}
+refListPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/CAZy_prediction_test/List_ReferenceProteinsFasta.txt"
+projPath    <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/CAZy_prediction_test/"
+projRefPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/CAZy_prediction_test/referenceTranscriptomes/"
+refMetadata <- read.table(file = refListPath, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+pyuuProteins <- paste(referencesPath, "pythium_ultimum_proteins.fasta", sep = "")
+```
+Setting things up for dbCAN:
+```{r}
+cmd <- paste(hmmPress, " ", dbCANpath, sep = "")
+system(cmd)
+```
+
+Create a directory in the output directory for each reference species 
+Run hmmscan for each reference species
+```{r}
+prefix <- "A_dbCAN_all_refs"
+node <- 1
+
+for(j in 1:length(refMetadata$Species)) {
+  dir.create(paste(sharedPathAn, refMetadata$Species[j], sep = ""),
+             showWarnings = TRUE, recursive = FALSE)
+}
+
+cmd <- with(refMetadata,
+            paste(hmmScanPath,
+                  " --domtblout ", paste(sharedPathAn, Species, "/", Species, ".CAZy.out.dm", sep = ""),
+                  " ", dbCANpath, " ", paste(projRefPath, ProteinsFasta, sep = ""),
+                  " > ", paste(sharedPathAn, Species, "/", Species, ".out", sep = ""),
+                  sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+
+refMetadata$domtblout <- paste(refMetadata$Species, ".CAZy.out.dm", sep = "")
+refMetadata$domtbloutPath <- paste(sharedPathAn, refMetadata$Species, "/", refMetadata$domtblout, sep = "")
+refMetadata$dbHmmScanOut <- paste(refMetadata$Species, ".out", sep = "")
+refMetadata$dbScanOutPath <- paste(sharedPathAn, refMetadata$Species, "/", refMetadata$dbHmmScanOut, sep = "")
+```
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+See how many CAZy were pulled out for Pyuu: look for this in the .CAZy.out.dm file
+```{r}
+library(reshape2)
+library(data.table)
+# test[[i]] <- fread(dbCANList[i], sep = "auto", header = FALSE)
+cazyPyuuAll <- fread(paste(projPath, 
+                        "output/Pythium_ultimum_var_ultimum/Pythium_ultimum_var_ultimum.CAZy.out.dm", 
+                        sep = ""),
+                  sep = "auto", header = TRUE, fill=TRUE)
+cazyPyuuAll <- cazyPyuuAll[-c(1, 2), ]
+
+# rename some columns:
+colnames(cazyPyuuAll)[1] <- "cazyFam"
+# get the unique cazy families:
+cazyFams <- unique(cazyPyuuAll$cazyFam)
+# get the unique genes
+pyuuCazyGenes <- unique(cazyPyuuAll$sequence)
+length(pyuuCazyGenes)
+# Now make a new table that has only the cazyFam and sequence columns
+cazyFamGene <- subset(cazyPyuuAll, select=c("cazyFam", "sequence"))
+cazyFamGene$cazyFam <- sub(".hmm", "", cazyFamGene$cazyFam)
+# Now collapse rows that have duplicates to one row
+library("dplyr")
+cazyFamGene <- distinct(cazyFamGene)
+length(cazyFams)
+# Sort by CAZy family
+sort1 <- with(cazyFamGene, cazyFamGene[order(-cazyFam, sequence)  , ])
+sort2 <- with(cazyFamGene, cazyFamGene[order(sequence, cazyFam)  , ])
+cazyFamGene <- sort1
+
+#write this to a table:
+library(stargazer)
+stargazer(cazyFamGene, type = "html",
+          title = "Putative CAZy genes of Pythium ultimum var. ultimum",
+          out = paste(figPath, "/tab-PyuuGenes_AllCazy_stargazer.htm", sep = ""),
+          summary = FALSE,
+          header = TRUE,
+          flip = FALSE)
+
+# I'm interested in what a pie graph of the CAZy families in Pyuu would look like?
+summary(cazyFamGene)
+library("plyr")
+cazyFamAll <- unique(as.list(cazyFamGene$cazyFam))
+cazyFamTbl <- count(cazyFamGene, "cazyFam")
+# I want to group the auxiliar activities CAZy families together into one AA group:
+cazyFamGeneTemp <- cazyFamGene
+cazyFamGeneTemp$cazyFam <- gsub('AA.*', "AA", cazyFamGeneTemp$cazyFam)
+# Let's see the frequency table for the cazy families:
+cazyFamTbl <- count(cazyFamGeneTemp, "cazyFam")
+# Let's make a pie graph for this data:
+# First make a count table:
+cazyFamTbleCount <- table(cazyFamGeneTemp$cazyFam)
+# Now create the labels:
+labs <- paste("(",names(cazyFamTbleCount),")","\n", cazyFamTbleCount, sep = "")
+# Get the label percents:
+# how can we do this? 
+# pcr <-
+# now we plot:
+# can we plot this and get labels only for the largets groups? or any ideas?
+png(file = paste(figPath, "/piePyuuCAZyAll.png", sep = ""))
+piePlot <- pie(cazyFamTbleCount, labels = labs, main = "Pie chart of CAZy families in Pyuu")
+print(piePlot)
+dev.off()
+```
+
+Run the hmmscan parser on the hmmscan output for each reference species:
+```{r}
+prefix <- "B_dbCAN_hmmscanParser"
+
+cmd <- with(refMetadata,
+            paste(" sh ", hmmParser,
+                  " ", domtbloutPath, 
+                  " > ", paste(sharedPathAn, Species, "/", Species, ".out.dm.ps", sep = ""),
+                  sep = ""))
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+refMetadata$Parseddmtbl <- paste(refMetadata$Species, ".out.dm.ps", sep = "")
+refMetadata$ParsedmtblPath <- paste(sharedPathAn, refMetadata$Species, "/", refMetadata$Parseddmtbl, sep = "")
+write.table(refMetadata, 
+           file = file.path(paste(projPath, "referencesMetadataFinal.csv", sep = "")),
+           append    = FALSE, 
+           sep       = ",",
+           quote     = FALSE,
+           row.names = TRUE,
+           col.names = NA)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Would like to generate a table with the captured CAZy proteins, for specific CAZy families:
+```{r}
+library(reshape2)
+library(data.table)
+
+cazyCaptureList <- c("CBM21.hmm", "GH3.hmm", "GH7.hmm", "GH15.hmm",
+                     "GH16.hmm", "GH17.hmm", "GH72.hmm")
+dbCANList <- refMetadata$ParsedmtblPath
+for(i in 1:length(dbCANList)){
+  test[[i]] <- fread(dbCANList[i], sep = "auto", header = FALSE)
+  colnames(test[[i]]) <- c("family.hmm", "hmm.length", "query.id", "query.length", "e.val",
+                           "hmm.start", "hmm.end", "query.start", "query.end", "coverage")
+  test[[i]]$Species <- basename(dbCANList[i])
+  test[[i]]$Species <- sub(".out.dm.ps", "", test[[i]]$Species)
+  print(nrow(test[[i]]))
+}
+
+summary(test)
+View(test[[1]])
+lapply(test, function(i) setkey(i))
+testAll <- Reduce(function(...) merge(..., all = T), test)
+cazyCaptureSubset <- subset(testAll, testAll$family.hmm %in% cazyCaptureList)
+cazyCaptureSubset$family.hmm <- sub(".hmm", "", cazyCaptureSubset$family.hmm)
+write.table(cazyCaptureSubset, 
+           file = file.path(paste(dataPath, "/dbCAN_CAZySubset_AllRefs.csv", sep = "")),
+           append    = FALSE, 
+           sep       = ",",
+           quote     = FALSE,
+           row.names = TRUE,
+           col.names = NA)
+
+library("ggplot2")
+library("plyr")
+countCAZyFam <- count(cazyCaptureSubset, vars = "family.hmm")
+countCAZySpecies <- count(cazyCaptureSubset, vars = c("family.hmm", "Species"))
+
+data <- ddply(countCAZySpecies, .(family.hmm), 
+   transform, pos = cumsum(freq) - (0.5 * freq)
+)
+
+png(file = paste(figPath, "/ggplotOfAllSppCAZyFamUp.png", sep = ""))
+plotTest <- ggplot(data = data, aes(x = family.hmm, y = freq)) +
+            geom_bar(aes(fill = Species), stat = "identity") +
+            geom_text(aes(label = freq, y = pos), size = 2)
+print(plotTest)
+dev.off()
+```
+
+
+```{r}
+install.packages("stargazer")
+library(stargazer)
+install.packages("formattable")
+library(formattable)
+colnames(countCAZyFam) <- c("CAZyFamily", "Frequency")
+summary(countCAZyFam)
+
+cazyFamily <- as.list(countCAZyFam$CAZyFamily)
+frequency <- as.list(countCAZyFam$Frequency)
+mydata <- cbind(cazyFamily, frequency)
+
+mydata <- table(countCAZyFam)
+
+# The following no longer works:
+stargazer(mydata, type = "html",
+          title = "CAZy family freq",
+          out = paste(figPath, "/tab3-stargazer.htm", sep = ""),
+          summary = FALSE,
+          header = TRUE,
+          flip = FALSE)
+
+View(countCAZySpecies)
+cazyFam <- unique(countCAZySpecies$family.hmm)
+cazyFamily <- as.list(countCAZySpecies$family.hmm)
+frequency  <- as.list(countCAZySpecies$freq)
+species    <- as.list(countCAZySpecies$Species)
+cazySpTbl  <- cbind(cazyFamily, species, frequency)
+
+formattable(cazySpTbl, list(Frequency=color_bar("blue", proportion),
+                            "sparkline"=function(z){
+                              sapply(
+                                z,
+                                function(zz){
+                                  knitr::knit(
+                                    text = sprintf(
+                                      '`r sparkline(c(%s))`',
+                                      paste0(
+                                        cazySpTbl[which(cazySpTbl$cazyFamily == zz), "Frequency"],
+                                        collapse = ","
+                                        )
+                                      ),
+                                    quiet = TRUE
+                                    )
+                                  }
+                                )
+                              }
+                            )
+            )
+
+
+
+stargazer(cazySpTbl, type = "html",
+          title = "CAZy family freq by species",
+          out = "CAZy_family_freq_by_species.txt",
+          summary = FALSE,
+          header = TRUE,
+          flip = FALSE)
+```
+
+
+A function to generate tables. This is good to keep as an example of how 
+you can generate this programmatically.
+```{r, results = 'asis'}
+library(knitr)
+rmarkdownTable <- function(df){
+  cat(paste(names(df), collapse = "|"))
+  cat("\n")
+  cat(paste(rep("-", ncol(df)), collapse = "|"))
+  cat("\n")
+  
+  for(i in 1:nrow(df)){
+    cat(paste(df[i,], collapse = "|"))
+    cat("\n")
+    }
+invisible(NULL)
+}
+rmarkdownTable(head(countCAZyFam))
+
+```
+
+
+GH15: All the proteins classified as GH15 in dbCAN that are from NCBI-nr:
+```{r}
+library(data.table)
+ncbiGH15List <- fread(paste(projPath, "GH15_canDB_list_NCBI-nr.txt", sep = ""),
+                      sep = "auto", header="auto")
+parsedID <- setDT(ncbiGH15List)[, paste0("ID", 1:5) := tstrsplit(ID, "|", type.convert = TRUE, fixed = TRUE)]
+
+giSet <- data.frame(parsedID$ID4)
+colnames(giSet) <- "Accession"
+length(giSet$Accession)
+giSet$Accession <- sub("\\.[1-9]$", "", giSet$Accession)
+write.table(giSet$Accession, file = file.path(paste(projPath, "GH15_AccessionList.txt", sep = "")),
+            append = FALSE,
+            quote  = FALSE,
+            row.names = FALSE,
+            col.names = FALSE)
+
+
+
+
+
