@@ -91,7 +91,9 @@ colnames(cazyPyuuAll)[1] <- "cazyFam"
 cazyFamGene <- subset(cazyPyuuAll, select=c("cazyFam", "sequence"))
 cazyFamGene$cazyFam <- sub(".hmm", "", cazyFamGene$cazyFam)
 
-library(openxlsx)
+# For some reason I can't get openxlsx package:
+install.packages("openxlsx", dependencies = TRUE, repos='http://cran.rstudio.com')
+library(xlsx)
 LEV_2010_annotations <- read.xlsx(paste(sharedPath, 
                                  "References/Genome_Biology_paper_AdditionalDataFile3.xlsx", 
                                  sep = ""), 
@@ -127,11 +129,10 @@ colnames(listLoci) <- c("SequenceID", "CAZyFamily", "geneInfo")
 write.table(listLoci, paste(analysisPath, "/CAZy_of_interest_list.csv", sep = ""),
             append = FALSE, sep = ",", col.names = NA)
 
-
-
-
+# I'll need to read in the table - since I can't get openxlsx to work:
+listLoci <- fread(paste(analysisPath, "/CAZy_of_interest_list.csv", sep = ""),
+                  sep = "auto", header = TRUE)
 ```
-
 
 
 Creates a data subset for plotting and exports this subset.  
@@ -284,3 +285,78 @@ dev.off()
 }
 ```
 
+
+*** Over here Andre - just ran this after you left, 19March2017:
+Bar plots per CAZy family group:
+```{r}
+library("ggplot2")
+cazyFam <- unique(listLoci$CAZyFamily)
+dirPlotName <- "ggplotsByCAZyFam"
+
+dir.create(paste(analysisPath, "/", dirPlotName, sep = ""), 
+           showWarnings = TRUE, recursive = FALSE)
+
+ggplotsByCazyFamPath <- paste(analysisPath, "/", dirPlotName, "/", sep = "")
+
+i <- 1
+for(i in 1:length(cazyFam)){
+  temp3 <- subset(temp, temp$CAZyFamily == cazyFam[i])
+  temp3$Experiment <- sub("Mycelium", "Mycel.", temp3$Experiment )
+
+pdf(file   = paste(ggplotsByCazyFamPath, cazyFam[i], ".pdf", sep = ""),
+    width  = 8, 
+    height = 7*ceiling(nrow(temp3)/90))
+
+bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp3) +
+theme_bw() +
+  theme(axis.text.y = element_text(size  = 8, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 8, 
+                                   angle  = 45, 
+                                   hjust  = 1, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads\n(rpkm-normalized)") +
+  labs(x = "Treatment") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 8, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 1.5, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  0, 
+                                    face   = 'bold')) +
+  geom_boxplot(position = position_dodge(0.8), 
+               width    = 0.8, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 0.5, 
+               position = position_dodge(0.8))  +
+#   facet_wrap(~SequenceID, 
+#   facet_grid(SequenceID~Experiment,
+  facet_grid(geneInfo~Experiment,
+             scales = "free", space= "free_x") +
+  theme(strip.text.x = element_text(size   = 9, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = 0)) +
+  theme(strip.text.y = element_text(size   = 7, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = -90))
+print(bp)
+dev.off()
+}
+
+```
