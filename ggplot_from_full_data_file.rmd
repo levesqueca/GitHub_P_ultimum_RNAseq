@@ -163,9 +163,11 @@ Single file, multiple Bar plots for gene in listLoci
 ```{r}
 library("ggplot2")
 
-pdf(file   = paste(analysisPath, "/", listName,  ".pdf", sep = ""),
+svg(file   = paste(analysisPath, "/", listName,  ".svg", sep = ""),
     width  = 8, 
     height = 7*ceiling(nrow(temp)/200))
+    # 200 in seems to be the maximum length for a pdf file, so I used sgv
+    #height = 200)
 
 bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp) +
   theme_bw() +
@@ -213,6 +215,7 @@ bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp) +
                                     angle  = 0))
 print(bp)
 dev.off()
+
 ```
 
 Chunk to generate bar plots for individual genes and output them
