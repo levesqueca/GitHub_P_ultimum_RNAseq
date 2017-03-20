@@ -59,18 +59,18 @@ The list could have 2 column, one with better labels.
 List was sent by e-mail we think
 Use next chunk instead
 ```{r}
-#listName <- "Loci_list.txt"
-listName <- "listRefCandidates.txt"
-#listName <- "cazy_of_interest"
-
-library(data.table)
-listLoci <- fread(paste(analysisPath, "/", listName, "", sep = ""), 
-                  sep = "\t", header = TRUE,  
-                  stringsAsFactors = FALSE)
-colnames(listLoci)[1] <- "SequenceID"
-colnames(listLoci)[2] <- "CAZyFamily"
-
-listLoci$geneInfo <- paste(listLoci$SequenceID, listLoci$CAZyFamily, sep = " - ")
+# #listName <- "Loci_list.txt"
+# #listName <- "listRefCandidates.txt"
+# listName <- "CAZy_of_interest_list"
+# 
+# library(data.table)
+# listLoci <- fread(paste(analysisPath, "/", listName, "", sep = ""), 
+#                   sep = "\t", header = TRUE,  
+#                   stringsAsFactors = FALSE)
+# colnames(listLoci)[1] <- "SequenceID"
+# colnames(listLoci)[2] <- "CAZyFamily"
+# 
+# #listLoci$geneInfo <- paste(listLoci$SequenceID, listLoci$CAZyFamily, sep = " -\n ")
 ```
 
 Read CAZy of entire recent run of dbcan pipeline (from March 2016 version)
@@ -92,8 +92,8 @@ cazyFamGene <- subset(cazyPyuuAll, select=c("cazyFam", "sequence"))
 cazyFamGene$cazyFam <- sub(".hmm", "", cazyFamGene$cazyFam)
 
 # For some reason I can't get openxlsx package:
-install.packages("openxlsx", dependencies = TRUE, repos='http://cran.rstudio.com')
-library(xlsx)
+
+library(openxlsx)
 LEV_2010_annotations <- read.xlsx(paste(sharedPath, 
                                  "References/Genome_Biology_paper_AdditionalDataFile3.xlsx", 
                                  sep = ""), 
@@ -121,17 +121,20 @@ CAZy_of_interest <- merge(cazyFamGene, LEV_2010_df[,2:3], by = "T_code", all.x =
 
 
 CAZy_of_interest$geneInfo <- paste(CAZy_of_interest$T_code, CAZy_of_interest$Functional.Annotation, sep = " - ")
+CAZy_of_interest$geneInfoTab <- paste(CAZy_of_interest$T_code, CAZy_of_interest$Functional.Annotation, sep = " -\n ")
 
 colnames(listLoci)
-listLoci <- data.frame(CAZy_of_interest$T_code,CAZy_of_interest$cazyFam,CAZy_of_interest$geneInfo) 
-colnames(listLoci) <- c("SequenceID", "CAZyFamily", "geneInfo")
+listLoci <- data.frame(CAZy_of_interest$T_code,CAZy_of_interest$cazyFam,CAZy_of_interest$geneInfo,
+                       CAZy_of_interest$geneInfoTab) 
+colnames(listLoci) <- c("SequenceID", "CAZyFamily", "geneInfo", "geneInfoTab")
 
-write.table(listLoci, paste(analysisPath, "/CAZy_of_interest_list.csv", sep = ""),
+write.table(listLoci, paste(analysisPath, "/", listName, ".csv", sep = ""),
             append = FALSE, sep = ",", col.names = NA)
 
 # I'll need to read in the table - since I can't get openxlsx to work:
 listLoci <- fread(paste(analysisPath, "/CAZy_of_interest_list.csv", sep = ""),
                   sep = "auto", header = TRUE)
+
 ```
 
 
@@ -145,14 +148,16 @@ temp$Experiment <- sub("OosporeConversion", "Oospore Conversion", temp$Experimen
 temp <- temp[order(temp$geneInfo, temp$xLab),] 
 
 # To select and order columns
-selectCol <- c("SequenceID", "CAZyFamily", "geneInfo", "ExpUnit", "Condition", 
+selectCol <- c("SequenceID", "CAZyFamily", "geneInfo", "geneInfoTab", "ExpUnit", "Condition", 
                "TimePoint", "RNA_Replicate", "Experiment", "xLab", "Read_Counts") 
 
 temp <- subset(temp, select = selectCol)
 
-write.table(temp, paste(analysisPath, "/", listName,".csv", sep = ""),
+write.table(temp, paste(analysisPath, "/", listName,"_all.csv", sep = ""),
             append = FALSE, sep = ",", col.names = NA)
+
 ```
+
 
 Single file, multiple Bar plots for gene in listLoci
 ```{r}
@@ -160,7 +165,7 @@ library("ggplot2")
 
 pdf(file   = paste(analysisPath, "/", listName,  ".pdf", sep = ""),
     width  = 8, 
-    height = 7*ceiling(nrow(temp)/90))
+    height = 7*ceiling(nrow(temp)/200))
 
 bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp) +
   theme_bw() +
@@ -200,7 +205,7 @@ bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp) +
                position = position_dodge(0.8))  +
 #   facet_wrap(~SequenceID, 
 #   facet_grid(SequenceID~Experiment,
-  facet_grid(geneInfo~Experiment,
+  facet_grid(geneInfoTab~Experiment,
              scales = "free", space = "free_x") +
   theme(strip.text.x = element_text(size   = 6, 
                                     face   = 'bold.italic', 
@@ -215,18 +220,14 @@ to the specified folder for "analysisPath"
 ```{r}
 library("ggplot2")
 
-pdf(file   = paste(analysisPath, "/", listName,  ".pdf", sep = ""),
-    width  = 8, 
-    height = 7*ceiling(nrow(temp)/90))
-
 dir.create(paste(analysisPath, "/Individual_plots", sep = ""), 
            showWarnings = TRUE, recursive = FALSE)
 i<- 1
-for(i in 1:length(listLoci$geneInfo)){
+for(i in 1:length(listLoci$geneInfoTab)){
   temp2 <- subset(temp, temp$SequenceID == listLoci$SequenceID[i])
   temp2$Experiment <- sub("Mycelium", "Mycel.", temp2$Experiment )
   png(file   = paste(analysisPath, "/Individual_plots/", 
-                     listLoci$geneInfo[i], ".png", sep = ""), 
+                     listLoci$SequenceID[i], ".png", sep = ""), 
       width  = 7, 
       height = 3, 
       units  = "in", 
@@ -270,7 +271,7 @@ for(i in 1:length(listLoci$geneInfo)){
                position = position_dodge(0.8))  +
 #   facet_wrap(~SequenceID, 
 #   facet_grid(SequenceID~Experiment,
-  facet_grid(geneInfo~Experiment,
+  facet_grid(geneInfoTab~Experiment,
              scales = "free", space= "free_x") +
   theme(strip.text.x = element_text(size   = 9, 
                                     face   = 'bold', 
@@ -345,7 +346,7 @@ theme_bw() +
                position = position_dodge(0.8))  +
 #   facet_wrap(~SequenceID, 
 #   facet_grid(SequenceID~Experiment,
-  facet_grid(geneInfo~Experiment,
+  facet_grid(geneInfoTab~Experiment,
              scales = "free", space= "free_x") +
   theme(strip.text.x = element_text(size   = 9, 
                                     face   = 'bold', 
