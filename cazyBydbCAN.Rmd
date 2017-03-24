@@ -126,7 +126,7 @@ summary(cazyFamGene)
 library("plyr")
 cazyFamAll <- unique(as.list(cazyFamGene$cazyFam))
 cazyFamTbl <- count(cazyFamGene, "cazyFam")
-# I want to group the auxiliar activities CAZy families together into one AA group:
+# I want to group the auxiliary activities CAZy families together into one AA group:
 cazyFamGeneTemp <- cazyFamGene
 cazyFamGeneTemp$cazyFam <- gsub('AA.*', "AA", cazyFamGeneTemp$cazyFam)
 # Let's see the frequency table for the cazy families:
@@ -178,7 +178,8 @@ Would like to generate a table with the captured CAZy proteins, for specific CAZ
 ```{r}
 library(reshape2)
 library(data.table)
-
+# If the following doesn't work and I can't make the test table, refer to line 
+# 68 of SecretomePipeline_onBigCAZy_mostRecent_dbCan_all_refs.Rmd
 cazyCaptureList <- c("CBM21.hmm", "GH3.hmm", "GH7.hmm", "GH15.hmm",
                      "GH16.hmm", "GH17.hmm", "GH72.hmm")
 dbCANList <- refMetadata$ParsedmtblPath

@@ -91,6 +91,7 @@ colnames(cazyPyuuAll)[1] <- "cazyFam"
 cazyFamGene <- subset(cazyPyuuAll, select=c("cazyFam", "sequence"))
 cazyFamGene$cazyFam <- sub(".hmm", "", cazyFamGene$cazyFam)
 
+
 # For some reason I can't get openxlsx package:
 
 library(openxlsx)
