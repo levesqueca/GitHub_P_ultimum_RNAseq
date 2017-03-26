@@ -242,34 +242,43 @@ plot(t,fitted)
 ```
 
 
-ii <- 1
 
 ```{r}
 
-dat_coeff3 <- data.frame()
+#dat_coeff3 <- data.frame()
 remove(NL_fit)
 remove(Temporary3)
-ii <- 15
+ii <- 92
 
-  for(ii in 4:(ncol(my_counts_NL)-1)) { 
+  for(ii in 192:(ncol(my_counts_NL)-1)) { 
     print("######################################################################################################")   
     print(c(ii, colnames(my_counts_NL)[ii]))
     
- upper_max <- 5 * log(max(my_counts_NL[,ii]))
- start_max <- log(mean(my_counts_NL[,ii]))
+# upper_max <- 5 * log(max(my_counts_NL[,ii]))
+# start_max <- log(mean(my_counts_NL[,ii]))
  start_StDev <- sd(my_counts_NL[,ii])
 # start_cent <- log(my_counts_NL[which.max(my_counts_NL[,ii]), 2] +1)
  
- whichmax1 <- which.max(my_counts_NL[,ii])
- whichmax2  <- which.max(my_counts_NL[-whichmax1,ii])
- 
- start_cent  <- (log(my_counts_NL[whichmax1, 2] +1) + log(my_counts_NL[whichmax2, 2] +1)) /2
+  whichmax <- my_counts_NL[,c(2,ii)]
+  whichmax <- whichmax[order(-whichmax[,2]),] 
+  whichmax$log_count  <- log(whichmax[,2] + 1)
+  whichmax_sub <- dcast(whichmax[1:6, c(1,3),], TimePoint ~ . , value.var = "log_count", mean)
 
-   NL_fit <- nls(my_counts_NL[,ii] ~   exp(max*exp(-((sqrt_time - cent)^2) / (2 * StDev^2))), algorith = "port",
+ start_cent  <- mean(whichmax_sub[,2])
+ start_max  <- mean(whichmax$log_count[1:8])
+ upper_max  <- 5 * start_max
+
+ try(
+   NL_fit <- nls(my_counts_NL[,ii] ~   exp(max*exp(-((sqrt_time - cent)^2) / (2 * StDev^2))),
+              algorithm = "port",
               start=list(max = start_max, cent = start_cent, StDev =start_StDev), 
               lower= list(max = 0, cent = 0, StDev =0.001* start_StDev),
               upper= list(max = upper_max, cent = 16, StDev =100 *start_StDev),
+#              weights = 1/my_counts_NL[,ii],
                 data=my_counts_NL, trace=TRUE)
+, silent=FALSE)
+
+  if (class(NL_fit) != "try-error")  {
 
     #    summary(NL_fit)
     # plotfit(NL_fit, smooth = TRUE)
@@ -278,11 +287,21 @@ ii <- 15
     # coefficients(summary(NL_fit))
 
     Temporary3 <- data.frame(colnames(my_counts_NL)[ii],row.names(coefficients(summary(NL_fit))),coefficients(summary(NL_fit)))
-    dat_coeff3 <- rbind(dat_coeff3,Temporary3)
+    dat_coeff3 <- rbind(dat_coeff3,Temporary3) 
+    
+  } else {
+   Temporary3 <- data.frame(colnames(my_counts_NL)[ii],  "NA", "NA",  "NA", "NA", "NA")
+   colnames(Temporary3) <- colnames(dat_coeff3)
+    dat_coeff3 <- rbind(dat_coeff3,Temporary3) 
+ }
   }
 
 ```
 
+
+```{r}
+write.table(dat_coeff3, paste(sharedPath,mainFolder,"/coefficients_conversion_CAZy_output.csv", sep=""), append = FALSE, quote = FALSE, sep = ",",col.names = TRUE)
+```
 
 
 EdgeR tutorial at https://cgrlucb.wikispaces.com/file/view/edgeR_Tutorial.pdf
