@@ -164,7 +164,7 @@ topTags(qlf)
 
 Fit_results2 <- data.frame(qlf$coefficients, qlf$table)
 
-write.table(Fit_results, paste(sharedPath,mainFolder,"/EdgeR_glmQLFit_secreted_output.csv", sep=""), append = FALSE, quote = TRUE, sep = ",",col.names = TRUE)
+write.table(Fit_results, paste(sharedPath,mainFolder,"/EdgeR_glmQLFit_secreted_output.csv", sep=""), append = FALSE, quote = TRUE, sep = ",",col.names = NA)
 
 fit <- glmFit(cds2,design)
 lrt <- glmLRT(fit)
