@@ -91,7 +91,7 @@ analysisPath <- paste(sharedPath, mainFolder , "/", analysisDir, sep = "")
 
 
 
-Make a subset for OosporeConversion
+* Make a subset for "Mycelium"[1]   "Oosporogenesis"[2]    OR  "OosporeConversion"[3]
 ```{r}
 
 # select which experiment to analyze
@@ -165,9 +165,6 @@ cds2$common.dispersion
 
 # from edgeR User Guide
 
-design <- model.matrix(~Time )
-#design <- model.matrix(~Condition)
-
 cds2 <- estimateDisp(cds2,design)
 
 fit <- glmQLFit(cds2, design )
@@ -202,18 +199,25 @@ cds2 <- estimateGLMTagwiseDisp(cds2, design)
 
 
 
-Get a subset for my own GLM analysis  OOspore conversion
+Get a subset and run my own GLM analysis 
 ```{r}
 library(reshape2)
 
-my_counts_GLM <- dcast(data = subset_count, Time + RNA_Rep  ~ SequenceID, value.var = "Read_Counts")
+# to avoind reaching minus infinity in some cases
+subset_count$Read_Counts <- subset_count$Read_Counts + 0.0000000001
 
-j <- 4
+my_counts_GLM <- dcast(data = subset_count, ExpUnit+ Time + RNA_Rep  ~ SequenceID, value.var = "Read_Counts")
 
+
+i <- 51
+colnames(my_counts_GLM)[i]
+
+model <- "Time"
+
+
+# standard GLM Poisson One Variable
 fit2_pvalues <- data.frame()
-
- for(j in 4:ncol(my_counts_GLM)) { 
-
+for(j in 4:ncol(my_counts_GLM)) { 
 fit2 <- glm(my_counts_GLM[,j] ~ Time, family = poisson(link="log"), my_counts_GLM)
 
 anova2 <- anova(fit2, test = "Chisq")
@@ -229,234 +233,69 @@ temp <- cbind(colnames(my_counts_GLM)[j], t(anova2.melted$value), t(coeff2.melte
 colnames(temp)  <- c("SequenceID", anova2.melted$my_colname, coeff2.melted$my_colname)
 
 fit2_pvalues <- rbind (fit2_pvalues, temp)
-
  }
 
-write.table(fit2_pvalues, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "Poisson_glm_CAZy_Anyone_or_each_diff_from_ctrl.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", col.names = NA, row.names = TRUE)
+write.table(fit2_pvalues, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "_", model,
+        "_Poisson_glm_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
+        col.names = NA, row.names = TRUE)
 
 
-
-
-
-print(anova(fit2, test = "Chisq")) 
-# Defines the fitted model
-print(summary(fit2))
-
-lapply(mylist, function(x) write.table( data.frame(x), 'test.csv'  , append= T, sep=',' ))
-
-
-
-fit3 <- glm(PYU1_T005443 ~ Condition, family = quasipoisson, sub_my_counts_GLM)
-
-print(anova(fit3, test = "Chisq")) 
+#  GLM Quasi Poisson One Variable
+fit3_pvalues <- data.frame()
+for(j in 4:ncol(my_counts_GLM)) { 
+fit3 <- glm(my_counts_GLM[,j] ~ Time, family = quasipoisson(link="log"), my_counts_GLM)
 
 anova3 <- anova(fit3, test = "Chisq")
+anova3.melted <- melt(as.matrix(anova3), id.vars = NULL)
+anova3.melted$my_colname <- paste(anova3.melted$Var1, anova3.melted$Var2, sep="_")
+
 # Defines the fitted model
 coeff3 <- coefficients(summary(fit3))
+coeff3.melted <- melt(as.matrix(coeff3), id.vars = NULL)
+coeff3.melted$my_colname <- paste(coeff3.melted$Var1, coeff3.melted$Var2, sep="_")
 
-cbind(anova3,rownames(coeff3),coeff3)
+temp <- cbind(colnames(my_counts_GLM)[j], t(anova3.melted$value), t(coeff3.melted$value))
+colnames(temp)  <- c("SequenceID", anova3.melted$my_colname, coeff3.melted$my_colname)
 
+fit3_pvalues <- rbind (fit3_pvalues, temp)
+ }
 
-```
+write.table(fit3_pvalues, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "_", model,
+        "_quasiPoisson_glm_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
+        col.names = NA, row.names = TRUE)
 
+j<- 32
 
+#  GLM Negative Binomial One Variable
+library(MASS)
+fit4_pvalues <- data.frame()
+for(j in 4:ncol(my_counts_GLM)) { 
+try(
+   fit4 <- glm.nb(my_counts_GLM[,j] ~ Time, link="log", my_counts_GLM)
+, silent=FALSE)
+anova4 <- anova(fit4, test = "Chisq")
+anova4.melted <- melt(as.matrix(anova4), id.vars = NULL)
+anova4.melted$my_colname <- paste(anova4.melted$Var1, anova4.melted$Var2, sep="_")
 
-Get a subset for my own GLM analysis
-```{r}
-library(data.table)
-# #Get only certain columns and oosporogenesis experiment
-# subset_count <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment=="Oosporogenesis"),c("Experiment", "SequenceID", "Condition", "TimePoint", "RNA_Replicate","Read_Counts")]
-# 
-# # get the secreted subset
-# subset_count <- subset_count[subset_count$SequenceID %in% unique(Secreted_CAZy$sequence),]
-
-my_counts_GLM <- dcast(data = subset_count, ExpUnit + Time + RNA_Rep ~ SequenceID, value.var = "Read_Counts")
-
-sub_my_counts_GLM$Condition <- as.factor(sub_my_counts_GLM$Condition)
-
-j <- 4
-
-is.data.frame(my_counts_GLM)
-my_counts_GLM[,j]
-
-listLoci[2,j]
-
- for(i in 4:ncol(my_counts_GLM)) { 
-
-  
-Ycol <-  colnames(my_counts_GLM)[i]
-   
-     
-fit2 <- glm(PYU1_T000002 ~ Time, family = poisson(link="log"), my_counts_GLM)
-fit2 <- glm(noquote(Ycol) ~ Time, family = poisson(link="log"), my_counts_GLM)
- 
-print(anova(fit2, test = "Chisq")) 
 # Defines the fitted model
-print(summary(fit2))
+coeff4 <- coefficients(summary(fit4))
+coeff4.melted <- melt(as.matrix(coeff4), id.vars = NULL)
+coeff4.melted$my_colname <- paste(coeff4.melted$Var1, coeff4.melted$Var2, sep="_")
 
+temp <- cbind(colnames(my_counts_GLM)[j], t(anova4.melted$value), t(coeff4.melted$value))
+colnames(temp)  <- c("SequenceID", anova4.melted$my_colname, coeff4.melted$my_colname)
 
-fit3 <- glm(PYU1_T005443 ~ Condition, family = quasipoisson, sub_my_counts_GLM)
-
-print(anova(fit3, test = "Chisq")) 
-
-anova3 <- anova(fit3, test = "Chisq")
-# Defines the fitted model
-coeff3 <- coefficients(summary(fit3))
-
-cbind(anova3,rownames(coeff3),coeff3)
-
-
-```
+fit4_pvalues <- rbind (fit4_pvalues, temp)
+}
 
 
 
+fit4_pvalues[duplicated(fit4_pvalues[,2:ncol(fit4_pvalues)]) , 2:ncol(fit4_pvalues) ] <- NA
 
-EdgeR for Oosporogenesis
-```{r}
+write.table(fit4_pvalues, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "_", model,
+        "_negativeBinomial_glm_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
+        col.names = NA, row.names = TRUE)
 
-library(edgeR)
-
-# select which experiment to analyze
-Exp <- levels(rpkmPlotsFullImport$Experiment)[2]
-Exp
-CAZy <- levels(as.factor(rpkmPlotsFullImport$Secreted))[2]
-
-#Get only certain columns and oosporogenesis experiment
-subset_count <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment==Exp & rpkmPlotsFullImport$Secreted!="non-CAZy"),]
-
-subset_count$TRT <- paste(subset_count$Condition,subset_count$TimePoint,subset_count$RNA_Replicate,sep="_")
-
-# make table in proper format
-my_counts <- dcast(data = subset_count, SequenceID ~ Condition + TimePoint + RNA_Replicate, value.var = "Read_Counts")
-rownames(my_counts) <- my_counts$SequenceID
-my_counts$SequenceID <- NULL
-
-is.data.frame(my_counts)
-
-
-colSums( my_counts ) # Library Sizes
-colSums( my_counts ) / 1e06 # Library Sizes in millions of reads
-table( rowSums( my_counts ) )[ 1:30 ]
-
-Condition <- sub("_.*","",colnames(my_counts))
-TimePoint <- sub("Control_|Cholesterol_","",colnames(my_counts))
-TimePoint <- sub("_.*","",TimePoint)
-CondTime  <- sub("_[0-9]$","",colnames(my_counts))
-
-
-cds2 <- DGEList( my_counts ,  group = Condition )
-cds2 <- DGEList( my_counts ,  group = CondTime )
-# Somehow rownames did not follow
-dimnames(cds2)[[1]] <- rownames(my_counts)
-
-names( cds2 )
-sum( cds2$all.zeros )
-
-cds2$samples$lib.size
-
-cds2 <- estimateCommonDisp( cds2 )
-names( cds2 )
-# The estimate
-cds2$common.dispersion
-# 
-# # Default Setting
-# cds2 <- estimateTagwiseDisp( cds2  )
-# names( cds2 )
-# summary( cds$tagwise.dispersion )
-# # More shrinkage/sqeezing toward the common
-# cds2 <- estimateTagwiseDisp( cds2 , prior.n = 25 )
-# summary( cds2$tagwise.dispersion ) # not much changed, but the ends got squeezed in quite a bit.
-# # # The recommended setting for this data set is the default of 10. Let's stick with that.
-# cds2 <- estimateTagwiseDisp( cds2 , prior.n = 10 )
-# 
-# de.cmn2 <- exactTest( cds2 , common.disp = TRUE )
-# de.tgw2 <- exactTest( cds2 , common.disp = FALSE , pair = c( "Control" , "Cholesterol" ) )
-# de.poi2 <- exactTest( cds2 , dispersion = 1e-06  , pair = c( "Control" , "Cholesterol" ) )
-# et <- exactTest(cds2)
-# topTags(et)
-
-# from edgeR User Guide
-
-design <- model.matrix(~CondTime -1)
-#design <- model.matrix(~Condition)
-
-cds2 <- estimateDisp(cds2,design)
-
-fit <- glmQLFit(cds2, design )
-qlf <- glmQLFTest(fit)
-topTags(qlf)
-
-Fit_results2 <- data.frame(qlf$coefficients, qlf$table)
-
-write.table(Fit_results2, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp,"EdgeR_glmQLFit_CAZy_Anyone_diff_0.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", col.names = NA, row.names = TRUE) 
-
-
-fit2 <- glmFit(cds2,design) 
-lrt <- glmLRT(fit2)
-topTags(lrt)
-lrt.2vs1 <- glmLRT(fit2, coef=2)
-head(cds2$counts)
-
-
-
-Fit_results <- data.frame(lrt$coefficients, lrt$table)
-                          
-write.table(Fit_results, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "EdgeR_glmFit_CAZy_Anyone_diff_0.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", col.names = NA, row.names = TRUE)
-
-cds2 <- estimateGLMCommonDisp(cds2, design)
-#To estimate trended dispersions:
-cds2 <- estimateGLMTrendedDisp(cds2, design)
-#To estimate tagwise dispersions:
-cds2 <- estimateGLMTagwiseDisp(cds2, design)
-
-
-```
-
-
-
-Get a subset for my own GLM analysis
-```{r}
-library(data.table)
-# #Get only certain columns and oosporogenesis experiment
-# subset_count <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment=="Oosporogenesis"),c("Experiment", "SequenceID", "Condition", "TimePoint", "RNA_Replicate","Read_Counts")]
-# 
-# # get the secreted subset
-# subset_count <- subset_count[subset_count$SequenceID %in% unique(Secreted_CAZy$sequence),]
-
-my_counts_GLM <- dcast(data = subset_count, ExpUnit + Time + RNA_Rep ~ SequenceID, value.var = "Read_Counts")
-
-sub_my_counts_GLM$Condition <- as.factor(sub_my_counts_GLM$Condition)
-
-j <- 4
-
-is.data.frame(my_counts_GLM)
-my_counts_GLM[,j]
-
-listLoci[2,j]
-
- for(i in 4:ncol(my_counts_GLM)) { 
-
-  
-Ycol <-  colnames(my_counts_GLM)[i]
-   
-     
-fit2 <- glm(PYU1_T000002 ~ Time, family = poisson(link="log"), my_counts_GLM)
-fit2 <- glm(noquote(Ycol) ~ Time, family = poisson(link="log"), my_counts_GLM)
- 
-print(anova(fit2, test = "Chisq")) 
-# Defines the fitted model
-print(summary(fit2))
-
-
-fit3 <- glm(PYU1_T005443 ~ Condition, family = quasipoisson, sub_my_counts_GLM)
-
-print(anova(fit3, test = "Chisq")) 
-
-anova3 <- anova(fit3, test = "Chisq")
-# Defines the fitted model
-coeff3 <- coefficients(summary(fit3))
-
-cbind(anova3,rownames(coeff3),coeff3)
 
 
 ```
@@ -465,18 +304,201 @@ cbind(anova3,rownames(coeff3),coeff3)
 
 
 
+POTENTALLY DELETE THE FOLLOWING
 
-```{r}
 
-All_CAZy <- read.table("data/dbCAN_Subset_AllRefs_columnSubset.csv", 
-                                  sep = ",", 
-                                  header = TRUE, 
-                                  as.is = FALSE, 
-                                  stringsAsFactors = FALSE)
 
-All_CAZy_names <- unique(All_CAZy[which(All_CAZy$species=="Pythium_ultimum_var_ultimum"),c("sequence")])
 
-```
+
+<!-- Get a subset for my own GLM analysis -->
+<!-- ```{r} -->
+<!-- library(data.table) -->
+<!-- # #Get only certain columns and oosporogenesis experiment -->
+<!-- # subset_count <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment=="Oosporogenesis"),c("Experiment", "SequenceID", "Condition", "TimePoint", "RNA_Replicate","Read_Counts")] -->
+<!-- #  -->
+<!-- # # get the secreted subset -->
+<!-- # subset_count <- subset_count[subset_count$SequenceID %in% unique(Secreted_CAZy$sequence),] -->
+
+<!-- my_counts_GLM <- dcast(data = subset_count, ExpUnit + Time + RNA_Rep ~ SequenceID, value.var = "Read_Counts") -->
+
+<!-- sub_my_counts_GLM$Condition <- as.factor(sub_my_counts_GLM$Condition) -->
+
+
+<!-- ``` -->
+
+
+
+
+<!-- EdgeR for Oosporogenesis -->
+<!-- ```{r} -->
+
+<!-- library(edgeR) -->
+
+<!-- # select which experiment to analyze -->
+<!-- Exp <- levels(rpkmPlotsFullImport$Experiment)[2] -->
+<!-- Exp -->
+<!-- CAZy <- levels(as.factor(rpkmPlotsFullImport$Secreted))[2] -->
+
+<!-- #Get only certain columns and oosporogenesis experiment -->
+<!-- subset_count <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment==Exp & rpkmPlotsFullImport$Secreted!="non-CAZy"),] -->
+
+<!-- subset_count$TRT <- paste(subset_count$Condition,subset_count$TimePoint,subset_count$RNA_Replicate,sep="_") -->
+
+<!-- # make table in proper format -->
+<!-- my_counts <- dcast(data = subset_count, SequenceID ~ Condition + TimePoint + RNA_Replicate, value.var = "Read_Counts") -->
+<!-- rownames(my_counts) <- my_counts$SequenceID -->
+<!-- my_counts$SequenceID <- NULL -->
+
+<!-- is.data.frame(my_counts) -->
+
+
+<!-- colSums( my_counts ) # Library Sizes -->
+<!-- colSums( my_counts ) / 1e06 # Library Sizes in millions of reads -->
+<!-- table( rowSums( my_counts ) )[ 1:30 ] -->
+
+<!-- Condition <- sub("_.*","",colnames(my_counts)) -->
+<!-- TimePoint <- sub("Control_|Cholesterol_","",colnames(my_counts)) -->
+<!-- TimePoint <- sub("_.*","",TimePoint) -->
+<!-- CondTime  <- sub("_[0-9]$","",colnames(my_counts)) -->
+
+
+<!-- cds2 <- DGEList( my_counts ,  group = Condition ) -->
+<!-- cds2 <- DGEList( my_counts ,  group = CondTime ) -->
+<!-- # Somehow rownames did not follow -->
+<!-- dimnames(cds2)[[1]] <- rownames(my_counts) -->
+
+<!-- names( cds2 ) -->
+<!-- sum( cds2$all.zeros ) -->
+
+<!-- cds2$samples$lib.size -->
+
+<!-- cds2 <- estimateCommonDisp( cds2 ) -->
+<!-- names( cds2 ) -->
+<!-- # The estimate -->
+<!-- cds2$common.dispersion -->
+<!-- #  -->
+<!-- # # Default Setting -->
+<!-- # cds2 <- estimateTagwiseDisp( cds2  ) -->
+<!-- # names( cds2 ) -->
+<!-- # summary( cds$tagwise.dispersion ) -->
+<!-- # # More shrinkage/sqeezing toward the common -->
+<!-- # cds2 <- estimateTagwiseDisp( cds2 , prior.n = 25 ) -->
+<!-- # summary( cds2$tagwise.dispersion ) # not much changed, but the ends got squeezed in quite a bit. -->
+<!-- # # # The recommended setting for this data set is the default of 10. Let's stick with that. -->
+<!-- # cds2 <- estimateTagwiseDisp( cds2 , prior.n = 10 ) -->
+<!-- #  -->
+<!-- # de.cmn2 <- exactTest( cds2 , common.disp = TRUE ) -->
+<!-- # de.tgw2 <- exactTest( cds2 , common.disp = FALSE , pair = c( "Control" , "Cholesterol" ) ) -->
+<!-- # de.poi2 <- exactTest( cds2 , dispersion = 1e-06  , pair = c( "Control" , "Cholesterol" ) ) -->
+<!-- # et <- exactTest(cds2) -->
+<!-- # topTags(et) -->
+
+<!-- # from edgeR User Guide -->
+
+<!-- design <- model.matrix(~CondTime -1) -->
+<!-- #design <- model.matrix(~Condition) -->
+
+<!-- cds2 <- estimateDisp(cds2,design) -->
+
+<!-- fit <- glmQLFit(cds2, design ) -->
+<!-- qlf <- glmQLFTest(fit) -->
+<!-- topTags(qlf) -->
+
+<!-- Fit_results2 <- data.frame(qlf$coefficients, qlf$table) -->
+
+<!-- write.table(Fit_results2, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp,"EdgeR_glmQLFit_CAZy_Anyone_diff_0.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", col.names = NA, row.names = TRUE)  -->
+
+
+<!-- fit2 <- glmFit(cds2,design)  -->
+<!-- lrt <- glmLRT(fit2) -->
+<!-- topTags(lrt) -->
+<!-- lrt.2vs1 <- glmLRT(fit2, coef=2) -->
+<!-- head(cds2$counts) -->
+
+
+
+<!-- Fit_results <- data.frame(lrt$coefficients, lrt$table) -->
+
+<!-- write.table(Fit_results, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "EdgeR_glmFit_CAZy_Anyone_diff_0.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", col.names = NA, row.names = TRUE) -->
+
+<!-- cds2 <- estimateGLMCommonDisp(cds2, design) -->
+<!-- #To estimate trended dispersions: -->
+<!-- cds2 <- estimateGLMTrendedDisp(cds2, design) -->
+<!-- #To estimate tagwise dispersions: -->
+<!-- cds2 <- estimateGLMTagwiseDisp(cds2, design) -->
+
+
+<!-- ``` -->
+
+
+
+<!-- Get a subset for my own GLM analysis -->
+<!-- ```{r} -->
+<!-- library(data.table) -->
+<!-- # #Get only certain columns and oosporogenesis experiment -->
+<!-- # subset_count <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment=="Oosporogenesis"),c("Experiment", "SequenceID", "Condition", "TimePoint", "RNA_Replicate","Read_Counts")] -->
+<!-- #  -->
+<!-- # # get the secreted subset -->
+<!-- # subset_count <- subset_count[subset_count$SequenceID %in% unique(Secreted_CAZy$sequence),] -->
+
+<!-- my_counts_GLM <- dcast(data = subset_count, ExpUnit + Time + RNA_Rep ~ SequenceID, value.var = "Read_Counts") -->
+
+<!-- sub_my_counts_GLM$Condition <- as.factor(sub_my_counts_GLM$Condition) -->
+
+<!-- j <- 4 -->
+
+<!-- is.data.frame(my_counts_GLM) -->
+<!-- my_counts_GLM[,j] -->
+
+<!-- listLoci[2,j] -->
+
+<!--  for(i in 4:ncol(my_counts_GLM)) {  -->
+
+
+<!-- Ycol <-  colnames(my_counts_GLM)[i] -->
+
+
+<!-- fit2 <- glm(PYU1_T000002 ~ Time, family = poisson(link="log"), my_counts_GLM) -->
+<!-- fit2 <- glm(noquote(Ycol) ~ Time, family = poisson(link="log"), my_counts_GLM) -->
+
+<!-- print(anova(fit2, test = "Chisq"))  -->
+<!-- # Defines the fitted model -->
+<!-- print(summary(fit2)) -->
+
+
+<!-- fit3 <- glm(PYU1_T005443 ~ Condition, family = quasipoisson, sub_my_counts_GLM) -->
+
+<!-- print(anova(fit3, test = "Chisq"))  -->
+
+<!-- anova3 <- anova(fit3, test = "Chisq") -->
+<!-- # Defines the fitted model -->
+<!-- coeff3 <- coefficients(summary(fit3)) -->
+
+<!-- cbind(anova3,rownames(coeff3),coeff3) -->
+
+
+<!-- ``` -->
+
+
+
+
+
+
+<!-- ```{r} -->
+
+<!-- All_CAZy <- read.table("data/dbCAN_Subset_AllRefs_columnSubset.csv",  -->
+<!--                                   sep = ",",  -->
+<!--                                   header = TRUE,  -->
+<!--                                   as.is = FALSE,  -->
+<!--                                   stringsAsFactors = FALSE) -->
+
+<!-- All_CAZy_names <- unique(All_CAZy[which(All_CAZy$species=="Pythium_ultimum_var_ultimum"),c("sequence")]) -->
+
+<!-- ``` -->
+
+
+
+
 
 ** Non linear modelling
 
@@ -484,10 +506,13 @@ Get a subset for analysis
 ```{r}
 library(data.table)
 #Get only certain columns and oosporogenesis experiment
-subset_count2 <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment=="OosporeConversion"),c("Experiment", "SequenceID", "Condition", "TimePoint", "RNA_Replicate","Read_Counts")]
+subset_count3 <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment=="OosporeConversion"),c("Experiment", "SequenceID", "Condition", "TimePoint", "RNA_Replicate","Read_Counts")]
 
 # get the secreted subset
-subset_count2 <- subset_count2[subset_count2$SequenceID %in% All_CAZy_names,]
+#subset_count2 <- subset_count2[subset_count2$SequenceID %in% All_CAZy_names,]
+
+subset_count2 <- subset_count2[subset_count3$SequenceID %in% listLoci_notduplicated$SequenceID,]
+
 
 my_counts_NL <- dcast(data = subset_count2, Condition + TimePoint + RNA_Replicate ~ SequenceID, value.var = "Read_Counts")
 
@@ -502,10 +527,13 @@ Gaussian fit (see https://en.wikipedia.org/wiki/Gaussian_function)
 ```{r}
 library("nlsMicrobio")
 library(nlstools)
-sub_my_counts_NL$log_PYU1_T005252 <- log(sub_my_counts_NL$PYU1_T005252 +1)
 
-   NL_fit <- nls(PYU1_T005252 ~   exp(max*exp(-((sqrt_time - cent)^2) / (2 * StDev^2))), 
-              start=list(max = 1, cent = 2, StDev =1), data=sub_my_counts_NL, trace=TRUE)
+
+
+my_counts_NL$log_PYU1_T011896 <- log(my_counts_NL$PYU1_T011896 +1)
+
+   NL_fit <- nls(PYU1_T011896 ~   exp(max*exp(-((sqrt_time - cent)^2) / (2 * StDev^2))), 
+              start=list(max = 1, cent = 2, StDev =1), data=my_counts_NL, trace=TRUE)
 
       summary(NL_fit)
    plotfit(NL_fit, smooth = TRUE)
@@ -527,10 +555,12 @@ plot(t,fitted)
 
 ```{r}
 
+colnames(my_counts_NL)[345]
+
 #dat_coeff3 <- data.frame()
 remove(NL_fit)
 remove(Temporary3)
-ii <- 92
+ii <- 345
 
   for(ii in 192:(ncol(my_counts_NL)-1)) { 
     print("######################################################################################################")   
