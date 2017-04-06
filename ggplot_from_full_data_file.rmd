@@ -135,14 +135,248 @@ write.table(listLoci, paste(analysisPath, "/", listName, ".csv", sep = ""),
 # I'll need to read in the table - since I can't get openxlsx to work:
 listLoci <- fread(paste(analysisPath, "/CAZy_of_interest_list.csv", sep = ""),
                   sep = "auto", header = TRUE)
-
 ```
+
+
+
+Looking at the CAZy total, versus secreted and not secreted, and by CAZy family
+```{r}
+######
+listLoci3 <- fread(paste(dataPath, "/secretome/pyuu_listLoci_notSecreted_CAZy.csv", sep = ""),
+                  sep = "auto", header = TRUE)
+listLoci4 <- fread(paste(dataPath, "/secretome/pyuu_listLoci_Secreted_CAZy.csv", sep = ""),
+                  sep = "auto", header = TRUE)
+
+
+
+setkey(listLoci, "SequenceID")
+secSubList <- list(listLoci4$SequenceID)
+secSubtbl <- listLoci[c(secSubList)]
+listLoci4 <- secSubtbl
+
+setkey(listLoci, "SequenceID")
+notSecList <- list(listLoci3$SequenceID)
+notSecSubtbl <- listLoci[c(notSecList)]
+listLoci3 <- secSubtbl
+
+secCAZyList <- unique(listLoci4$CAZyFamily)
+length(secCAZyList) # 41
+notSecCAZyList <- unique(listLoci3$CAZyFamily)
+length(notSecCAZyList) # 80
+
+allCAZy <- unique(union(secCAZyList, notSecCAZyList))  
+length(allCAZy) # 98
+
+commonCAZy <- intersect(secCAZyList, notSecCAZyList)
+length(commonCAZy) #23
+
+secOnly <- setdiff(secCAZyList, notSecCAZyList)
+length(secOnly) # 18
+
+notSecOnly <- setdiff(notSecCAZyList, secCAZyList)
+length(notSecOnly) # 57
+
+
+dir.create(paste(dataPath, "/cazyFams_png", sep = ""), 
+           showWarnings = TRUE, recursive = FALSE)
+install.packages("VennDiagram")
+library(VennDiagram)
+
+# All CAZy families
+png(file = paste(dataPath, "/cazyFams_png/allCAZyFamsPyuu.png", sep = ""), 
+      width  = 7, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+grid.newpage()
+bp <- draw.pairwise.venn(41, 80, 23, category = c("Secreted CAZy families", "Not secreted CAZy families"),
+                   lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2), cat.pos = c(0, 0), 
+                   cat.dist = rep(0.025, 2))
+print(bp)
+dev.off()
+
+
+# GH CAZy families
+secGHfams <- c("GH28", "GH31", "GH3", "GH17", "GH5", "GH38", "GH43", "GH89", "GH13", "GH53", "GH7", "GH16", "GH131", 
+               "GH6", "GH81", "GH2", "GH15", "GH72", "GH30", "GH18")
+length(unique(secGHfams)) # 20
+notSecGHfams <- c("GH109", "GH3", "GH30", "GH123", "GH17", "GH63", "GH5", "GH6", "GH72", "GH35", "GH47", "GH15", "GH18", 
+                  "GH1", "GH37", "GH16", "GH114", "GH81", "GH31", "GH85")
+length(unique(notSecGHfams)) # 20
+intersect(secGHfams, notSecGHfams)
+# "GH31" "GH3"  "GH17" "GH5"  "GH16" "GH6"  "GH81" "GH15" "GH72" "GH30" "GH18"
+length(intersect(secGHfams, notSecGHfams)) # 11
+length(setdiff(secGHfams, notSecGHfams)) # 9
+# "GH28"  "GH38"  "GH43"  "GH89"  "GH13"  "GH53"  "GH7"   "GH131" "GH2"
+length(setdiff(notSecGHfams, secGHfams)) # 9
+# "GH109" "GH123" "GH63"  "GH35"  "GH47"  "GH1"   "GH37"  "GH114" "GH85"
+
+png(file = paste(dataPath, "/cazyFams_png/GH_CAZyFamsPyuu.png", sep = ""), 
+      width  = 7, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+grid.newpage()
+bp <- draw.pairwise.venn(20, 20, 11, category = c("Secreted GH CAZy", "Not secreted GH CAZy"),
+                   lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2), cat.pos = c(0, 0), 
+                   cat.dist = rep(0.025, 2))
+print(bp)
+dev.off()
+
+
+# GT CAZy families
+secGTfams <- c("GT4", "GT31", "GT2", "GT96", "GT41", "GT10")
+length(secGTfams) # 6
+notSecGTfams <- c("GT20", "GT71", "GT76", "GT48", "GT83", "GT59", "GT22", "GT4", "GT1", "GT41", "GT31", "GT8", "GT2", 
+                  "GT33", "GT60", "GT66", "GT58", "GT96", "GT32", "GT57", "GT19", "GT90", "GT45", "GT39", "GT95", "GT24",
+                  "GT28", "GT74", "GT30", "GT50", "GT7")
+length(unique(notSecGTfams)) # 31
+length(intersect(secGTfams, notSecGTfams)) # 5
+# "GT4"  "GT31" "GT2"  "GT96" "GT41"
+setdiff(secGTfams, notSecGTfams) # "GT10" 1
+setdiff(notSecGTfams, secGTfams) # 26
+# [1] "GT20" "GT71" "GT76" "GT48" "GT83" "GT59" "GT22" "GT1"  "GT8"  "GT33" "GT60" "GT66" "GT58" "GT32" "GT57" "GT19" "GT90"
+# [18] "GT45" "GT39" "GT95" "GT24" "GT28" "GT74" "GT30" "GT50" "GT7" 
+
+png(file = paste(dataPath, "/cazyFams_png/GT_CAZyFamsPyuu.png", sep = ""), 
+      width  = 7, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+grid.newpage()
+bp <- draw.pairwise.venn(6, 31, 5, category = c("Secreted GT CAZy", "Not secreted GT CAZy"),
+                   lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2), cat.pos = c(0, 0), 
+                   cat.dist = rep(0.025, 2))
+print(bp)
+dev.off()
+# CBM CAZy families
+secCBMfams <- c("CBM63", "CBM25", "CBM1", "CBM21")
+length(secCBMfams) # 4
+notSecCBMfams <- c("CBM63", "CBM38", "CBM32", "CBM47", "CBM13", "CBM50", "CBM1", "CBM9", "CBM20", "CBM43", "CBM51")
+length(notSecCBMfams) # ll
+intersect(secCBMfams, notSecCBMfams) # "CBM63" "CBM1" 2
+setdiff(secCBMfams, notSecCBMfams) # "CBM25" "CBM21" 2
+setdiff(notSecCBMfams, secCBMfams) # "CBM38" "CBM32" "CBM47" "CBM13" "CBM50" "CBM9"  "CBM20" "CBM43" "CBM51" 9
+png(file = paste(dataPath, "/cazyFams_png/CBM_CAZyFamsPyuu.png", sep = ""), 
+      width  = 7, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+grid.newpage()
+bp <- draw.pairwise.venn(4, 11, 2, category = c("Secreted CBM CAZy", "Not secreted CBM CAZy"),
+                   lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2), cat.pos = c(0, 0), 
+                   cat.dist = rep(0.025, 2))
+print(bp)
+dev.off()
+# CE CAZy families
+secCEfams <- c("CE5", "CE10", "CE1", "CE13") # 4
+notSecCEfams <- c("CE3", "CE1", "CE10", "CE11", "CE14", "CE4", "CE12", "CE9", "CE2", "CE7") # 10
+intersect(secCEfams, notSecCEfams) # "CE10" "CE1" 2
+setdiff(secCEfams, notSecCEfams) # "CE5"  "CE13" 2
+setdiff(notSecCEfams, secCEfams) # "CE3"  "CE11" "CE14" "CE4"  "CE12" "CE9"  "CE2"  "CE7" 8
+png(file = paste(dataPath, "/cazyFams_png/CE_CAZyFamsPyuu.png", sep = ""), 
+      width  = 7, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+grid.newpage()
+bp <- draw.pairwise.venn(4, 10, 2, category = c("Secreted CE CAZy", "Not secreted CE CAZy"),
+                   lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2), cat.pos = c(0, 0), 
+                   cat.dist = rep(0.025, 2))
+print(bp)
+dev.off()
+# PL CAZy families
+secPLfams <- c("PL3", "PL1","PL4") # 3
+notSecPLfams <- c("PL3") # 1
+png(file = paste(dataPath, "/cazyFams_png/PL_CAZyFamsPyuu.png", sep = ""), 
+      width  = 7, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+grid.newpage()
+bp <- draw.pairwise.venn(3, 1, 1, category = c("Secreted PL CAZy", "Not secreted PL CAZy"),
+                   lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2), cat.pos = c(0, 0), 
+                   cat.dist = rep(0.025, 2))
+print(bp)
+dev.off()
+# AA CAZy families
+secAAfams <- c("AA9", "AA8", "AA2") # 3
+notSecAAfams <- c("AA6", "AA4", "AA8", "AA2", "AA7", "AA3") # 6
+intersect(secAAfams, notSecAAfams) # "AA8" "AA2" 2
+setdiff(secAAfams, notSecAAfams) # "AA9" 1
+setdiff(notSecAAfams, secAAfams) # "AA6" "AA4" "AA7" "AA3" 4
+png(file = paste(dataPath, "/cazyFams_png/AA_CAZyFamsPyuu.png", sep = ""), 
+      width  = 7, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+grid.newpage()
+bp <- draw.pairwise.venn(3, 6, 2, category = c("Secreted AA CAZy", "Not secreted AA CAZy"),
+                   lty = rep("blank", 2), fill = c("light blue", "pink"), alpha = rep(0.5, 2), cat.pos = c(0, 0), 
+                   cat.dist = rep(0.025, 2))
+print(bp)
+dev.off()
+
+library(png)
+AApng <- readPNG(paste(dataPath, "/cazyFams_png/AA_CAZyFamsPyuu.png", sep = ""))
+g1 <- rasterGrob(AApng, interpolate = T)
+
+aLLpng <- readPNG(paste(dataPath, "/cazyFams_png/allCAZyFamsPyuu.png", sep = ""))
+g2 <- rasterGrob(aLLpng, interpolate = T)
+
+cbmPNG <- readPNG(paste(dataPath, "/cazyFams_png/CBM_CAZyFamsPyuu.png", sep = ""))
+g3 <- rasterGrob(cbmPNG, interpolate = T)
+
+cePNG <- readPNG(paste(dataPath, "/cazyFams_png/CE_CAZyFamsPyuu.png", sep = ""))
+g4 <- rasterGrob(cePNG, interpolate = T)
+
+ghPNG <- readPNG(paste(dataPath, "/cazyFams_png/GH_CAZyFamsPyuu.png", sep = ""))
+g5 <- rasterGrob(ghPNG, interpolate = T)
+
+gtPNG <- readPNG(paste(dataPath, "/cazyFams_png/GT_CAZyFamsPyuu.png", sep = ""))
+g6 <- rasterGrob(gtPNG, interpolate = T)
+
+plPNG <- readPNG(paste(dataPath, "/cazyFams_png/PL_CAZyFamsPyuu.png", sep = ""))
+g7 <- rasterGrob(plPNG, interpolate = T)
+
+library(gridExtra)
+png(file = paste(dataPath, "/cazyFams_png/sevenCAZySetPlots.png", sep = ""), 
+      width  = 7, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+bp <- grid.arrange(g7, g1, g3, g4, g5, g6, g2, nrow = 3)
+# dev.copy(bp, "sevenCAZySetPlots.png")
+print(bp)
+dev.off()
+
+#########
+```
+
+Making a larger image with multiple PNG plots for results:
+```{r}
+
+
+
+
+
+
+
+````
 
 
 Creates a data subset for plotting and exports this subset.  
 This can help us when we want to diagnosticate outliers.
 ```{r}
-temp <- merge(listLoci, rpkmPlotsFullImport, by = "SequenceID", all.x = TRUE)
+temp <- merge(listLoci3, rpkmPlotsFullImport, by = "SequenceID", all.x = TRUE)
 temp$Experiment <- sub("OosporeConversion", "Oospore Conversion", temp$Experiment)
 
 # To order rows
