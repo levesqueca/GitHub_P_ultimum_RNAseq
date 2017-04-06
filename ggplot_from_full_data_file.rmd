@@ -48,7 +48,7 @@ dir.create(paste(sharedPath, mainFolder , sep = ""),
 
 Create a folder for the plot outputs:
 ```{r}
-analysisDir <- "from_Emily_19_March_2017"
+analysisDir <- "from_Emily_24_March_2017"
 dir.create(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""), 
            showWarnings = TRUE, recursive = FALSE)
 analysisPath <- paste(sharedPath, mainFolder , "/", analysisDir, sep = "")
@@ -73,24 +73,47 @@ Use next chunk instead
 # #listLoci$geneInfo <- paste(listLoci$SequenceID, listLoci$CAZyFamily, sep = " -\n ")
 ```
 
-Read CAZy of entire recent run of dbcan pipeline (from March 2016 version)
+Read CAZy of entire recent run of dbcan pipeline (from Emily's lists)
 ```{r}
 
+listName <- "CAZy_of_interest_list"
+
 library(data.table)
-# test[[i]] <- fread(dbCANList[i], sep = "auto", header = FALSE)
-cazyPyuuAll <- fread(paste(sharedPath, 
-                        "CAZy_prediction_test/output/Pythium_ultimum_var_ultimum/Pythium_ultimum_var_ultimum.CAZy.out.dm", 
-                        sep = ""),
+
+# Read full dataset
+cazyPyuuAll <- fread(file = "data/dbCAN_Subset_AllRefs_columnSubset.csv",
+#                        "CAZy_prediction_test/output/Pythium_ultimum_var_ultimum/Pythium_ultimum_var_ultimum.CAZy.out.dm", 
+#                       sep = ""),
                   sep = "auto", header = TRUE, fill=TRUE)
-cazyPyuuAll <- cazyPyuuAll[-c(1, 2), ]
 
-# rename some columns:
-colnames(cazyPyuuAll)[1] <- "cazyFam"
+cazyPyuuAll <- cazyPyuuAll[which(cazyPyuuAll$species=="Pythium_ultimum_var_ultimum"),c("cazyFam", "sequence")]
 
-# Now make a new table that has only the cazyFam and sequence columns
-cazyFamGene <- subset(cazyPyuuAll, select=c("cazyFam", "sequence"))
-cazyFamGene$cazyFam <- sub(".hmm", "", cazyFamGene$cazyFam)
+# Remove one strange code for GT2 (duplicated gene)
+cazyPyuuAll <-cazyPyuuAll[!cazyPyuuAll$cazyFam == "GT2_Cellulose_synt",]
 
+
+# Read Secreted dataset
+cazyPyuuSecreted <- fread(file = "data/dbCAN_SecretedPyuu_Final_subsetColumns.csv",
+                  sep = "auto", header = TRUE, fill=TRUE)
+
+cazyPyuuSecreted <- cazyPyuuSecreted[ ,c("cazyFam", "sequence")]
+cazyPyuuSecreted$Secreted <- "secreted"
+
+
+
+
+# Now make a new table that has only the cazyFam and sequence columns plus info about Secreted
+length(unique(paste(cazyPyuuSecreted$cazyFam,cazyPyuuSecreted$sequence, sep="_")))
+length(unique(paste(cazyPyuuAll$cazyFam,cazyPyuuAll$sequence, sep="_")))
+
+
+cazyFamGene <- merge(cazyPyuuAll, cazyPyuuSecreted, by = c("cazyFam", "sequence"), all.x = TRUE)
+
+cazyFamGene$Secreted[is.na(cazyFamGene$Secreted)] <- "not secreted"
+
+cazyFamGene <- cazyFamGene[!duplicated(cazyFamGene), ]
+
+colnames(cazyFamGene)[2] <- "T_code"
 
 # For some reason I can't get openxlsx package:
 
@@ -116,18 +139,34 @@ colnames(T_G_conversion_table)[colnames(T_G_conversion_table)=="G_code"] <- "Loc
 
 LEV_2010_df <- merge(T_G_conversion_table, LEV_2010_annotations, by = "Locus", all.x = TRUE)
 
-colnames(cazyFamGene)[2] <- "T_code"
 
 CAZy_of_interest <- merge(cazyFamGene, LEV_2010_df[,2:3], by = "T_code", all.x = TRUE)
 
+# one protein was duopklicated because of different annotations, remove it
+CAZy_of_interest <- CAZy_of_interest[!duplicated(paste(CAZy_of_interest$cazyFam,CAZy_of_interest$T_code)),]
 
-CAZy_of_interest$geneInfo <- paste(CAZy_of_interest$T_code, CAZy_of_interest$Functional.Annotation, sep = " - ")
-CAZy_of_interest$geneInfoTab <- paste(CAZy_of_interest$T_code, CAZy_of_interest$Functional.Annotation, sep = " -\n ")
+
+CAZy_of_interest$geneInfo <-    paste(CAZy_of_interest$T_code, " - ", CAZy_of_interest$Secreted, " - ", CAZy_of_interest$Functional.Annotation, sep = "")
+CAZy_of_interest$geneInfoTab <- paste(CAZy_of_interest$T_code, " - ", CAZy_of_interest$Secreted, " \n ", CAZy_of_interest$Functional.Annotation, sep = "") 
+
+# To add another line break after several spaces
+for(i in 1:8){
+  CAZy_of_interest$geneInfoTab <- sub(" ", "$", CAZy_of_interest$geneInfoTab, ignore.case = FALSE)
+}
+# add a space after last character denoted by $
+CAZy_of_interest$geneInfoTab <- sub("$", " ", CAZy_of_interest$geneInfoTab, ignore.case = FALSE)
+CAZy_of_interest$geneInfoTab <- sub(" ", "\n", CAZy_of_interest$geneInfoTab, ignore.case = FALSE)
+CAZy_of_interest$geneInfoTab <- gsub("\\$", " ", CAZy_of_interest$geneInfoTab, ignore.case = FALSE)
+
+print(CAZy_of_interest$geneInfoTab[1])
+
+listLoci <- data.frame(CAZy_of_interest$T_code,CAZy_of_interest$cazyFam,CAZy_of_interest$Secreted,CAZy_of_interest$geneInfo,
+                       CAZy_of_interest$geneInfoTab) 
 
 colnames(listLoci)
-listLoci <- data.frame(CAZy_of_interest$T_code,CAZy_of_interest$cazyFam,CAZy_of_interest$geneInfo,
-                       CAZy_of_interest$geneInfoTab) 
-colnames(listLoci) <- c("SequenceID", "CAZyFamily", "geneInfo", "geneInfoTab")
+colnames(listLoci) <- c("SequenceID", "CAZyFamily",  "Secreted", "geneInfo", "geneInfoTab")
+print(listLoci$geneInfoTab[1])
+
 
 write.table(listLoci, paste(analysisPath, "/", listName, ".csv", sep = ""),
             append = FALSE, sep = ",", col.names = NA)
@@ -135,6 +174,7 @@ write.table(listLoci, paste(analysisPath, "/", listName, ".csv", sep = ""),
 # I'll need to read in the table - since I can't get openxlsx to work:
 listLoci <- fread(paste(analysisPath, "/CAZy_of_interest_list.csv", sep = ""),
                   sep = "auto", header = TRUE)
+<<<<<<< HEAD
 ```
 
 
@@ -166,6 +206,11 @@ length(notSecCAZyList) # 80
 
 allCAZy <- unique(union(secCAZyList, notSecCAZyList))  
 length(allCAZy) # 98
+=======
+# to chack if \n is there
+print(listLoci$geneInfoTab[1])
+
+>>>>>>> 3426ccabae713f73b652ed4c135f664a0d5edbff
 
 commonCAZy <- intersect(secCAZyList, notSecCAZyList)
 length(commonCAZy) #23
@@ -445,9 +490,14 @@ bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp) +
   facet_grid(geneInfoTab~Experiment,
              scales = "free", space = "free_x") +
   theme(strip.text.x = element_text(size   = 6, 
-                                    face   = 'bold.italic', 
+                                    face   = 'bold', 
                                     colour = "black", 
-                                    angle  = 0))
+                                    angle  = 0))  +
+  theme(strip.text.y = element_text(size   = 5, 
+                                    colour = "black",
+                                    hjust = 0,
+                                    angle  =-90))
+
 print(bp)
 dev.off()
 
@@ -458,14 +508,15 @@ to the specified folder for "analysisPath"
 ```{r}
 library("ggplot2")
 
-dir.create(paste(analysisPath, "/Individual_plots", sep = ""), 
-           showWarnings = TRUE, recursive = FALSE)
-i<- 1
+create_dir <- paste(analysisPath, "/Individual_plots", sep = "")
+if (dir.exists(create_dir)) {} else {
+  dir.create(create_dir, showWarnings = TRUE, recursive = FALSE)  }
+
+i <- 3
 for(i in 1:length(listLoci$geneInfoTab)){
   temp2 <- subset(temp, temp$SequenceID == listLoci$SequenceID[i])
   temp2$Experiment <- sub("Mycelium", "Mycel.", temp2$Experiment )
-  png(file   = paste(analysisPath, "/Individual_plots/", 
-                     listLoci$SequenceID[i], ".png", sep = ""), 
+  png(file   = paste(create_dir, "/", listLoci$SequenceID[i], ".png", sep = ""), 
       width  = 7, 
       height = 3, 
       units  = "in", 
@@ -511,12 +562,12 @@ for(i in 1:length(listLoci$geneInfoTab)){
 #   facet_grid(SequenceID~Experiment,
   facet_grid(geneInfoTab~Experiment,
              scales = "free", space= "free_x") +
-  theme(strip.text.x = element_text(size   = 9, 
+  theme(strip.text.x = element_text(size   = 8, 
                                     face   = 'bold', 
                                     colour = "black", 
                                     angle  = 0)) +
-  theme(strip.text.y = element_text(size   = 7, 
-                                    face   = 'bold', 
+  theme(strip.text.y = element_text(size   = 6, 
+                                #    face   = 'bold', 
                                     colour = "black", 
                                     angle  = -90))
 print(bp)
@@ -530,19 +581,17 @@ Bar plots per CAZy family group:
 ```{r}
 library("ggplot2")
 cazyFam <- unique(listLoci$CAZyFamily)
-dirPlotName <- "ggplotsByCAZyFam"
 
-dir.create(paste(analysisPath, "/", dirPlotName, sep = ""), 
-           showWarnings = TRUE, recursive = FALSE)
-
-ggplotsByCazyFamPath <- paste(analysisPath, "/", dirPlotName, "/", sep = "")
+ggplotsByCazyFamPath <- paste(analysisPath, "/ggplotsByCAZyFam", sep = "")
+if (dir.exists(ggplotsByCazyFamPath)) {} else {
+  dir.create(ggplotsByCazyFamPath, showWarnings = TRUE, recursive = FALSE)  }
 
 i <- 1
 for(i in 1:length(cazyFam)){
   temp3 <- subset(temp, temp$CAZyFamily == cazyFam[i])
   temp3$Experiment <- sub("Mycelium", "Mycel.", temp3$Experiment )
 
-pdf(file   = paste(ggplotsByCazyFamPath, cazyFam[i], ".pdf", sep = ""),
+pdf(file   = paste(ggplotsByCazyFamPath, "/", cazyFam[i], ".pdf", sep = ""),
     width  = 8, 
     height = 7*ceiling(nrow(temp3)/90))
 
@@ -586,12 +635,12 @@ theme_bw() +
 #   facet_grid(SequenceID~Experiment,
   facet_grid(geneInfoTab~Experiment,
              scales = "free", space= "free_x") +
-  theme(strip.text.x = element_text(size   = 9, 
+  theme(strip.text.x = element_text(size   = 8, 
                                     face   = 'bold', 
                                     colour = "black", 
                                     angle  = 0)) +
-  theme(strip.text.y = element_text(size   = 7, 
-                                    face   = 'bold', 
+  theme(strip.text.y = element_text(size   = 6, 
+                          #          face   = 'bold', 
                                     colour = "black", 
                                     angle  = -90))
 print(bp)
