@@ -639,17 +639,125 @@ dev.off()
 #########
 ```
 
+
+
+CE13- T009144
+CE13 - T006952
+GH13/CBM25 - T001346
+CBM63 - T010810
+GH3 - T008966
+GH3 - T012530
+GH7 - T011896
+GH15/CBM21 - T005445
+GH16 - T001777
+GH17 - T014660
+GH30 - T006030
+GH72 - T009223
+GH72 - T009228
+GH131 - T001945
+GH131 - T001949
+SLH - T003553
+
 Making a larger image with multiple PNG plots for results:
 ```{r}
+library(data.table)
+pngList <- fread(file = paste(dataPath, "/cazyFams_png/cazyPNGlist.csv", sep = ""),
+                 sep = "auto", header = TRUE, fill=TRUE, stringsAsFactors = F)
+
+install.packages("imager")
+library(imager)
+install.packages("TeachingDemos")
+library(TeachingDemos)
+# I want images in sets of 4. There are 16 total in the list. 
+# So for cropping:
+# images 1, 5, 9, 13 are to be bottom-cropped
+# images 2, 3, 6, 7, 10, 11, 14, 15 are top- and bottom-cropped
+# images 4, 8, 12, 16 are to be top-cropped
+# I'm doing them in sets of 4, and combining them
+# There is an off-set between the oospore conversion and oosporogenesis dividing lines in image 3
+# or those where the y-axis label is in the 100s, and not 10s because it requires more axis-label space
+
+# pngList1 <- pngList[1:4]
+# pngList1 <- pngList[5:8]
+# pngList1 <- pngList[9:12]
+pngList1 <- pngList[13:16]
+
+# png1 <- load.image(pngList1$PathPNG[1])
+# plot(png1)
+# width(png1) # 2100
+# height(png1) # 900
+# depth(png1) # 1
+
+png1 <- load.image(pngList1$PathPNG[1])
+png1b <- imsub(png1, y <770)
+png1c <- implot(png1b, TeachingDemos::shadowtext(1, 130, paste(pngList1$imgNum[1], ": ", pngList1$CazyFamily[1], sep = ""),
+                                                 cex = 3.5, font = 4.5, col="darkblue", bg="blue", pos=4))
+#plot(png1c)
+
+png2 <- load.image(pngList1$PathPNG[2])
+png2b <- imsub(png2, y < 770, y > 89)
+png2c <- implot(png2b, TeachingDemos::shadowtext(1, 50, paste(pngList1$imgNum[2], ": ", pngList1$CazyFamily[2], sep = ""),
+                                                 cex = 3.5, font = 4.5, col="darkblue", bg="blue", pos=4))
+# plot(png2c)
+
+png3 <- load.image(pngList1$PathPNG[3])
+png3b <- imsub(png3, y < 770, y > 89)
+png3c <- implot(png3b, TeachingDemos::shadowtext(1, 50, paste(pngList1$imgNum[3], ": ", pngList1$CazyFamily[3], sep = ""),
+                                                 cex = 3.5, font = 4.5, col="darkblue", bg="blue", pos=4))
+#plot(png3c)
+
+png4 <- load.image(pngList1$PathPNG[4])
+png4b <- imsub(png4, y > 89)
+png4c <- implot(png4b, TeachingDemos::shadowtext(1, 50, paste(pngList1$imgNum[4], ": ", pngList1$CazyFamily[4], sep = ""),
+                                                 cex = 3.5, font = 4.5, col="darkblue", bg="blue", pos=4))
+#plot(png4c)
+
+png5 <- list(png1c, png2c, png3c, png4c) %>% imappend("y")
+plot(png5)
+imager::save.image(png5, paste(figPath, "/plots_continuousX/combinedPNG-4b.png", sep = ""))
+
+# Below are ways to get the info of the png, including the height and width, and 
+# what different sections look like to decide on cropping
+imsplit(png1, "c")
+imsplit(png1,"c") %>% laply(mean) # [1] 0.9436821 0.9444731 0.9458000
+imsplit(png1,"x") %>% laply(mean) %>% head # [1] 1 1 1 1 1 1
+imsplit(png1,"y",11) %>% plot
+```
+
+
+```{r}
+
+library(grid)
+library(png)
+
+i <- 1 
+
+plots <- lapply(ll <- pngList$PathPNG,function(x){
+  img <- as.raster(readPNG(x))
+  rasterGrob(img, interpolate = TRUE)
+})
+
+library(ggplot2)
+library(gridExtra)
+
+# ggsave(paste(dataPath, "/cazyFams_png/Plots_Combined.png", sep = ""),
+#        width=8.5, height=11, 
+#        do.call(marrangeGrob, c(plots, list(nrow=2, ncol=1,top=NULL))))
+
+
+library(gridExtra)
+png(file = paste(dataPath, "/cazyFams_png/Plots_Combined.png", sep = ""), 
+      width  = 7, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+bp <- grid.arrange(g7, g1, g3, g4, g5, g6, g2, nrow = 3)
+
+print(bp)
+dev.off()
 
 
 
 
-
-
-
-````
-
-
-
-
+```

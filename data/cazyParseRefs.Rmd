@@ -91,7 +91,7 @@ Species                                 | DAOM/Accn.      | Spp.Abbr. | Database
 *Thalassiosira pseudonana*              | ASM14940v2      | Thaps     | Ensembl                       | *www.protists.ensembl.org*
 
 
-We searched the proteomes of the our species for the CAZy domains CBM21, GH15, GH16, GH17, GH3, GH7 and GH72
+We searched the proteomes of the our species for the CAZy domains CBM21, GH15, GH16, GH17, GH3, GH7, GH72, GH131, and SLH
 using the dbCAN tool.
 We searched for these families specifically because we noticed differential expression of members of these
 families in our *Pythium ultimum* var. *ultimum* oospore conversion time-course.
