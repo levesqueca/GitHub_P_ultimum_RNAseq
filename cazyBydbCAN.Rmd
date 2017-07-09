@@ -181,7 +181,7 @@ library(data.table)
 # If the following doesn't work and I can't make the test table, refer to line 
 # 68 of SecretomePipeline_onBigCAZy_mostRecent_dbCan_all_refs.Rmd
 cazyCaptureList <- c("CBM21.hmm", "GH3.hmm", "GH7.hmm", "GH15.hmm",
-                     "GH16.hmm", "GH17.hmm", "GH72.hmm")
+                     "GH16.hmm", "GH17.hmm", "GH72.hmm", "GH131.hmm", "SLH.hmm")
 dbCANList <- refMetadata$ParsedmtblPath
 for(i in 1:length(dbCANList)){
   test[[i]] <- fread(dbCANList[i], sep = "auto", header = FALSE)
@@ -215,7 +215,7 @@ data <- ddply(countCAZySpecies, .(family.hmm),
    transform, pos = cumsum(freq) - (0.5 * freq)
 )
 
-png(file = paste(figPath, "/ggplotOfAllSppCAZyFamUp.png", sep = ""))
+png(file = paste(figPath, "/ggplotOfAllSppCAZyFamUp2.png", sep = ""))
 plotTest <- ggplot(data = data, aes(x = family.hmm, y = freq)) +
             geom_bar(aes(fill = Species), stat = "identity") +
             geom_text(aes(label = freq, y = pos), size = 2)
@@ -306,24 +306,313 @@ rmarkdownTable(head(countCAZyFam))
 ```
 
 
-GH15: All the proteins classified as GH15 in dbCAN that are from NCBI-nr:
+Need to add a column to the dbCAN data table with the names I want in the phylogeny
+trees for each species.
 ```{r}
 library(data.table)
-ncbiGH15List <- fread(paste(projPath, "GH15_canDB_list_NCBI-nr.txt", sep = ""),
-                      sep = "auto", header="auto")
-parsedID <- setDT(ncbiGH15List)[, paste0("ID", 1:5) := tstrsplit(ID, "|", type.convert = TRUE, fixed = TRUE)]
+library("dplyr")
+# Going to start with the big table, and then pull out rows by CAZy family for the ones I need
 
-giSet <- data.frame(parsedID$ID4)
-colnames(giSet) <- "Accession"
-length(giSet$Accession)
-giSet$Accession <- sub("\\.[1-9]$", "", giSet$Accession)
-write.table(giSet$Accession, file = file.path(paste(projPath, "GH15_AccessionList.txt", sep = "")),
-            append = FALSE,
-            quote  = FALSE,
-            row.names = FALSE,
-            col.names = FALSE)
+dbCAN_tempFile <- fread(paste(dataPath, "/dbCAN_Subset_AllRefs.csv", sep = ""),
+                        sep="auto", header = TRUE)
+
+# Need to add a column for species abbreviations:
+dbCAN_tempFile$SppAbbr <- dbCAN_tempFile$Species
+
+sppAbbr <- c("Ath", "Ddi", "Ehux", "Ha", "Phatr", "Phin", "Phni", "Phpa", "Phra", "Phso", "pyap", "pyar", 
+             "pyir", "pyiw", "pyus", "pyuu", "pyve", "Sce", "Thaps")
+sppAbbrRef <- c("Arabidopsis_thaliana"="Ath", "Dictyostelium_discoideum"="Ddi", "Emiliania_huxleyi"="Ehux",
+                "Hyaloperonospora_arabidopsis"="Ha", "Phaeodactylum_tricornutum"="Phatr", "Phytophthora_infestans"="Phin",
+                "Phytophthora_nicotianae"="Phni", "Phytophthora_parasitica"="Phpa", "Phytophthora_ramorum"="Phra",
+                "Phytophthora_sojae"="Phso", "Pythium_aphanidermatum"="pyap", "Pythium_arrhenomanes"="pyar",
+                "Pythium_irregulare"="pyir", "Pythium_iwayamai"="pyiw", "Pythium_ultimum_var_sporangiiferum"="pyus",
+                "Pythium_ultimum_var_ultimum"="pyuu", "Pythium_vexans"="pyve", "Saccharomyces_cerevisiae_S288C"="Sce",
+                "Thalassiosira_pseudonana"="Thaps")
+
+dtAbbr <- as.data.table(sppAbbrRef)
+dtAbbr$Species <- unique(dbCAN_tempFile$Species)
+
+names(dtAbbr)[1] <- "newValue"
+names(dtAbbr)[2] <- "SppAbbr" 
+
+# Add species abbreviations to a new column, using the species name to insert the abbreviation:
+setkey(dbCAN_tempFile, SppAbbr)
+setkey(dtAbbr, SppAbbr)
+dbCAN_tempFile[dtAbbr, SppAbbr := newValue] # Finally this works!!!
+newNamesdt <- subset(dbCAN_tempFile, select=c("family.hmm", "query.id", "SppAbbr"))
+dbCAN_tempFile$Name2 <- dbCAN_tempFile$query.id
 
 
+# The problems sequence names belong to the pythium set (except for pyuu). But they are all a little different.
+# So I'm remaing them one species at a time cautiously:
+setkeyv(newNamesdt, "SppAbbr")
+pyapSubset <- newNamesdt[.("pyap")]
+pyapSubset$name2 <- gsub("[^0-9]", "", pyapSubset$name2) # removes all non-numeric characters!
+pyapSubset$name2 <- paste(pyapSubset$SppAbbr, pyapSubset$name2, sep = "_")
 
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(pyapSubset, query.id)
+dbCAN_tempFile[pyapSubset, Name2 := name2] # Finally this works!!!
+#########
+setkeyv(newNamesdt, "SppAbbr")
+pyarSubset <- newNamesdt[.("pyar")]
+pyarSubset$name2 <- gsub("[^0-9]", "", pyarSubset$name2) # removes all non-numeric characters!
+pyarSubset$name2 <- paste(pyarSubset$SppAbbr, pyarSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(pyarSubset, query.id)
+dbCAN_tempFile[pyarSubset, Name2 := name2] # Finally this works!!!
+#########
+setkeyv(newNamesdt, "SppAbbr")
+pyirSubset <- newNamesdt[.("pyir")]
+pyirSubset$name2 <- gsub("[^0-9]", "", pyirSubset$name2) # removes all non-numeric characters!
+pyirSubset$name2 <- paste(pyirSubset$SppAbbr, pyirSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(pyirSubset, query.id)
+dbCAN_tempFile[pyirSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+pyiwSubset <- newNamesdt[.("pyiw")]
+pyiwSubset$name2 <- gsub("[^0-9]", "", pyiwSubset$name2) # removes all non-numeric characters!
+pyiwSubset$name2 <- paste(pyiwSubset$SppAbbr, pyiwSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(pyiwSubset, query.id)
+dbCAN_tempFile[pyiwSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+pyusSubset <- newNamesdt[.("pyus")]
+pyusSubset$name2 <- gsub("[^0-9]", "", pyusSubset$name2) # removes all non-numeric characters!
+pyusSubset$name2 <- paste(pyusSubset$SppAbbr, pyusSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(pyusSubset, query.id)
+dbCAN_tempFile[pyusSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+pyveSubset <- newNamesdt[.("pyve")]
+pyveSubset$name2 <- gsub("[^0-9]", "", pyveSubset$name2) # removes all non-numeric characters!
+pyveSubset$name2 <- paste(pyveSubset$SppAbbr, pyveSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(pyveSubset, query.id)
+dbCAN_tempFile[pyveSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+pyuuSubset <- newNamesdt[.("pyuu")]
+pyuuSubset$name2 <- sub("PYU1_", "", pyuuSubset$name2)
+pyuuSubset$name2 <- paste(pyuuSubset$SppAbbr, pyuuSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(pyuuSubset, query.id)
+dbCAN_tempFile[pyuuSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+athSubset <- newNamesdt[.("Ath")]
+athSubset$name2 <- paste(athSubset$SppAbbr, athSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(athSubset, query.id)
+dbCAN_tempFile[athSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+ddiSubset <- newNamesdt[.("Ddi")]
+ddiSubset$name2 <- paste(ddiSubset$SppAbbr, ddiSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(ddiSubset, query.id)
+dbCAN_tempFile[ddiSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+ehuxSubset <- newNamesdt[.("Ehux")]
+ehuxSubset$name2 <- paste(ehuxSubset$SppAbbr, ehuxSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(ehuxSubset, query.id)
+dbCAN_tempFile[ehuxSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+haSubset <- newNamesdt[.("Ha")]
+haSubset$name2 <- paste(haSubset$SppAbbr, haSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(haSubset, query.id)
+dbCAN_tempFile[haSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+phatrSubset <- newNamesdt[.("Phatr")]
+phatrSubset$name2 <- sub("Phatr3_", "", phatrSubset$name2)
+phatrSubset$name2 <- sub(".p1$", "", phatrSubset$name2)
+phatrSubset$name2 <- paste(phatrSubset$SppAbbr, phatrSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(phatrSubset, query.id)
+dbCAN_tempFile[phatrSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+phinSubset <- newNamesdt[.("Phin")]
+phinSubset$name2 <- sub("PITG_", "", phinSubset$name2)
+phinSubset$name2 <- paste(phinSubset$SppAbbr, phinSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(phinSubset, query.id)
+dbCAN_tempFile[phinSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+phniSubset <- newNamesdt[.("Phni")]
+phniSubset$name2 <- paste(phniSubset$SppAbbr, phniSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(phniSubset, query.id)
+dbCAN_tempFile[phniSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+phpaSubset <- newNamesdt[.("Phpa")]
+phpaSubset$name2 <- paste(phpaSubset$SppAbbr, phpaSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(phpaSubset, query.id)
+dbCAN_tempFile[phpaSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+phraSubset <- newNamesdt[.("Phra")]
+phraSubset$name2 <- sub("^Phyra", "", phraSubset$name2)
+phraSubset$name2 <- paste(phraSubset$SppAbbr, phraSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(phraSubset, query.id)
+dbCAN_tempFile[phraSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+phsoSubset <- newNamesdt[.("Phso")]
+phsoSubset$name2 <- paste(phsoSubset$SppAbbr, phsoSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(phsoSubset, query.id)
+dbCAN_tempFile[phsoSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+sceSubset <- newNamesdt[.("Sce")]
+sceSubset$name2 <- paste(sceSubset$SppAbbr, sceSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(sceSubset, query.id)
+dbCAN_tempFile[sceSubset, Name2 := name2] # Finally this works!!!
+#########
+
+setkeyv(newNamesdt, "SppAbbr")
+thapsSubset <- newNamesdt[.("Thaps")]
+thapsSubset$name2 <- paste(thapsSubset$SppAbbr, thapsSubset$name2, sep = "_")
+
+# Add new names to dbCAN_tempFile
+setkey(dbCAN_tempFile, Name2)
+setkey(thapsSubset, query.id)
+dbCAN_tempFile[thapsSubset, Name2 := name2] # Finally this works!!!
+#########
+
+View(dbCAN_tempFile)
+dbCAN_tempFile[, c("V1"):=NULL]
+
+# Names of sequences passing Secretome pipeline - oomycetes only.
+secAllRefsdt <- as.data.table(erPassNames)
+secAllRefsdt$sec <- "secreted"
+
+setnames(secAllRefsdt, "erPassNames", "query.id")
+
+dbCAN_tempFile$finalName <- dbCAN_tempFile$Name2
+
+setkey(secAllRefsdt, query.id)
+setkey(dbCAN_tempFile, query.id)
+secAllRefsdt[dbCAN_tempFile, sec := finalName]
+
+secAllRefsdt$newName <- paste(secAllRefsdt$sec, "secreted", sep = "_" )
+
+# Add the final names of secreted seqs to the dbCAN_tempFile dt
+setkey(dbCAN_tempFile, finalName)
+setkey(secAllRefsdt, sec)
+dbCAN_tempFile[secAllRefsdt, finalName := newName]
+
+write.table(dbCAN_tempFile, 
+           file = file.path(paste(dataPath, "/dbCAN_AllRefs_finalNames.csv", sep = "")),
+           append    = FALSE, 
+           sep       = ",",
+           quote     = FALSE,
+           row.names = TRUE,
+           col.names = NA)
+
+# Would be nice to loop or vectorize the repeated key and find steps below and the writing of the tables...
+cazyCaptureSet <- c("CBM21", "GH3", "GH7", "GH15",
+                     "GH16", "GH17", "GH72", "GH131", "SLH")
+
+
+setkey(dbCAN_tempFile, family.hmm)
+cbm21 <- dbCAN_tempFile[.("CBM21"), c("Species", "query.id", "finalName"), with = FALSE]
+gh3 <- dbCAN_tempFile[.("GH3"), c("Species", "query.id", "finalName"), with = FALSE]
+gh7 <- dbCAN_tempFile[.("GH7"), c("Species", "query.id", "finalName"), with = FALSE]
+gh15 <- dbCAN_tempFile[.("GH15"), c("Species", "query.id", "finalName"), with = FALSE]
+gh16 <- dbCAN_tempFile[.("GH16"), c("Species", "query.id", "finalName"), with = FALSE]
+gh17 <- dbCAN_tempFile[.("GH17"), c("Species", "query.id", "finalName"), with = FALSE]
+gh72 <- dbCAN_tempFile[.("GH72"), c("Species", "query.id", "finalName"), with = FALSE]
+gh131 <- dbCAN_tempFile[.("GH131"), c("Species", "query.id", "finalName"), with = FALSE]
+slh <- dbCAN_tempFile[.("SLH"), c("Species", "query.id", "finalName"), with = FALSE]
+
+dtSetCazyTbls <- list(cbm21, gh3, gh7, gh15, gh16, gh17, gh72, gh131, slh)
+
+library("dplyr")
+# Note duplicates get removed in the family tables. 
+i <= 1
+for(i in 1:length(dtSetCazyTbls)){
+  tempTbl <- as.data.table(dtSetCazyTbls[i])
+  tempTbl <- distinct(tempTbl)
+  tempTbl$OldSeqName <- paste(tempTbl$Species, tempTbl$query.id, sep = "_")
+  tempTbl2 <- tempTbl[, c("OldSeqName", "finalName")]
+  tempTbl2$OldSeqName <- gsub("-", "_", tempTbl2$OldSeqName)
+  print(length(tempTbl2))
+  write.table(tempTbl2,
+              file = file.path(paste(dataPath, "/", cazyCaptureSet[i], "_dbCAN_dt.tab", sep = "")),
+              append = FALSE,
+              sep = "\t",
+              quote = FALSE,
+              row.names = FALSE,
+              col.names = FALSE)
+}
+is.character(tempTbl$OldSeqName)
+
+
+```
 
 

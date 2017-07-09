@@ -228,12 +228,12 @@ write.table(Metadata_2exp_reduced,
             row.names = TRUE, 
             col.names = NA, 
             quote = FALSE)
-<<<<<<< HEAD
+#<<<<<<< HEAD
 
 remove(tempCountsTopHat)
 
-=======
->>>>>>> b272e7c0e0c1cf0ccd5efa8628919339a1d1fff8
+#=======
+#>>>>>>> b272e7c0e0c1cf0ccd5efa8628919339a1d1fff8
 ```
 
 The trick was from here
@@ -361,7 +361,7 @@ LEV_2010_rpkm <- read.xlsx(paste(sharedPath,
                            sheet = "S9", 
                            startRow = 2)
 
-<<<<<<< HEAD
+#<<<<<<< HEAD
 LEV_2010_rpkm[LEV_2010_rpkm=="NA"]  <- NA
 colnames(LEV_2010_rpkm)[5]  <- "YEB_Pilch"
 
@@ -395,14 +395,14 @@ T_G_conversion_table$G_code[duplicated(T_G_conversion_table$G_code)]
 T_G_conversion_table$T_codes[duplicated(T_G_conversion_table$T_code)]
 
 colnames(T_G_conversion_table)[colnames(T_G_conversion_table)=="G_code"] <- "Locus"
-=======
+#=======
 T_G_conversion_table <- read.csv(paste(sharedPath, 
                                        "References/T_G_name_conversion_from_gff_file.csv", 
                                        sep = ""), 
                                  stringsAsFactors = FALSE)
 
 colnames(T_G_conversion_table)[colnames(T_G_conversion_table) == "G_code"] <- "Locus"
->>>>>>> b272e7c0e0c1cf0ccd5efa8628919339a1d1fff8
+#>>>>>>> b272e7c0e0c1cf0ccd5efa8628919339a1d1fff8
 
 LEV_2010_rpkm_df <- merge(T_G_conversion_table, LEV_2010_rpkm_unique, by = "Locus", all.x = TRUE)
 
@@ -440,7 +440,163 @@ Metadata_3exp <- rbind(
 
 ```
 
+This is to see about contaminating sequence profile using Kraken, with Krona
+for visualization. 
+Oospore conversion time-course samples, especially the earliest 
+time-points (T0, T12, T24) were primarily contaminating reads that did not map to 
+the reference genome we have. From a blast search of the top 53 hits of unmapped 
+reads for the T24 sample we saw that the taxa identified were 83% Paenibacillus. 
+I want to see a profile for this in detail for my samples.
+```{r}
+pathKraken <- "/home/AAFC-AAC/girouxem/Downloads/kraken"
+krakenDB <- "/home/AAFC-AAC/girouxem/krakenDB_first"
 
+dir.create(paste(sharedPathAn, "krakenContaminationTesting", sep = ""), showWarnings=TRUE, recursive=FALSE)
+pathKrakenTests <- paste(sharedPathAn, "krakenContaminationTesting/", sep = "")
+
+prefix <- "kraken_testingQsubs"
+cmd <- with(metadataAdapRem,
+            paste(pathKraken,
+                  " --preload ",
+                  " --db ", krakenDB,
+                  " --fastq-input",
+                  #" --threads 12 ",
+                  " --output ", paste(pathKrakenTests, "krakenTesting_", 
+                                      metadataAdapRem$LibraryName, ".output", sep = ""),
+                  " --paired ", paste(pathFastq, metadataAdapRem$processed5.R1.Fastq, sep = ""),
+                  " ", paste(pathFastq, metadataAdapRem$processed5.R2.Fastq, sep = ""),
+                  sep = ""))
+
+# Note, if there are a lot of qsubs to run, some may terminate due to lack of
+# available memory to run on the cluster. You can see which ones didn't run 
+# by cd into the directory with the qsubs, and on the command line do:
+# $  find . -type f -exec grep -H 'Cannot allocate memory' {} \;
+# You can then run these separately after the others are complete.
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+Clean-up step:
+Remove the output files while keeping the qsub and bash file:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+
+To add the kraken output files to the metadata table:
+```{r}
+for(k in 1:nrow(metadataAdapRem)){
+  metadataAdapRem$KrakenOutput <- paste("krakenTesting_", metadataAdapRem$LibraryName, ".output", sep = "") 
+}
+```
+
+
+For users who want the full taxonomic name associated with each input sequence, 
+use kraken-translate to produce two different output formats for classified sequences. 
+The script operates on the output of kraken, like so:
+kraken-translate --db $DBNAME sequences.kraken > sequences.labels
+```{r}
+prefix <- "krakenTranslateQsubs"
+pathKrakenTranslate <- "/home/AAFC-AAC/girouxem/Downloads/kraken-translate"
+
+cmd <- with(metadataAdapRem,
+            paste(pathKrakenTranslate,
+                  " --db ", krakenDB,
+                  " ", paste(pathKrakenTests, metadataAdapRem$KrakenOutput, sep = ""),
+                  " > ", paste(pathKrakenTests, "krakenTesting_", metadataAdapRem$LibraryName,
+                               ".labels", sep = ""),
+                  sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+Clean-up step:
+Remove the output files while keeping the qsub and bash file:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+To add the kraken output files to the metadata table:
+```{r}
+for(k in 1:nrow(metadataAdapRem)){
+  metadataAdapRem$KrakenOutputLabels <- paste("krakenTesting_", metadataAdapRem$LibraryName, ".labels", sep = "") 
+}
+```
+
+After blasting our sequences against our Kraken database, we tabulate the results
+using the following:
+```{r}
+prefix <- "krakenReportQsubs"
+pathKrakenResults <- "/home/AAFC-AAC/girouxem/Downloads/kraken-report"
+
+cmd <- with(metadataAdapRem,
+            paste(pathKrakenResults,
+                  " --db ", krakenDB,
+                  " ", paste(pathKrakenTests, metadataAdapRem$KrakenOutput, sep = ""),
+                  " > ", paste(pathKrakenTests, "krakenTesting_", metadataAdapRem$LibraryName,
+                               ".report", sep = ""),
+                  sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+Clean-up step:
+Remove the output files while keeping the qsub and bash file:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+To visualize the kraken data, we can use krona:
+```{r}
+prefix <- "KrakenToKronaInFormatQsub-outputIn"
+pathKronaImportTax <- "/home/AAFC-AAC/girouxem/Downloads/bin/ktImportTaxonomy"
+
+cmd <- with(metadataAdapRem,
+            paste("cut -f2,3 ", 
+                  paste(pathKrakenTests, metadataAdapRem$KrakenOutput, sep = ""),
+                  " > ", 
+                  paste(pathKrakenTests, "krona_outputIn_", metadataAdapRem$LibraryName, ".in", sep = ""),
+                  sep = ""))
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+Clean-up step:
+Remove the output files while keeping the qsub and bash file:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+To add the kraken output files to the metadata table:
+```{r}
+for(k in 1:nrow(metadataAdapRem)){
+  metadataAdapRem$KronaIn <- paste("krona_outputIn_", metadataAdapRem$LibraryName, ".in", sep = "") 
+}
+
+```
+
+Passing in to krona:
+```{r}
+prefix <- "kronaQsubs_OutputIn"
+pathKronaImportTax <- "/home/AAFC-AAC/girouxem/Downloads/bin/ktImportTaxonomy"
+
+cmd <- with(metadataAdapRem,
+            paste(pathKronaImportTax, " ", 
+                  paste(pathKrakenTests, metadataAdapRem$KronaIn, sep = ""),
+                  " -o ", 
+                  paste(pathKrakenTests, "krona_outputIn_", metadataAdapRem$LibraryName, ".out.html", sep = ""),
+                  sep = ""))
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+* Not done yet
+Clean-up step:
+Remove the output files while keeping the qsub and bash file:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
 
 ```{r}
 
@@ -465,7 +621,7 @@ logRpkmCount$min  <- apply(logRpkmCount, 1, min)
 logRpkmCount$max  <- apply(logRpkmCount, 1, max)
 logRpkmCount$SD   <- apply(logRpkmCount, 1, sd)
 
-<<<<<<< HEAD
+#<<<<<<< HEAD
 potentialHK <- subset(logRpkmCount, min > 0 & SD < 0.25)
 potentialHK <- potentialHK[order(-potentialHK$mean),]  
 
@@ -537,13 +693,11 @@ suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
 ```
 
 
-
-
 Andre did the next chunk, it's not working for me due to library("spider") error. 
 This is to get the names of the genes and select/sort  the results by BLAST statistics
 ```{r}
 install.packages("spider")
-library("spider"
+library("spider")
 
 subsetHKinterestPath <- paste(sharedPath, 
                               "Blast_HK/HK_InterestSubsetNt2.tab", 
@@ -612,17 +766,8 @@ write.table(rpkmForBarPlots_full,
 
 
 
-
-
-
 Ignore for now
-
-
 ```{r}
-
-
-
-
 
 cazyRpkmSub  <- cazyRpkm[which(cazyRpkm$SequenceID 
                               %in% unique(cazyDataSub[,c("SequenceID")])), ]
@@ -685,12 +830,8 @@ cazyRpkmSub4$Timepoint_Condition <-
 ```
 
 
-
-
 =======
 df <- merge(T_G_conversion_table, LEV_2010_rpkm, by = "Locus", all.x = TRUE)
-```
-
 >>>>>>> b272e7c0e0c1cf0ccd5efa8628919339a1d1fff8
 Setting up for Differential Analysis: Generating CAZy families, all Secreted and CAZy secreted, 
 as well as House-Keeping subsets
