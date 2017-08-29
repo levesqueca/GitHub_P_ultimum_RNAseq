@@ -1,31 +1,34 @@
-Generating plots of gene expression by time course and treatment
-================================================================
+Generating pairwise plots of maximum gene expression between oosporogenesis and oospore conversion
+======================================================================
 
-Review paths to confirm they are still correct:
+Path to the shared folder:
 ```{r}
 sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
 ```
 
-Over here Emily to read the big file
+Read file with all the data.  This file was made after normalizing oosporogenesis and oospore conversion together with EdgeR
 ```{r}
 rpkmPlotsFullImport <- read.table(paste(sharedPath, 
                                         "rpkmForBarPlots_full.csv", 
                                         sep = ""), 
                                   sep = ",", 
                                   header = TRUE, 
-                                  as.is = FALSE, 
+                                  as.is = TRUE, 
                                   stringsAsFactors = FALSE)
 
+#This is to create a lingle variable that creates a single variable that separates the 7 oosporegenesis treatments
 rpkmPlotsFullImport$xLab <- paste(rpkmPlotsFullImport$Condition,
                                   rpkmPlotsFullImport$TimePoint, 
                                   sep = "_")
 unique(rpkmPlotsFullImport$xLab)
 
+# To clean up the other experiments
 rpkmPlotsFullImport$xLab <- sub("OoCTimeCourse_", "", rpkmPlotsFullImport$xLab)
 rpkmPlotsFullImport$xLab <- sub("Various_0", "Various", rpkmPlotsFullImport$xLab)
 unique(rpkmPlotsFullImport$xLab)
 unique(rpkmPlotsFullImport$Experiment)
 
+# Creates orderes factors (very important for plotting)
 labOrdered <- c("Various", "Control_0", "Control_3", "Cholesterol_3", 
                 "Control_7", "Cholesterol_7", "Control_24", "Cholesterol_24", 
                 "0", "12", "24", "48", "72", "120", "240") 
@@ -35,10 +38,11 @@ levels(rpkmPlotsFullImport$xLab)
 expOrdered <- c("Mycelium", "Oosporogenesis", "OosporeConversion") 
 rpkmPlotsFullImport$Experiment <- factor(rpkmPlotsFullImport$Experiment, 
                                          levels = c(expOrdered))
+levels(rpkmPlotsFullImport$Experiment)
 rm(expOrdered)
 rm(labOrdered)
 
-# note, there is a bug in the way RNA replicate was carried forward, this is why Exp_Unit is being used to rebuild it here.
+# note, there is a bug in the way RNA replicate was carried forward (probably because levels were used instead of actual numbers), this is why Exp_Unit is being used to rebuild it here.
 rpkmPlotsFullImport$RNA_Rep <- sub("^T","", rpkmPlotsFullImport$ExpUnit)
 rpkmPlotsFullImport$RNA_Rep <- sub("^[0-9]+-","", rpkmPlotsFullImport$RNA_Rep)
 rpkmPlotsFullImport$RNA_Rep <- sub("^c|^x","", rpkmPlotsFullImport$RNA_Rep)
@@ -55,20 +59,53 @@ Add a column in the large data file about being CAZy (secreted or not) on non CA
 
 mainFolder <- "GGPLOTS_FROM_FULL_DATA_continuous_X/from_Emily_24_March_2017"
 
-library(data.table)
-listLoci <- fread(paste(sharedPath, mainFolder, "/CAZy_of_interest_list.csv", sep = ""),
-                  sep = "auto", header = TRUE)
 
-listLoci_duplicated <- listLoci[which(duplicated(listLoci[,c(2,4)])),]
-listLoci_notduplicated <- listLoci[which(!duplicated(listLoci[,c(2,4)])),]
+listLoci <- read.table(paste(sharedPath, mainFolder, "/CAZy_of_interest_list.csv", sep = ""), 
+                                  sep = ",",header = TRUE, as.is = TRUE,  stringsAsFactors = FALSE)
 
-which(duplicated(listLoci[,c(2,4)]))
+# Note that I am not using the fread command from data.table.  This one creates a real problem later as column indexing no longer works with data,
+# table that has the feature of usinf<g column names instead.  A real problem if you want to use columns in a loop.
+# library(data.table)
+# listLoci <- fread(paste(sharedPath, mainFolder, "/CAZy_of_interest_list.csv", sep = ""),
+#                   sep = "auto", header = TRUE)
+```
 
-rpkmPlotsFullImport <- merge(listLoci_notduplicated[,2:4], rpkmPlotsFullImport[,2:10], by = "SequenceID", all.y = TRUE)
 
+Show duplicated secreted genes
+```{r}
+Secreted_duplicated <-  listLoci[which(listLoci$Secreted=="secreted"),]
+Secreted_duplicated[duplicated(Secreted_duplicated$SequenceID),]
+```
+
+
+
+
+
+Aggregate together CAZy families for genes with more than one family, and remove duplicated
+```{r}
+dat_agg <- aggregate(listLoci[,c(2,3)], by=list(listLoci$SequenceID),FUN=c)
+for(i in 1:length(dat_agg$CAZyFamily)){
+  dat_agg$CAZyFamily2[i] <-paste(unlist(dat_agg$CAZyFamily[i]), collapse="-")
+}
+
+dat_agg$SequenceID <- NULL
+colnames(dat_agg)[1] <- "SequenceID"
+dat_agg$CAZyFamily <- NULL
+colnames(dat_agg)[2] <- "CAZyFamily"
+
+#remove duplicated loci
+listLoci <- listLoci[!duplicated(listLoci$SequenceID),]
+listLoci$CAZyFamily <- NULL
+#replace names with concatenated names
+listLoci <- merge(listLoci, dat_agg, by= "SequenceID")
+```
+
+
+Integrate gene loci CAZy and secreted data into main data table and write non-CAZy for NA
+```{r}
+rpkmPlotsFullImport <- merge(listLoci[,c(1,3,6)], rpkmPlotsFullImport[,2:10], by = "SequenceID", all.y = TRUE)
 rpkmPlotsFullImport$Secreted[is.na(rpkmPlotsFullImport$Secreted)] <- "non-CAZy"
-
-
+rpkmPlotsFullImport$CAZyFamily[is.na(rpkmPlotsFullImport$CAZyFamily)] <- "non-CAZy"
 ```
 
 
@@ -82,103 +119,136 @@ if (dir.exists(paste(sharedPath, mainFolder , sep = ""))) {} else {
 
 Create a folder for the plot outputs:
 ```{r}
-analysisDir <- "18_June_2017"
+analysisDir <- "29_Aug_2017_annotated_script"
 if (dir.exists(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""))) {} else {
   dir.create(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""), showWarnings = TRUE, recursive = FALSE)  }
 
 analysisPath <- paste(sharedPath, mainFolder , "/", analysisDir, sep = "")
 ```
 
-
-
-
-
+Creating log10 + 1 read
 ```{r}
 library(doBy)
-
 rpkmPlotsFullImport$log_Read_Counts <- log10(rpkmPlotsFullImport$Read_Counts + 1)
+head(rpkmPlotsFullImport)
+```
 
+Create a Table with mean by experimental unit and remove time 0 (except for mycelium=Various).
+```{r}
 mean_per_exp <- summaryBy(log_Read_Counts ~ SequenceID + CAZyFamily + Secreted + Experiment + Condition + TimePoint, data=rpkmPlotsFullImport, FUN = c(mean) )
 
 mean_per_exp_no_time0  <- mean_per_exp[which(mean_per_exp$TimePoint != 0 | mean_per_exp$Condition =="Various"),]
 
+mean_per_exp_no_time0[1:20,]
+```
+
+
+Find the maximum for each experiment, keeping cholesterol and control separate.
+```{r}
 max_per_exp <- summaryBy(log_Read_Counts.mean ~ SequenceID + CAZyFamily + Secreted + Experiment + Condition, data=mean_per_exp_no_time0, FUN = c(max) )
+head(max_per_exp)
+```
 
-
+Reorganize this table to have different columns for experiment, so one line per gene
+```{r}
 library(reshape2)
 counts_for_pairwise_no_T0 <- dcast(data = max_per_exp, SequenceID + CAZyFamily + Secreted  ~ Condition, value.var = "log_Read_Counts.mean.max")
+head(counts_for_pairwise_no_T0)
 
+```
+
+
+Subset only secreted CAZy.  Carried all data up to here in case one wanted to do more plots with other genes.
+```{r}
+subset_count <-  counts_for_pairwise_no_T0[which(counts_for_pairwise_no_T0$Secreted=="secreted"),]
 
 ```
 
 
 
+
 ```{r}
-
-subset_count <-  counts_for_pairwise_no_T0[which(counts_for_pairwise_no_T0$Secreted!="non-CAZy"),]
-
-pdf(file = "correlation_plot_matrix_by_larger_groups.pdf", width = 11, height =8 )
-
-Condition.vars <- c("Cholesterol", "Control", "OoCTimeCourse", "Various")
+library(ggplot2)
+#Condition.vars <- c("Cholesterol", "Control", "OoCTimeCourse", "Various")
 
 
-i <- 3
-j <- 4
+p0 <-   ggplot(aes(y= OoCTimeCourse, x= Cholesterol, colour=CAZyFamily), data = subset_count) +
+   ylab("Oospore Conversion for time with maximum count (log RPKM +1)") +
+     xlab("Oosporogenesis for cholesterol treatment with maximum count (log RPKM +1)") +
+    geom_point() +
+  geom_abline(intercept = 0, slope = 1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(colour = 'black', size = 9, angle = 0, hjust = 0.5, vjust = 1.0, face= "plain")) +
+  theme(axis.title.y = element_text(colour = 'black', size = 12, angle = 90, hjust = 0.5, vjust = 1.0, face= "plain")) +
+    theme(axis.title.x = element_text(colour = 'black', size = 12, angle = 0, hjust = 0.5, vjust = 1.0, face= "plain")) 
+ print(p0)
+```
 
-#p0 <-ggplot(aes(y= noquote(Condition.vars[i]), x= noquote(Condition.vars[j]), colour=Secreted), data = subset_count) +
-p0 <-   ggplot(aes(y= OoCTimeCourse, x= Various, colour=Secreted), data = subset_count) +
- # ggtitle(paste ("Mycetial growth parameters after",  picked_time, "hr")) +
-  #  ylab(paste("radius (mm) after", picked_time, "hr")) +
-  # ylab("log count + 1") +
-  #   xlab("log count + 1") +
-  
-  #   scale_x_continuous(breaks = c(0,1,2,3,10)) +
-  #   scale_y_continuous(limits = c(0,0.8)) +
-  #   geom_line(position=position_dodge(0.1)) +
-  # geom_hline(yintercept = 0) +
-  #geom_point(position=position_dodge(0.5)) +
+
+Vector plot
+```{r}
+  svg(file   = paste(sharedPath, "/", mainFolder, "/", analysisDir, "/",  "Secreted_CZAy_correlations.svg", sep=""), 
+      width  = 10, 
+      height = 8, 
+      bg     = "white")
+print(p0)
+dev.off()
+```
+
+tiff plot
+```{r}
+  png(file   = paste(sharedPath, "/", mainFolder, "/", analysisDir, "/",  "Secreted_CZAy_correlations.png", sep=""), 
+      width  = 10, 
+      height = 8, 
+      units  = "in", 
+      res    = 600, 
+      bg     = "white")
+print(p0)
+dev.off()
+```
+pdf plot
+```{r}
+pdf(file = paste(sharedPath, "/", mainFolder, "/", analysisDir, "/",  "Secreted_CZAy_correlations.pdf", sep="") , width = 10, height = 8)
+print(p0)
+dev.off()
+```
+
+Correlation plot by family
+```{r}
+p1 <-   ggplot(aes(y= OoCTimeCourse, x= Various, colour=Secreted), data = subset_count) +
     geom_point() +
   geom_abline(intercept = 0, slope = 1) +
     facet_wrap(~CAZyFamily, ncol=4, scales = "free") +
-  # facet_wrap(~coeff, ncol=1) +
-  #To add a dash line for the added Linoleic Acid treatment
-  #   geom_segment(aes(x = mat_for_plot$Day[4], y = mat_for_plot$mean[4], xend = mat_for_plot$Day[6], yend = mat_for_plot$mean[6]),
-  #                position=position_dodge(0.1), colour= colours_trt[2], linetype="dashed", size= 1.0) +
-  #  guides(col = guide_legend(reverse = TRUE)) +
   theme_bw() +
-  theme(axis.text.x = element_text(colour = 'black', size = 9, angle = 45, hjust = 1, vjust = 1.0, face= "italic")) +
+  theme(axis.text.x = element_text(colour = 'black', size = 9, angle = 0, hjust = 1, vjust = 1.0, face= "italic")) +
   theme(strip.text.x = element_text(size = 8)) 
-#  theme(legend.position="none") 
-#  coord_flip()
-#   theme(panel.grid.minor.x = element_blank()) +
-#   theme(legend.position=c(0.15,0.85)) +
-#   theme(legend.key = element_rect(colour = "white"),legend.background = element_rect(colour = "black")) 
-print(p0)
+print(p1)
+```
 
-pdf(file = paste(sharedPath, "/", mainFolder, "/", analysisDir, "/", 
-Condition.vars[i], "_", x=Condition.vars[j], "_facet_correlations.pdf", sep="") , width = 8, height = 40)
-print(p0)
+
+```{r}
+pdf(file = paste(sharedPath, "/", mainFolder, "/", analysisDir, "/", "facet_correlations.pdf", sep="") , width = 8, height = 40)
+print(p1)
 dev.off()
 
 write.table(subset_count,  paste(sharedPath, "/", mainFolder, "/", analysisDir, "/", "Table_for_correlations.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
         col.names = NA, row.names = TRUE)
-
-
-
-
 ```
 
 
+With the four different variables
 ```{r}
 library("GGally")
-
 g1 <- ggpairs(data=subset_count, columns= 4:7, mapping=ggplot2::aes(colour = Secreted), lower=list(combo=wrap("facethist",binwidth=1,  alpha = 0.3)))
+print(g1)
+```
 
+Print to pdf
+```{r}
 pdf(file = paste(sharedPath, "/", mainFolder, "/", analysisDir, "/", "Matrix_plot_correlations.pdf", sep="") , width = 8, height = 8)
 print(g1)
 dev.off()
 
-
 ```
 
 
@@ -190,136 +260,5 @@ dev.off()
 
 
 
-
-
-
-
-
-
-
-**Not being used yet
-
-* Make a subset for "Mycelium"[1]   "Oosporogenesis"[2]    OR  "OosporeConversion"[3]
-```{r}
-
-# select which experiment to analyze
-Exp <- levels(rpkmPlotsFullImport$Experiment)[3]
-Exp
-#CAZy <- levels(as.factor(rpkmPlotsFullImport$Secreted))[2]
-
-#Get only certain columns and oosporogenesis experiment
-subset_count <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment==Exp & rpkmPlotsFullImport$Secreted!="non-CAZy"),]
-subset_count <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Secreted!="non-CAZy"),]
-
-
-levels(as.factor(subset_count$ExpUnit))
-
-subset_count$Time <- as.factor(subset_count$TimePoint)
-
-```
-
-
-
-
-Get a subset and run my own GLM analysis 
-```{r}
-library(reshape2)
-
-# to avoind reaching minus infinity in some cases
-subset_count$Read_Counts <- subset_count$Read_Counts + 0.0000000001
-
-my_counts_GLM <- dcast(data = subset_count, ExpUnit+ Time + RNA_Rep  ~ SequenceID, value.var = "Read_Counts")
-
-
-i <- 51
-colnames(my_counts_GLM)[i]
-
-model <- "Time"
-
-
-# standard GLM Poisson One Variable
-fit2_pvalues <- data.frame()
-for(j in 4:ncol(my_counts_GLM)) { 
-fit2 <- glm(my_counts_GLM[,j] ~ Time, family = poisson(link="log"), my_counts_GLM)
-
-anova2 <- anova(fit2, test = "Chisq")
-anova2.melted <- melt(as.matrix(anova2), id.vars = NULL)
-anova2.melted$my_colname <- paste(anova2.melted$Var1, anova2.melted$Var2, sep="_")
-
-# Defines the fitted model
-coeff2 <- coefficients(summary(fit2))
-coeff2.melted <- melt(as.matrix(coeff2), id.vars = NULL)
-coeff2.melted$my_colname <- paste(coeff2.melted$Var1, coeff2.melted$Var2, sep="_")
-
-temp <- cbind(colnames(my_counts_GLM)[j], t(anova2.melted$value), t(coeff2.melted$value))
-colnames(temp)  <- c("SequenceID", anova2.melted$my_colname, coeff2.melted$my_colname)
-
-fit2_pvalues <- rbind (fit2_pvalues, temp)
- }
-
-write.table(fit2_pvalues, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "_", model,
-        "_Poisson_glm_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
-        col.names = NA, row.names = TRUE)
-
-
-#  GLM Quasi Poisson One Variable
-fit3_pvalues <- data.frame()
-for(j in 4:ncol(my_counts_GLM)) { 
-fit3 <- glm(my_counts_GLM[,j] ~ Time, family = quasipoisson(link="log"), my_counts_GLM)
-
-anova3 <- anova(fit3, test = "Chisq")
-anova3.melted <- melt(as.matrix(anova3), id.vars = NULL)
-anova3.melted$my_colname <- paste(anova3.melted$Var1, anova3.melted$Var2, sep="_")
-
-# Defines the fitted model
-coeff3 <- coefficients(summary(fit3))
-coeff3.melted <- melt(as.matrix(coeff3), id.vars = NULL)
-coeff3.melted$my_colname <- paste(coeff3.melted$Var1, coeff3.melted$Var2, sep="_")
-
-temp <- cbind(colnames(my_counts_GLM)[j], t(anova3.melted$value), t(coeff3.melted$value))
-colnames(temp)  <- c("SequenceID", anova3.melted$my_colname, coeff3.melted$my_colname)
-
-fit3_pvalues <- rbind (fit3_pvalues, temp)
- }
-
-write.table(fit3_pvalues, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "_", model,
-        "_quasiPoisson_glm_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
-        col.names = NA, row.names = TRUE)
-
-j<- 32
-
-#  GLM Negative Binomial One Variable
-library(MASS)
-fit4_pvalues <- data.frame()
-for(j in 4:ncol(my_counts_GLM)) { 
-try(
-   fit4 <- glm.nb(my_counts_GLM[,j] ~ Time, link="log", my_counts_GLM)
-, silent=FALSE)
-anova4 <- anova(fit4, test = "Chisq")
-anova4.melted <- melt(as.matrix(anova4), id.vars = NULL)
-anova4.melted$my_colname <- paste(anova4.melted$Var1, anova4.melted$Var2, sep="_")
-
-# Defines the fitted model
-coeff4 <- coefficients(summary(fit4))
-coeff4.melted <- melt(as.matrix(coeff4), id.vars = NULL)
-coeff4.melted$my_colname <- paste(coeff4.melted$Var1, coeff4.melted$Var2, sep="_")
-
-temp <- cbind(colnames(my_counts_GLM)[j], t(anova4.melted$value), t(coeff4.melted$value))
-colnames(temp)  <- c("SequenceID", anova4.melted$my_colname, coeff4.melted$my_colname)
-
-fit4_pvalues <- rbind (fit4_pvalues, temp)
-}
-
-
-
-fit4_pvalues[duplicated(fit4_pvalues[,2:ncol(fit4_pvalues)]) , 2:ncol(fit4_pvalues) ] <- NA
-
-write.table(fit4_pvalues, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "_", model,
-        "_negativeBinomial_glm_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
-        col.names = NA, row.names = TRUE)
-
-
-
-```
 
 
