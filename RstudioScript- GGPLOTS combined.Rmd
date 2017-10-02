@@ -1,0 +1,2457 @@
+Installing the required packages for R:
+This is to be done in the R command line and not in R studio
+source("http://www.Bioconductor.org/biocLite.R")
+biocLite("BiocUpgrade")
+
+Getting started in R:
+Set the working directory > setwd("~/")
+Check version installed
+```{r}
+# library(knitr)
+# source("http://www.Bioconductor.org/biocLite.R")
+# biocLite("BiocUpgrade")
+Sys.setenv(SGE_ROOT="/opt/gridengine")
+Sys.setenv(SGE_CELL="default")
+Sys.setenv(SGE_ARCH="linux-x64")
+Sys.setenv(SGE_EXECD_PORT="537")
+Sys.setenv(SGE_QMASTER_PORT="536")
+```
+
+Many of the commands and approach are from:
+Simon Anders et al., 2013. Count-based differential expression analysis of 
+RNA sequencing data using R and Bioconductor. Nature protocols | VOL.8 NO.9 | 2013
+
+Chunk: Analysis and Sequence Data Directory Setting
+User:
+Define the the folder in the shared folder that will hold the analyses of the time-course/dataset 
+you will be working with. In our case, we have two different time-course experiments, Oosporogenesis 
+and Oospore Conversion. Below we set which one the script will run analyses for. We also get the 
+user to specify what the name of the directory that will hold the reads will be.
+```{r}
+# Define the path to the shared folder where the main working directory will be.
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+
+# What is the name of the overall experiment?
+analysis   <- "Oospore_Conversion_TimeCourse/"
+
+# Name of the directory you'll be keeping all the analyses for this pipeline:
+workDir    <- "HiSeq_Analyses2"
+
+#Name of the directory to keep the fastq files in:
+seqDataDir <- "HiSeq_data2"
+```
+
+Chunk: Library Adapter Sequence User Input
+
+User needs to specify the adapter sequences attached to the sequencing reads. This will depend on 
+how the libraries were prepared. We prepared our libraries using the Mondrian and SciClone with 
+library kits, instruments and kits by NuGen. NuGen kits are designed to work with Illumina 
+sequencing platforms and generate libraries with the sequence structure:
+
+5' AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT 
+   (N) 
+   AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC <- region to select as forward adapter
+   XXXXXX 
+   ATCTCGTATGCCGTCTTCTGCTTG 3'
+   
+3' TTACTATGCCGCTGGTGGCTCTAGATGTGAGAAAGGGATGTGCTGCGAGAAGGCTAGA 
+   (N) 
+   TCTAGCCTTCTCGTGTGCAGACTTGAGGTCAGTG <- region to select as reverse adapter
+   XXXXXX 
+   TAGAGCATACGGCAGAAGACGAAC 5'
+
+Where each string of ‘X’ is the unique 4-, 6, or 8-base barcode from the L2 adaptor mix of the 
+library construction system (where applicable) and (N) is the library insert.
+
+We will need to remove any adapter sequences from our reads. We will be doing this with SeqPrep. 
+SeqPrep specifies that the user must first ensure the adapter sequences they choose are correct by 
+doing a "grep" on the reads first:
+
+Before running SeqPrep make sure to check that the program's defaults are indeed the adapters you 
+are looking for. Try copying the default forward adapter from this file and grep it against your 
+reads doing a word count, also try the same with the reverse adapter with grep. You should see some 
+hits. You can also try using (and validating with grep) -A GATCGGAAGAGCACACG -B AGATCGGAAGAGCGTCGT  
+as parameters. To find a list of Illumina adapter sequences you should write to Illumina tech 
+support TechSupport@illumina.com (they do not like people to share the list of sequences outside of 
+their institution).
+
+Chose about 20bp of an adapter sequence where:
+1. You see the most hits with grep
+2. When you run a command like:
+   cat Lane2_0d_2.fastq | head -n 1000000 | grep "INSERT ADAPTER HERE" | head 
+   you see the adapter sequence show up at the beginning of a few reads. Also the -A and -B 
+   arguments should be as they show up in your data,    SeqPrep searches directly for these 
+   sequences without doing reverse complementing.
+3. Check the forward and reverse and make sure that you have roughly the same number of hits via a 
+   command to count hits like: 
+   cat Lane2_0d_2.fastq | head -n 1000000 | grep "INSERT ADAPTER HERE" | wc -l
+```{r}
+# Notice that the adapter sequences we chose when processing the HiSeq reads
+# is from the same region we are choosing for our MiSeq reads, only shorter:
+
+fwdAdapGQ    <- "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"  # Genome Quebec
+revAdapGQ    <- "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"  # Genome Quebec
+
+fwdAdapMiSeq <- "AGATCGGAAGAGCACAC"   # MiSeq
+revAdapMiSeq <- "AGATCGGAAGAGCGTCGT"  # MiSeq
+
+fwdAdap      <- fwdAdapMiSeq
+revAdap      <- revAdapMiSeq
+```
+
+User:
+Will user produce their own metadata table or use the script here tailored for HiSeq csv files given 
+by Genome Quebec? 
+TRUE:  Have this script generate the metadata file
+FALSE: Import your own metadata file
+```{r eval=TRUE, echo=FALSE}
+
+makeHiSeqMetadata <- FALSE
+```
+User:
+Paired end Illumina reads are to be merged after adapter removal with SeqPrep:
+TRUE:  merge reads
+FALSE: do not merge reads
+```{r eval=TRUE, echo=FALSE}
+mergePESeqPrep <- TRUE # This isn't working yet (makes use of chunk options)
+```
+
+User to specify the time-points, if any, for the RNA-Seq experiment:
+```{r}
+timePoints <- c("0", "12" , "24", "48", "72", "120", "240")
+```
+
+Chunk: Path Setting
+The following paths are to directories where the references, tools and general requirements are 
+located, this depends on the directories actually having been put there:
+```{r}
+toolsDirPath     <- paste(sharedPath, "tools/",      sep="")
+referencesPath   <- paste(sharedPath, "References/", sep="")
+cazyPath         <- paste(sharedPath, "CAZy/",       sep="")
+binPath          <- paste(sharedPath, "bin/bash/",   sep="")
+bowtie2BuildPath <- "/opt/bio/bowtie2/bowtie2-build"
+deconSeqPath     <- "/opt/bio/DeconSeq/deconseq.pl"
+htseqCountPath   <- "/opt/bio/HTSeq/bin/htseq-count"
+prinSeqPath      <- "/opt/bio/prinseq-lite/prinseq-lite"
+prinSeqGraphPath <- "/opt/bio/prinseq-lite/prinseq-graphs"
+samtools1Path    <- "/opt/bio/samtools1/bin/samtools1"
+seqPrepPath      <- "/opt/bio/SeqPrep/SeqPrep"
+starPath         <- "/opt/bio/STAR/STAR"
+tophat2Path      <- "/opt/bio/tophat/bin/tophat2"
+pyuuRefPath      <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.fa", sep = "")
+pyuugff3Path     <- paste(referencesPath, "Pyuu_ref_1ribo_mito_no_repeats.gff3", sep = "")
+pyuuTranscripts  <- paste(referencesPath, "pythium_ultimum_transcripts.fasta", sep = "")
+pyuuProteins     <- paste(referencesPath, "pythium_ultimum_proteins.fasta", sep = "")
+```
+
+PrinSeq Options Setting:
+```{r}
+nmax           <- "-ns_max_n 1"
+trimLeft       <- "-trim_left 15"
+trimRight      <- "-trim_right 10"
+trimTailLeft   <- "-trim_tail_left 5"
+trimTailRight  <- "-trim_tail_right 5"
+trimQualWindow <- "-trim_qual_window 3"
+trimQualType   <- "-trim_qual_type mean"
+trimQualRight  <- "-trim_qual_right 32" #consider 30 after running with Andre's modified gff.
+trimQualLeft   <- "-trim_qual_left 32"
+trimQualRule   <- "-trim_qual_rule lt"
+lcMethod       <- "-lc_method dust"
+lcThreshold    <- "-lc_threshold 7"
+#outGood        <- "processed_merged" Define by user
+outBad         <- " -out_bad null"
+minLen         <- "-min_len 60"
+```
+
+The user does not alter the variables below. The following chunk will integrate the user-defined 
+variables from the previous chunk into the script.
+```{r}
+# Create the working directory for the current analyses:
+dir.create(paste(sharedPath, analysis, workDir, sep = ""), showWarnings = TRUE, recursive = FALSE)
+# Set the path:
+sharedPathAn <- paste(sharedPath, analysis, workDir, "/", sep ="")
+# Establish the working directory for R:
+setwd(sharedPathAn)
+# Verify the working Directory:
+getwd()
+# Create fastq directory in sharedPath folder based on "seqDataDir":
+dir.create(paste(sharedPath, analysis, seqDataDir, sep = ""), showWarnings=TRUE, recursive=FALSE)
+pathFastq <- paste(sharedPath, analysis, seqDataDir, "/", sep = "")
+```
+
+STAR
+Set-up for STAR:
+```{r}
+# Makes the directory "GenomeDir" on the shared drive:
+dir.create(paste(sharedPath, "GenomeDir", sep = ""), showWarnings = TRUE, recursive = FALSE)
+
+genomeDirPath    <- paste(sharedPath, "GenomeDir/", sep = "")
+gff3StarOverhang <- 280 #needs to be max len -1, of R1 and R2 pair
+gtfStarTag       <- "Parent"
+
+cmd <- paste(starPath,
+              "--runMode",  "genomeGenerate",
+              "--genomeDir", genomeDirPath,
+              "--outFileNamePrefix", genomeDirPath,
+              "--genomeFastaFiles",  pyuuRefPath,
+              "--sjdbGTFtagExonParentTranscript", gtfStarTag,
+              "--sjdbGTFfile",  pyuugff3Path,
+              "--sjdbOverhang", gff3StarOverhang)
+#system(cmd)
+```
+
+Bowtie:
+Creating Bowtie reference index from the fasta file: 
+```{r}
+bowind <- "pyuuRef"
+
+cmd    <- paste(bowtie2BuildPath, " -f ", pyuuRefPath, " ", paste(referencesPath, bowind, sep = ""), 
+                sep = "")
+#system(cmd)
+```
+
+Generation of a metadata file for auditing the processing and analysis of reads throughout the 
+script. 
+
+The following will generate a metadata file for the information available from the Genome Quebec csv 
+file. If such  file is generated otherwise, ensure the formatting and layouts are compatible (i.e., 
+column headers and naming structures), and that the csv file is in the correct folder where the 
+analyses for the time-course is being done, and skip this step.
+
+**Pull out HiSeq data**
+User:
+Specify the path to the raw data for the sequencing reads:
+```{r}
+hiSeqPathcsv <- paste(sharedPath, "Hi.3651-EG", "/", sep = "")
+hiSeqPathraw <- paste(sharedPath, "Hi.3651-restricted_permissions", "/", sep = "")
+```
+
+**Pull out HiSeq data**
+```{r}
+# Genome Quebec csv (gQcsv) files are now in raw data folders
+gQcsv1 <- list.files(path = hiSeqPathcsv, pattern = glob2rx("HiSeq_Lane1_*.csv"), full.names=TRUE)
+gQcsv2 <- list.files(path = hiSeqPathcsv, pattern = glob2rx("HiSeq_Lane2_*.csv"), full.names=TRUE)
+
+# read that csv file
+gQmetadata1         <- read.csv(gQcsv1, stringsAsFactors = FALSE)
+gQmetadata2         <- read.csv(gQcsv2, stringsAsFactors = FALSE)
+
+gQmetadata          <- rbind(gQmetadata1, gQmetadata2)
+gQmetadata$rawPath  <- hiSeqPathraw
+
+# Create otri like we had done for our first MiSeq dataset:
+otri1                <- gQmetadata[,c("LibraryName",
+                                      "TimePoint",
+                                      "Condition",
+                                      "LibraryBC",
+                                      "RNA_Replicate",
+                                      "RNASeq_Replicate",
+                                      "TechnicalRep",
+                                      "Region",
+                                      "FilenamePrefix", 
+                                      "rawPath")]
+otri1$Read_Direction <- "R1"
+otri2                <- otri1
+otri2$Read_Direction <- "R2"
+metadata             <- rbind(otri1, otri2)
+
+metadata$FastqFilePath  <- paste(metadata$rawPath, metadata$FilenamePrefix, "_",
+                                metadata$Read_Direction, ".fastq.gz", sep = "")
+metadata$LibraryName    <- sub("Lib_", "", metadata$LibraryName, ignore.case = FALSE)
+metadata$LibraryName    <- paste(metadata$LibraryName, "_", metadata$TechnicalRep, sep = "")
+metadata$LibraryName    <- sub("H2O", "Tneg-H2O", metadata$LibraryName, ignore.case = FALSE)
+metadata$Platform       <- "Illumina"
+metadata$ScientificName <- "Pythium ultimum var ultimum"
+metadata$BaseCallsName  <- paste(metadata$FilenamePrefix, "_", 
+                                 metadata$Read_Direction, ".fastq", sep = "")
+
+write.table(metadata, file = "HiSeq_OosporeConversionTimeCourse_Metadata.csv", 
+            append = FALSE, quote = FALSE, sep = ",", row.names = FALSE)
+
+```
+
+User:
+Specify the name of the csv file you would like to use for generation of the metadata file if not 
+using the csv file generated by sequencing service or if you want to use the file generated in the 
+previous chunk: 
+```{r}
+metadataFileAlternate <- "HiSeq_OosporeConversionTimeCourse_Metadata.csv"
+metadata              <-  read.table(paste(sharedPathAn, metadataFileAlternate, sep = ""),
+                                    sep = ",", header = TRUE, comment.char = "", quote = "",
+                                    as.is = TRUE) 
+```
+
+Generating a function to make qsub jobs and a bash script to submit them:
+ "need to figure out a way to get the log files sent to the prefix folder"
+
+```{r}
+# This makes a function that generates qsub commands and a bash to submit them in parallel on 
+# processors on the biocluster using 3 inputs (will be used often throughout the script whenever a
+# Linux command needs to be done on several data files)
+
+MakeQsubs <- function(cmd, prefix, suffix = ".sub", node =1) {
+  dir.create(paste(sharedPathAn, prefix, sep = ""), 
+             showWarnings = TRUE, 
+             recursive = FALSE)
+  outPath <- paste(sharedPathAn, prefix, "/", sep="")
+  for(k in 1:length(cmd)) {
+    cat(paste("#!/bin/bash \n",
+              "#$ -S /bin/bash
+              # Ensure .e and .o and other output files go to working directory
+              #$ -cwd
+              # Request one slot in the smp environment
+              #$ -pe smp ", node, "\n",
+              "# Actual linux command for qsub \n",
+              cmd[k],
+              sep=""),
+        file=paste(outPath, prefix, k, suffix, sep="")
+        )
+  }
+  # make a bash script to run all qsub
+  cat(paste("#!/bin/bash
+            #$ -S /bin/bash
+            argc=$#
+            requiredArgc=0
+            if [ $argc -ne $requiredArgc ]; then
+            echo './test_mkdir.sh'
+            exit 1
+            fi
+            
+            prefixInFiles=", prefix, "\n",
+            "suffixInFiles=", suffix, "\n",
+            "for (( i = 1; i <= ", length(cmd), " ; i++ )); do 
+            # keep track of what is going on...
+            echo 'Treating file'  $prefixInFiles$i$suffixInFiles
+            # define a script name that will be submited to the queue
+            qsubFile=$prefixInFiles$i$suffixInFiles
+            # make the script executable
+            chmod a+x $qsubFile
+            # submit the script to the queue
+            qsub -cwd $qsubFile
+            done", sep=""), 
+      file=paste(outPath, prefix, ".sh", sep=""))
+  cat(c("\n"," *** SUBMIT FOLLOWING TWO COMMANDS FROM HEADNODE ***","\n",
+        "    1- Ensure working directory given for outputs:", "\n",
+        paste("cd", outPath), "\n",
+        "    2- Run the bash from within this working directory:", "\n",
+        paste("bash ", prefix, ".sh", sep="")))
+}
+# End of qsub and bash making function
+```
+
+```{r}
+bashDirections <- paste("
+'###############################################################################
+ ##### ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****######
+ #####          watch output from this command in the console             ######
+ ###############################################################################'")
+cat(bashDirections)
+```
+
+Function to remove output files after running qsubs:
+```{r}
+RemoveQsubTempFiles <- function(path, prefixSub) {
+  system(paste("find ", path, prefixSub, "/", prefixSub, "*", ".sub.", "*", " -delete ", sep = ""))
+}
+```
+
+Function to generate PrinSeq graph files (.gd).
+```{r}
+# Options:
+# a = Metadata table being referred to for read input
+# b = Column name in x with the names of the input fastq files
+# c = Prefix - name of directory where graph .gd files are to go
+# d = tag to add to the graph file name, gets added as LibraryName.tag.gd
+# e = Col name in x with the names of the second read pairs of the input fastq 
+#     files if paired end reads are not merged
+
+# Examples:
+# i.e., for when you have single reads, R1 and R2:
+# cmd <- MakePrinSeqGraphFiles(metadataRawPairs, metadataRawPairs$R1, prefix, "rawGraphs", 
+#                              metadataRawPairs$R2)
+
+# i.e, for when you have merged reads:
+# cmd <- MakePrinSeqGraphFiles(metadataAdapRM, metadataAdapRM$MergedReads, prefix, "adapRemMerged")
+
+MakePrinSeqGraphFiles <- function(a, b, c, d, e){
+  if(missing(e)){
+    cmd <- with(a,
+                paste(prinSeqPath,
+                      " -fastq ", paste(pathFastq, b, sep = ""),
+                      " -out_good null ",
+                      " -out_bad null ",
+                      " -verbose ",
+                      " -graph_data ", paste(sharedPathAn, c, "/", LibraryName, 
+                                             ".", d, ".gd", sep = ""),
+                      sep = ""))
+    } else {
+      cmd <- with(a,
+                paste(prinSeqPath,
+                      " -fastq ", paste(pathFastq, b, sep = ""),
+                      " -fastq2 ", paste(pathFastq, e, sep = ""),
+                      " -out_good null ",
+                      " -out_bad null ",
+                      " -verbose ",
+                      " -graph_data ", paste(sharedPathAn, c, "/", LibraryName, 
+                                             ".", d, ".gd", sep = ""),
+                      sep = ""))
+    }
+  return(cmd)
+}
+
+# Function is for compressed input when single reads are input only:
+MakePrinSeqGraphFiles2 <- function(a, b, c, d){
+  cmd = with(a,
+             paste("zcat ", pathFastq, b, ".gz", " | ",
+                   prinSeqPath,
+                   " -fastq stdin ", 
+                   " -out_good null ",
+                   " -out_bad null ",
+                   " -verbose ",
+                   " -graph_data ", paste(sharedPathAn, c, "/", LibraryName, ".", d, ".gd", sep=""),
+                   sep = ""))
+  return(cmd)
+}
+```
+
+Function for processing single-end, merged and paired-end reads using PrinSeq
+```{r}
+# # Processing fastq reads with PrinSeq:
+# # For single end or merged reads, use PrinSeqProcessSE. Input must be .gz compressed.
+# # For paired end reads, use PrinSeqProcessPE. Input must NOT be .gz compressed.
+
+# # Usage:
+# # PrinSeqProcessSE(metaRef=<metadata table name>, fastq1=<colname with fastq Name in metaRef>,
+# #                  outPutSuffix=<suffix for processed reads>, <options, comma-separated>)
+# # PrinSeqProcessPE(metaRef=<metadata table name>, fastq1=<colname with fastq Name in metaRef>,
+# #                 fastq2=<colname with R2 fastq reads Name in metaRef>,
+# #                 outPutSuffix=<suffix for processed reads>, <options, comma-separated>)
+
+# # Arguments:
+# # metaRef = metadata table to refer to for the fastq read names
+# # fastq1  = Column name in metaRef with the name of the fastq files If reads are merged, only use
+# #           this. Used in PrinSeqProcessSE and PrinSeqProcessPE.
+# # fastq2  = Column name in metaRef with the name of the Read 2 fastq files. Used with 
+# #           PrinSeqProcessPE for uncompressed fastq files.
+# # outPutSuffix = Suffix to be added to the processed reads that are output
+
+# # Optional Arguments:
+# # The user can add any of the options they recorded for processing that have been loaded into the
+# # global environment. These must be specified AFTER the required options have been provided.
+
+# # The following function will work only with single-end reads, or with merged reads that are .gz
+# # compressed. This is because PrinSeq can not handle more than 1 compressed input from stdin.
+PrinSeqProcessSE <- function(metaRef, fastq1, outPutSuffix, ...){
+  arguments <- list(...)
+  argumentList <- paste(arguments, collapse = " ")
+  cmd <- with(metaRef,
+              paste("zcat ", pathFastq, fastq1, ".gz", " | ", 
+                    prinSeqPath, 
+                    " -fastq stdin ",
+                    argumentList, 
+                    " -out_bad ", outBad,
+                    " -out_good stdout ",
+                    " -no_qual_header ",
+                    " -verbose ",
+                    " -log ", paste(sharedPathAn, prefix, "/", 
+                                    LibraryName, ".", outPutSuffix, ".log", sep = ""),
+                    " | gzip > ", paste(pathFastq, LibraryName, ".", 
+                                        outPutSuffix, ".fastq.gz", sep = ""),
+                    sep = ""))
+ return(cmd)
+}
+
+# # The following is for paired end reads where the input fastq files are NOT compressed - PrinSeq 
+# # cannot take two inputs from stdin and so piping two fastq.gz files is not possible.
+PrinSeqProcessPE <- function(metaRef, fastq1, fastq2, outPutSuffix, ...){
+  arguments <- list(...)
+  argumentList <- paste(arguments, collapse = " ")
+  cmd <- with(metaRef,
+              paste(prinSeqPath, 
+                    " -fastq ",    pathFastq, fastq1,
+                    " -fastq2 ",   pathFastq, fastq2,
+                    " ", argumentList, 
+                    " -out_bad ",  outBad,
+                    " -out_good ", paste(pathFastq, LibraryName, ".", outPutSuffix, sep = ""),
+                    " -no_qual_header ",
+                    " -verbose ",
+                    " -log ",      paste(sharedPathAn, prefix, "/", 
+                                    LibraryName, ".", outPutSuffix, ".log", sep = ""),
+                    sep = ""))
+  return(cmd)
+}
+```
+
+Function to create html files from the PrinSeq graph files - after the name of the .gd files have been recorded in a metadata table:
+```{r}
+# a = metadata table
+# b = prefix, name of directory where .html files are to go
+# c = name of column in a with the .gd filename
+
+MakePrinSeqHTML <- function(a, b, c) {
+  cmd <- with(a,
+              paste(prinSeqGraphPath,
+                    " -verbose ", 
+                    " -i ", sharedPathAn, b, "/", c,
+                    " -html_all ",
+                    sep = ""))
+  return(cmd)
+}
+# i.e.,
+#  cmd <- MakePrinSeqHTML(metadataRawPairs, prefix, metadataRawPairs$RawGraphFiles)
+```
+
+Copy and gunzip files:
+```{r}
+prefix <- "A_copy_unzip"
+cmd <- with(metadata, paste("cp ", 
+                FastqFilePath, " ", 
+                #sharedPathAn, seqDataDir, "/", basename(FastqFilePath),"\n",
+                pathFastq, basename(FastqFilePath), "\n",
+                " gunzip ", 
+                pathFastq, basename(metadata$FastqFilePath), sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+Clean-up step:
+Remove the output files while keeping the qsub and bash file:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Make a metadata table called metadataRawPairs that has the raw reads rows 
+collapsed by R1 and R2
+```{r}
+library("reshape2")
+metadataRawPairs <- dcast(data = metadata, LibraryName + Condition + TimePoint + RNASeq_Replicate 
+                          ~ Read_Direction, value.var = "BaseCallsName", FUN = c)
+
+metadataRawPairs$ShortName <- paste(metadataRawPairs$Condition, 
+                                    metadataRawPairs$TimePoint, 
+                                    metadataRawPairs$RNASeq_Replicate, sep = ".")
+```
+
+Run FastqPairedEndValidator for the first time on the raw read pairs:
+```{r}
+prefix <- "B_Validator"
+fastqPEValidatorPath <- paste(toolsDirPath, "FastqPairedEndValidator.pl", sep = "")
+
+cmd <-  with (metadataRawPairs, paste(fastqPEValidatorPath, 
+                                      " ", pathFastq, R1, " ", pathFastq, R2, sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+To show the output of each pair on the console in Rstudio:
+```{r}
+for (k in 1:nrow(metadataRawPairs)) {
+  cat(c(k, metadataRawPairs$R1[k], metadataRawPairs$R2[k]))
+  system(paste("cat ", sharedPathAn, prefix, "/", prefix, k, suffix, ".o*", sep = ""))
+  cat("\n")
+}
+```
+
+To remove the output files (only the .e* files) after you are done:
+```{r}
+system(paste("rm ", sharedPathAn, prefix, "/", prefix, "*", suffix, ".e*", sep = ""))
+```
+
+Looking at our raw data:
+Look at the raw fastq graphs prior to adapter removal and merging using PrinSeq graph reports of 
+raw, unmerged reads, Step 1: .gd file generation:
+```{r}
+prefix <- "C_PrinSeq_rawGraphs"
+cmd    <- MakePrinSeqGraphFiles(metadataRawPairs, metadataRawPairs$R1, prefix,
+                                "rawGraphs", metadataRawPairs$R2)
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Add the path to the raw graphs .gd files to the metadataRawPairs tabel:
+```{r}
+for(k in 1:nrow(metadataRawPairs)){
+  metadataRawPairs$RawGraphFiles <- paste(metadataRawPairs$LibraryName, ".rawGraphs.gd", sep = "") 
+}
+```
+
+PrinSeq graph reports of raw, unmerged reads. Step 2: html file generation:
+```{r}
+prefix2 <- "C2_PrinSeq_rawHtmlSub"
+cmd <- MakePrinSeqHTML(metadataRawPairs, prefix, metadataRawPairs$RawGraphFiles)
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix2, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix2)
+```
+
+SeqPrep:
+Adapter removal and optional merging:
+To test if the choice of adapters is good using the first fastq read 1 sequence. Ignore broken pipe
+error.  This happens becuase when the stdin of "cat" is small it may finish writing *before* the
+exit of the reader, in our case "grep".
+```{r}
+for (k in 1:nrow(metadataRawPairs)) {
+  cat(c(k, metadataRawPairs$R1[k]))
+  system(paste("cat ", pathFastq, metadataRawPairs$R1[k], 
+               " | head -n 1000000 | grep '", 
+               fwdAdap, "' | wc -l ", sep = ""))
+  cat("\n")
+}
+
+for (k in 1:nrow(metadataRawPairs)) {
+  cat(c(k, metadataRawPairs$R2[k]))
+  system(paste("cat ", pathFastq, metadataRawPairs$R2[k], 
+               " | head -n 1000000 | grep '", 
+               revAdap, "' | wc -l ", sep = ""))
+  cat("\n")
+}
+```
+
+Removal of adapters from fastq reads and unzip files. Do this prior to any other 
+processing to make them easier to detect.
+The option -s is for merging paired end Illumina reads that are overlapping
+into a single longer read.
+```{r}
+prefix <- "D_SeqPrep"
+cmd <- with(metadataRawPairs, 
+            paste(seqPrepPath, 
+                  " -f ", pathFastq, R1,
+                  " -r ", pathFastq, R2,
+                  " -1 ", pathFastq, LibraryName, ".adapRem.R1.fastq.gz",
+                  " -2 ", pathFastq, LibraryName, ".adapRem.R2.fastq.gz",
+                  " -A ", fwdAdap,
+                  " -B ", revAdap,
+#                   " -s ", pathFastq, paste(LibraryName,
+#                                            ".adapRemMerged.fastq.gz",
+#                                            sep = ""),
+                  " \n ",
+                  #"gunzip ", pathFastq, LibraryName,".adapRemMerged.fastq.gz",
+                  sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+To show the output of each pair on the console in Rstudio
+```{r}
+for(k in 1:nrow(metadataRawPairs)) {
+  cat(c(k, metadataRawPairs$R1[k], metadataRawPairs$R2[k]))
+  cat("\n")
+  system(paste("tail ", sharedPathAn, prefix, "/", prefix, k, suffix, ".e* | head -n 10" , sep=""))
+  cat("\n")
+}
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Record the name of the adapRem fastq files output from processing with SeqPrep:
+```{r}
+adapRemFastq <- list.files(path = pathFastq, pattern = "adapRem")
+```
+*** Note, for HiSeq I didn't remove the single reads because I am still assessing results of merging 
+the reads. Delete unnecessary fastq files - this should be adjusted so that it matches the basename 
+we originally brought in as it is the original fastq raw reads we no longer need to keep in our data 
+directory.
+```{r}
+# Specify the pattern that will match the raw read files
+deleteFastq <- list.files(path = pathFastq, pattern = "^HI.3651.*fastq$")
+
+for(k in 1:length(deleteFastq)) {
+  cmd <- paste("rm ", pathFastq, deleteFastq[k], sep = "")
+  system(cmd)
+}
+```
+
+Do we need the following if reads are merged?
+Validate fastq R1 and R2 pairs order: 
+Make a metadata table called metadataAdapRem that has the raw reads rows 
+collapsed.
+```{r}
+library("reshape2")
+
+for(k in 1:nrow(metadata)){metadata$AdaptRemoved <- paste(metadata$LibraryName, "adapRem", 
+                                                          metadata$Read_Direction, "fastq", sep=".")
+                           }
+
+metadataAdapRem <- dcast(data = metadata, LibraryName + Condition + TimePoint + RNASeq_Replicate 
+                         ~Read_Direction, value.var = "AdaptRemoved", FUN = c)
+
+metadataAdapRem$ShortName <- paste(metadataAdapRem$Condition, 
+                                   metadataAdapRem$TimePoint, 
+                                   metadataAdapRem$RNASeq_Replicate, sep = ".")
+```
+
+```{r}
+gunzipFastq <- list.files(path = pathFastq, pattern = ".*fastq.gz$")
+
+for(k in 1:length(gunzipFastq)) {
+  cmd <- paste("gunzip ", pathFastq, gunzipFastq[k], sep = "")
+  system(cmd)
+}
+```
+
+**Fixed the name format as LibraryName.adapRemMerged.fastq:
+Instead of the above for separate reads, the following is for MiSeq 
+reads that are merged:
+```{r}
+# #Make a Metadata table called MetadataAdapRem with raw reads rows collapsed.
+# for(k in 1:nrow(metadata)){
+#   metadata$AdapRemMerged <- paste(metadata$LibraryName, ".adapRemMerged", ".fastq", sep = "")
+# }
+# 
+# metadataAdapRM <- dcast(data = metadata, LibraryName + Condition + TimePoint + RNASeq_Replicate 
+#                         ~ Read_Direction, value.var = "AdapRemMerged", FUN = c)
+# 
+# metadataAdapRM$ShortName <- paste(metadataAdapRM$Condition, 
+#                                   metadataAdapRM$TimePoint, 
+#                                   metadataAdapRM$RNASeq_Replicate, sep = ".")
+# 
+# # We don't need to keep R1 and R2, remove R2 and rename R1 MergedReads?
+# metadataAdapRM$R2 <- NULL
+# colnames(metadataAdapRM)[colnames(metadataAdapRM) == "R1"] <- "MergedReads"
+```
+
+Test for MiSeq adapters on the merged reads - need to re-evaluate utility at 
+this step, and review how merging occurs with SeqPrep:
+```{r}
+# for (k in 1:nrow(metadataAdapRM)) {
+#   cat(c(k, metadataAdapRM$MergedReads[k]))
+#   system(paste("cat ",
+#                pathFastq, metadataAdapRM$MergedReads[k],
+#                " | head -n 10000000 | grep '",
+#                fwdAdap, "' | wc -l ", sep = ""))
+#   cat("\n")
+# }
+# 
+# for (k in 1:nrow(metadataAdapRM)) {
+#   cat(c(k, metadataAdapRM$MergedReads[k]))
+#   system(paste("cat ",
+#                pathFastq, metadataAdapRM$MergedReads[k],
+#                " | head -n 10000000 | grep '",
+#                revAdap, "' | wc -l ", sep = ""))
+#   cat("\n")
+# }
+```
+
+Not required for Merged reads:
+Second round of FastqPairedEndValidator with adapters removed
+```{r}
+prefix <- "D_Validator" 
+cmd <-  with(metadataAdapRem, paste(fastqPEValidatorPath, " ", 
+                                    pathFastq, R1, " ", pathFastq, R2, sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+Not Required for Merged reads:
+To show the output of each pair on the console in Rstudio
+```{r}
+for (k in 1:nrow(metadataAdapRem)) {
+  cat(c(k, metadataAdapRem$R1[k], metadataAdapRem$R2[k]))
+  system(paste("cat ", sharedPathAn, prefix, "/", prefix, k, suffix, ".o*", sep = ""))
+  cat("\n")
+}
+```
+
+As a follow-up of the chunk above, not required for merged reads:
+To remove the output files after you are done
+```{r}
+system(paste("rm ", sharedPathAn, prefix, "/", prefix, "*", suffix, ".e*", sep = ""))
+```
+
+Looking at our data after adapter removal (and if merged) with SeqPrep:
+PrinSeq Step 1: .gd file generation:
+```{r}
+prefix <- "E_PrinSeqGD"
+cmd    <- MakePrinSeqGraphFiles(metadataAdapRem, metadataAdapRem$R1, prefix, "adapRem", 
+                                metadataAdapRem$R2)
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Add the name of graph .gd files to the metadataAdapRM (merged), or metadataAdapRem (unmerged) tabel:
+```{r}
+# For unmerged reads:
+for(k in 1:nrow(metadataAdapRem)){
+  metadataAdapRem$AdapRemGD <- paste(metadataAdapRem$LibraryName, ".adapRem.gd", sep = "") 
+}
+# For Merged Reads:
+# for(k in 1:nrow(metadataAdapRM)){
+#   metadataAdapRM$AdapRMGraph <- paste(metadataAdapRM$LibraryName, ".adapRemMerged.gd", sep = "") 
+# }
+```
+
+PrinSeq graph reports of adapter-removed merged reads. 
+Step 2: html file generation:
+```{r}
+prefix2 <- "E2_PrinSeqGD"
+# For unmerged Reads:
+cmd     <- MakePrinSeqHTML(metadataAdapRem, prefix, metadataAdapRem$AdapRemGD)
+
+# For merged reads:
+# cmd     <- MakePrinSeqHTML(metadataAdapRM, prefix, metadataAdapRM$AdapRMGraph)
+
+suffix  <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix2, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix2)
+```
+
+Pre-Processing of Merged Reads using PrinSeq::
+
+For the pre-processing with PrinSeq we have three steps, with three sets of qsubs each:
+
+1. Processing input merged reads with the PrinSeq trim and fitlering options
+2. Generating graph files of the processed reads
+3. Generating html files using the graph files to visualize the outputs
+
+For each set of qsubs, the .log, .gd, and .html outputs are sent to the first folder that also has 
+the first stage qsub and bash files. The processed reads are output to the pathfastq folder.
+
+PrinSeq Processing of merged reads:
+First stage of quality pre-processing with PrinSeq:
+
+1-1. Filter adapRemMerged.fastq output from SeqPrep by quality: Note, with merging with SeqPrep 
+during adapter removal, the reads are already filtered and are of high quality as only the high 
+quality reads can be merged.
+```{r}
+prefix <- "F_PrinSeq_2processed"
+
+cmd <- PrinSeqProcessPE(metaRef=metadataAdapRem, fastq1=metadataAdapRem$R1, 
+                        fastq2=metadataAdapRem$R2, outPutSuffix="2processed",
+                        trimQualWindow, trimQualType, trimQualRight, trimQualRule, nmax)
+
+# for merged or single end reads, input fastq must be .gz compressed:
+# cmd <- PrinSeqProcessSE(metaRef=metadataAdapRM, fastq1=metadataAdapRM$MergedReads,
+#                         outPutSuffix="2processedMerged", trimQualWindow, trimQualType, 
+#                         trimQualRight, trimQualRule, nmax)
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Add name of quality-filtered reads .fastq files to the metadata tabel:
+
+For unmerged forward and reverse reads:
+```{r}
+# Delete singletons:
+singletons <- list.files(path = pathFastq, pattern = ".*_singletons.fastq$")
+for(k in 1:length(singletons)) {
+  cmd <- paste("rm ", pathFastq, singletons[k], sep = "")
+  system(cmd)
+}
+
+# Rename files as desired:
+read1Fastq <- list.files(path = pathFastq, pattern = ".*_1.fastq$", full.names=TRUE)
+read2Fastq <- list.files(path = pathFastq, pattern = ".*_2.fastq$", full.names=TRUE)
+sapply(read1Fastq, FUN = function(pathFastq){
+      file.rename(from = pathFastq, 
+                  to   = sub(pattern = "_1.fastq", replacement = ".R1.fastq", pathFastq))
+      })
+sapply(read2Fastq, FUN = function(pathFastq){
+      file.rename(from = pathFastq, 
+                  to   = sub(pattern = "_2.fastq", replacement = ".R2.fastq", pathFastq))
+      })
+processed2Fastq <- list.files(path = pathFastq, pattern = ".*2processed")
+
+# Add fastq names to metadata table:
+for(k in 1:nrow(metadataAdapRem)){
+  metadataAdapRem$processed2.R1.Fastq <- paste(metadataAdapRem$LibraryName,
+                                               ".2processed.R1.fastq", sep = "")
+  metadataAdapRem$processed2.R2.Fastq <- paste(metadataAdapRem$LibraryName,
+                                               ".2processed.R2.fastq", sep = "")
+}
+```
+
+For merged reads:
+```{r}
+# for(k in 1:nrow(metadataAdapRM)){
+#   metadataAdapRM$AdapRMQualFiltFastq <- paste(metadataAdapRM$LibraryName,
+#                                              ".2processedMerged.fastq", sep = "") 
+# }
+```
+
+Delete the older fastq files with adapters removed, only require newest processed.
+```{r}
+adapRemFastq
+
+for(k in 1:length(adapRemFastq)) {
+  cmd <- paste("rm ", pathFastq, adapRemFastq[k], sep = "")
+  system(cmd)
+}
+rm(adapRemFastq)
+```
+
+If output previously was compressed within the script, don't need next chunk. Gzip the fastq reads 
+that were INPUT to PrinSeq processing in step 1-1, we won't need them, the next step in 1-2 uses the 
+OUTPUT processed reads. 
+```{r}
+
+# cmd <- with(metadataAdapRM, paste("gzip ", pathFastq, metadataAdapRM$MergedReads, sep = ""))
+# sapply(cmd, function(x) system(x))
+```
+
+1-2. Generate PrinSeq graph files (.gd) for the fastq generated previously:
+```{r}
+prefix2 <- "F2_PrinSeqGD"
+# For reads not compressed:
+cmd <- MakePrinSeqGraphFiles(metadataAdapRem, metadataAdapRem$processed2.R1.Fastq,
+                             prefix, "2processed", metadataAdapRem$processed2.R2.Fastq)
+
+# For merged or single-end reads that are .gz compressed:
+# cmd <- MakePrinSeqGraphFiles2(metadataAdapRM, metadataAdapRM$AdapRMQualFiltFastq,
+#                               prefix, "2processedMerged")
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix2, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix2)
+```
+
+For unmerged paired-end reads: Add name of graph files to metadata table:
+```{r}
+for(k in 1:nrow(metadataAdapRem)){
+  metadataAdapRem$processed2GD <- paste(metadataAdapRem$LibraryName, ".2processed.gd", sep = "") 
+}
+```
+For merged or single-end reads: Add name of graph files to metadata table:
+```{r}
+# for(k in 1:nrow(metadataAdapRM)){
+#   metadataAdapRM$AdapRMQualFiltGraph <- paste(metadataAdapRM$LibraryName,
+#                                          ".2processedMerged.gd", sep = "") 
+# }
+```
+
+1-3. PrinSeq graph reports of first-stage html file generation:
+```{r}
+prefix3 <- "F3_PrinSeqGD"
+
+# For paired-end not merged:
+cmd <- MakePrinSeqHTML(metadataAdapRem, prefix, metadataAdapRem$processed2GD)
+
+# For merged or single-end reads:
+# cmd <- MakePrinSeqHTML(metadataAdapRM, prefix, metadataAdapRM$AdapRMQualFiltGraph)
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix3, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix3)
+```
+
+2-1. Second stage of quality pre-processing with PrinSeq:
+Trim left and right, and Poly-A/T tail removal, round 1
+```{r}
+prefix <- "G_PrinSeqTrimLRPolyAT"
+
+cmd <- PrinSeqProcessPE(metaRef=metadataAdapRem, fastq1=metadataAdapRem$processed2.R1.Fastq, 
+                        fastq2=metadataAdapRem$processed2.R2.Fastq, outPutSuffix="3processed",
+                        trimLeft, trimRight, trimTailLeft, trimTailRight, nmax)
+
+# # for merged or single end reads, input fastq must be .gz compressed:
+# cmd <- PrinSeqProcessSE(metaRef=metadataAdapRM, fastq1=metadataAdapRM$AdapRMQualFiltFastq,
+#                         outPutSuffix="3processedMerged", trimLeft, trimRight, trimTailLeft, 
+#                         trimTailRight, nmax)
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+To remove the output files after you are done: 
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+If reads are merged and are a single input in step above, no need for next chunk.
+Gzip the fastq reads that were INPUT to the PrinSeq processing in step 2-1. 
+```{r}
+
+# cmd <- with(metadataAdapRM, paste("gzip ", pathFastq, metadataAdapRM$AdapRMQualFiltFastq, sep=""))
+# sapply(cmd, function(x) system(x))
+```
+
+For unmerged forward and reverse reads:
+```{r}
+# Delete singletons:
+singletons <- list.files(path = pathFastq, pattern = ".*_singletons.fastq$")
+for(k in 1:length(singletons)) {
+  cmd <- paste("rm ", pathFastq, singletons[k], sep = "")
+  system(cmd)
+}
+
+# Rename files as desired:
+read1Fastq <- list.files(path = pathFastq, pattern = ".*_1.fastq$", full.names=TRUE)
+read2Fastq <- list.files(path = pathFastq, pattern = ".*_2.fastq$", full.names=TRUE)
+sapply(read1Fastq, FUN = function(pathFastq){
+      file.rename(from = pathFastq, 
+                  to   = sub(pattern = "_1.fastq", replacement = ".R1.fastq", pathFastq))
+      })
+sapply(read2Fastq, FUN = function(pathFastq){
+      file.rename(from = pathFastq, 
+                  to   = sub(pattern = "_2.fastq", replacement = ".R2.fastq", pathFastq))
+      })
+processed3Fastq <- list.files(path = pathFastq, pattern = ".*3processed")
+
+# Add fastq names to metadata table:
+for(k in 1:nrow(metadataAdapRem)){
+  metadataAdapRem$processed3.R1.Fastq <- paste(metadataAdapRem$LibraryName,
+                                               ".3processed.R1.fastq", sep = "")
+  metadataAdapRem$processed3.R2.Fastq <- paste(metadataAdapRem$LibraryName,
+                                               ".3processed.R2.fastq", sep = "")
+}
+
+# Delete the older fastq files '2processed', only require newest processed. 
+processed2Fastq
+
+for(k in 1:length(processed2Fastq)) {
+  cmd <- paste("rm ", pathFastq, processed2Fastq[k], sep = "")
+  system(cmd)
+}
+rm(processed2Fastq)
+```
+
+For merged or Single-End Reads:
+Add name of Poly-A/T, left and right trimmed merged reads .fastq files to the metadataAdapRM tabel:
+```{r}
+# for(k in 1:nrow(metadataAdapRM)){
+#   metadataAdapRM$AdapRMTrimLRPolyAT <- paste(metadataAdapRM$LibraryName,
+#                                              ".3processedMerged.fastq", sep = "") 
+# }
+```
+
+2-2. Generate PrinSeq graph files (.gd) for the fastq generated previously:
+```{r}
+prefix2 <- "G2_PrinSeqGraphTrimLRPolyAT"
+
+# For reads not compressed:
+cmd <- MakePrinSeqGraphFiles(metadataAdapRem, metadataAdapRem$processed3.R1.Fastq,
+                             prefix, "3processed", metadataAdapRem$processed3.R2.Fastq)
+
+# For merged or single-end reads that are .gz compressed:
+# cmd <- MakePrinSeqGraphFiles2(metadataAdapRM, metadataAdapRM$AdapRMTrimLRPolyAT,
+#                              prefix, "3processedMerged")
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix2, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix2)
+```
+
+For unmerged paired-end reads: Add name of graph files to metadata table:
+```{r}
+for(k in 1:nrow(metadataAdapRem)){
+  metadataAdapRem$processed3GD <- paste(metadataAdapRem$LibraryName,
+                                        ".3processed.gd", sep = "") 
+}
+```
+
+For merged or single-end reads: Add name of graph files to metadata table:
+```{r}
+# for(k in 1:nrow(metadataAdapRM)){
+#   metadataAdapRM$AdapRMTrimLRPolyATGraph <- paste(metadataAdapRM$LibraryName,
+#                                                   ".3processedMerged.gd", sep = "") 
+# }
+```
+
+2-3. PrinSeq graph reports of second-stage html file generation:
+```{r}
+prefix3 <- "G3_PrinSeq_html"
+
+# For paired-end not merged:
+cmd <- MakePrinSeqHTML(metadataAdapRem, prefix, metadataAdapRem$processed3GD)
+
+# # For merged or single-end reads:
+# cmd <- MakePrinSeqHTML(metadataAdapRM, prefix, metadataAdapRM$AdapRMTrimLRPolyATGraph)
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix3, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix3)
+```
+
+3-1. Third stage of quality pre-processing with PrinSeq: Poly-A/T tail removal, round 2:
+Repeat poly tails trimming, this is because after trimming ends with AAAAAATTTTT that have been 
+trimmed for the poly-T will still have the poly-A string.
+```{r}
+prefix <- "H_PrinSeq2ndPolyAT"
+
+cmd <- PrinSeqProcessPE(metaRef=metadataAdapRem, fastq1=metadataAdapRem$processed3.R1.Fastq, 
+                        fastq2=metadataAdapRem$processed3.R2.Fastq, outPutSuffix="4processed",
+                        trimTailLeft, trimTailRight, nmax)
+
+# # For merged or single end reads, input fastq must be .gz compressed:
+# cmd <- PrinSeqProcessSE(metaRef=metadataAdapRM, fastq1=metadataAdapRM$AdapRMTrimLRPolyAT,
+#                         outPutSuffix="4processedMerged", trimTailLeft, trimTailRight, nmax)
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+For unmerged forward and reverse reads:
+```{r}
+# Delete singletons:
+singletons <- list.files(path = pathFastq, pattern = ".*_singletons.fastq$")
+for(k in 1:length(singletons)) {
+  cmd <- paste("rm ", pathFastq, singletons[k], sep = "")
+  system(cmd)
+}
+
+# Rename files as desired:
+read1Fastq <- list.files(path = pathFastq, pattern = ".*_1.fastq$", full.names=TRUE)
+read2Fastq <- list.files(path = pathFastq, pattern = ".*_2.fastq$", full.names=TRUE)
+sapply(read1Fastq, FUN = function(pathFastq){
+      file.rename(from = pathFastq, 
+                  to   = sub(pattern = "_1.fastq", replacement = ".R1.fastq", pathFastq))
+      })
+sapply(read2Fastq, FUN = function(pathFastq){
+      file.rename(from = pathFastq, 
+                  to   = sub(pattern = "_2.fastq", replacement = ".R2.fastq", pathFastq))
+      })
+processed4Fastq <- list.files(path = pathFastq, pattern = ".*4processed")
+
+# Add fastq names to metadata table:
+for(k in 1:nrow(metadataAdapRem)){
+  metadataAdapRem$processed4.R1.Fastq <- paste(metadataAdapRem$LibraryName,
+                                               ".4processed.R1.fastq", sep = "")
+  metadataAdapRem$processed4.R2.Fastq <- paste(metadataAdapRem$LibraryName,
+                                               ".4processed.R2.fastq", sep = "")
+}
+
+# Delete the older fastq files '2processed', only require newest processed. 
+processed3Fastq
+for(k in 1:length(processed3Fastq)) {
+  cmd <- paste("rm ", pathFastq, processed3Fastq[k], sep = "")
+  system(cmd)
+}
+rm(processed3Fastq)
+```
+
+For merged reads: To compress merged reads (Paired-End or Single-End reads)
+Don't need the chunk below since we compressed the fastq files already. 
+```{r}
+# cmd <- with(metadataAdapRM, paste("gzip ", pathFastq, metadataAdapRM$AdapRMTrimLRPolyAT, sep=""))
+# sapply(cmd, function(x) system(x))
+```
+
+Add name of 2nd polyAT trimmed merged reads .fastq files to the metadataAdapRM tabel:
+```{r}
+# for(k in 1:nrow(metadataAdapRM)){
+#   metadataAdapRM$AdapRM2ndPolyAT <- paste(metadataAdapRM$LibraryName,
+#                                              ".4processedMerged.fastq", sep = "") 
+# }
+```
+
+3-2. Generate PrinSeq graph files (.gd) for the fastq generated the previously:
+```{r}
+prefix2 <- "H2_PrinSeq2ndTrimPolyATgraphs"
+# For reads not compressed:
+cmd <- MakePrinSeqGraphFiles(metadataAdapRem, metadataAdapRem$processed4.R1.Fastq,
+                             prefix, "4processed", metadataAdapRem$processed4.R2.Fastq)
+
+# For merged or single-end reads that are .gz compressed:
+# cmd <- MakePrinSeqGraphFiles2(metadataAdapRM, metadataAdapRM$AdapRM2ndPolyAT,
+#                               prefix, "4processedMerged")
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix2, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix2)
+```
+
+For unmerged paired-end reads: Add name of graph files to metadata table:
+```{r}
+for(k in 1:nrow(metadataAdapRem)){
+  metadataAdapRem$processed4GD <- paste(metadataAdapRem$LibraryName, ".4processed.gd", sep = "") 
+}
+```
+
+For merged or single-end reads: Add name of graph files to metadata table:
+```{r}
+# for(k in 1:nrow(metadataAdapRM)){
+#   metadataAdapRM$AdapRM2ndPolyATgraph <- paste(metadataAdapRM$LibraryName,
+#                                                ".4processedMerged.gd", sep = "") 
+# }
+```
+
+3-3. PrinSeq graph reports of third-stage html file generation:
+```{r}
+prefix3 <- "H3_PrinSeq_html"
+
+# For paired-end not merged:
+cmd <- MakePrinSeqHTML(metadataAdapRem, prefix, metadataAdapRem$processed4GD)
+
+# # For merged or single-end reads:
+# cmd <- MakePrinSeqHTML(metadataAdapRM, prefix, metadataAdapRM$AdapRM2ndPolyATgraph)
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix3, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix3)
+```
+
+4-1. Fourth and LAST stage of quality pre-processing with PrinSeq:
+Filtering of reads by complexity (DUST) and minimum length
+```{r}
+prefix <- "I_PrinSeqDustMinLen"
+
+cmd <- PrinSeqProcessPE(metaRef=metadataAdapRem, fastq1=metadataAdapRem$processed4.R1.Fastq, 
+                        fastq2=metadataAdapRem$processed4.R2.Fastq, outPutSuffix="5processed",
+                        minLen, lcMethod, lcThreshold)
+
+# # For merged or single end reads, input fastq must be .gz compressed:
+# cmd <- PrinSeqProcessSE(metaRef=metadataAdapRM, fastq1=metadataAdapRM$AdapRM2ndPolyAT,
+#                         outPutSuffix="5processedMerged", minLen, lcMethod, lcThreshold)
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+For unmerged forward and reverse reads:
+```{r}
+# Delete singletons:
+singletons <- list.files(path = pathFastq, pattern = ".*_singletons.fastq$")
+for(k in 1:length(singletons)) {
+  cmd <- paste("rm ", pathFastq, singletons[k], sep = "")
+  system(cmd)
+}
+
+# Rename files as desired:
+read1Fastq <- list.files(path = pathFastq, pattern = ".*_1.fastq$", full.names=TRUE)
+read2Fastq <- list.files(path = pathFastq, pattern = ".*_2.fastq$", full.names=TRUE)
+sapply(read1Fastq, FUN = function(pathFastq){
+      file.rename(from = pathFastq, 
+                  to   = sub(pattern = "_1.fastq", replacement = ".R1.fastq", pathFastq))
+      })
+sapply(read2Fastq, FUN = function(pathFastq){
+      file.rename(from = pathFastq, 
+                  to   = sub(pattern = "_2.fastq", replacement = ".R2.fastq", pathFastq))
+      })
+processed5Fastq <- list.files(path = pathFastq, pattern = ".*5processed")
+
+# Add fastq names to metadata table:
+for(k in 1:nrow(metadataAdapRem)){
+  metadataAdapRem$processed5.R1.Fastq <- paste(metadataAdapRem$LibraryName,
+                                               ".5processed.R1.fastq", sep = "")
+  metadataAdapRem$processed5.R2.Fastq <- paste(metadataAdapRem$LibraryName,
+                                               ".5processed.R2.fastq", sep = "")
+}
+
+# Delete the older fastq files '2processed', only require newest processed. 
+processed4Fastq
+for(k in 1:length(processed4Fastq)) {
+  cmd <- paste("rm ", pathFastq, processed4Fastq[k], sep = "")
+  system(cmd)
+}
+rm(processed4Fastq)
+```
+
+For merged reads: To compress merged reads (Paired-End or Single-End reads)
+Don't need the chunk below since we compressed the fastq files already. 
+```{r}
+# cmd <- with(metadataAdapRM, paste("gzip ", pathFastq, metadataAdapRM$AdapRMTrimLRPolyAT, sep=""))
+# sapply(cmd, function(x) system(x))
+```
+
+For merged or single-end reads:
+Add name of 2nd polyAT trimmed merged reads .fastq files to the metadataAdapRM tabel:
+```{r}
+# for(k in 1:nrow(metadataAdapRM)){
+#   metadataAdapRM$AdapRMDustMinLen <- paste(metadataAdapRM$LibraryName,
+#                                              ".5processedMerged.fastq", sep = "") 
+# }
+```
+
+Don't need the chunk below since we compressed the fastq files already.
+```{r}
+# cmd <- with(metadataAdapRM, paste("gzip ", pathFastq, metadataAdapRM$AdapRM2ndPolyAT, sep = ""))
+# sapply(cmd, function(x) system(x))
+``` 
+
+4-2. Generate PrinSeq graph files (.gd) for the fastq generated the previously:
+```{r}
+prefix2 <- "I2_PrinSeqDustMinLenGraph"
+
+# For reads not compressed:
+cmd <- MakePrinSeqGraphFiles(metadataAdapRem, metadataAdapRem$processed5.R1.Fastq,
+                             prefix, "5processed", metadataAdapRem$processed5.R2.Fastq)
+
+# # For merged or single-end reads that are .gz compressed:
+# cmd <- MakePrinSeqGraphFiles2(metadataAdapRM, metadataAdapRM$AdapRMDustMinLen,
+#                               prefix, "5processedMerged")
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix2, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix2)
+```
+
+For unmerged paired-end reads: Add name of graph files to metadata table:
+```{r}
+for(k in 1:nrow(metadataAdapRem)){
+  metadataAdapRem$processed5GD <- paste(metadataAdapRem$LibraryName, ".5processed.gd", sep = "") 
+}
+```
+
+For merged or single-end reads: Add name of graph files to metadata table:
+```{r}
+# for(k in 1:nrow(metadataAdapRM)){
+#   metadataAdapRM$AdapRMDustMinLenGraph <- paste(metadataAdapRM$LibraryName,
+#                                                   ".5processedMerged.gd", sep = "") 
+# }
+```
+
+4-3. PrinSeq graph reports of fourth-stage html file generation:
+```{r}
+prefix3 <- "I3_PrinSeq_html"
+# For paired-end not merged:
+cmd <- MakePrinSeqHTML(metadataAdapRem, prefix, metadataAdapRem$processed5GD)
+
+# # For merged or single-end reads:
+# cmd <- MakePrinSeqHTML(metadataAdapRM, prefix, metadataAdapRM$AdapRMDustMinLenGraph)
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix3, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix3)
+```
+
+TopHat:
+Create folders to put Tophat results and runs the jobs.  
+```{r}
+prefix <- "J_TophatQsub"
+node   <- 2
+
+# For paired-end not merged:
+for(j in 1:length(metadataAdapRem$LibraryName)) {
+  dir.create(paste(sharedPathAn, metadataAdapRem$LibraryName[j], sep = ""),
+             showWarnings = TRUE, recursive = FALSE)
+}
+
+cmd <- with(metadataAdapRem, 
+            paste(tophat2Path, 
+                  " -G ", pyuugff3Path,
+                  " -p ", node, 
+                  " -o ", sharedPathAn, LibraryName, "/",LibraryName,".TopHat.",
+                          format(Sys.time(), "%Y-%m-%d"),
+                  " ",    referencesPath, bowind,
+                  " ",    pathFastq, processed5.R1.Fastq, " ", pathFastq, processed5.R2.Fastq,
+                  sep = ""))
+
+# # For merged or single-end reads:
+# for(j in 1:length(metadataAdapRM$LibraryName)) {
+#   dir.create(paste(sharedPathAn, metadataAdapRM$LibraryName[j], sep = ""),
+#              showWarnings = TRUE, recursive = FALSE)
+# }
+# cmd <- with(metadataAdapRM, 
+#             paste(tophat2Path, 
+#                   " -G ", pyuugff3Path,
+#                   " -p ", node, 
+#                   " -o ", sharedPathAn, LibraryName, "/",LibraryName,".TopHat.",
+#                           format(Sys.time(), "%Y-%m-%d"),
+#                   " ",    referencesPath, bowind,
+#                   " ",    pathFastq, AdapRMDustMinLen, ".gz",
+#                   sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+```
+
+**** Significant contamination observed, majority of reads unmapped - see which 
+top species are the majority of our contamination from. 
+```{r}
+
+# ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nt/nt"
+# ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastn"
+# testContamPath <- paste(sharedPathAn, "T24-2_BC20/T24-2_BC20.TopHat.2016-05-20/", 
+#                         "testContaminants/", sep = "")
+# blastnOutFrmt  <- paste(" '", 
+#                         "6", " qseqid", " sallacc", " pident", " length", 
+#                         " mismatch", " gapopen", " qstart", " qend", " sstart", 
+#                         " send", " evalue", " bitscore", 
+#                         "'", sep = "") 
+# maxTargetsSeqs <- 1
+#
+# prefix <- "testContamT24-2_BC20-2"
+# cmd <- paste(ncbiBlastnPath,
+#              " -db ",     ncbiDbPath,
+#              " -query ",  paste(testContamPath, "T24-2_BC20.unmapped.DeRep.fasta", sep = ""),
+#              " -max_target_seqs ", maxTargetsSeqs,
+#              " -outfmt ", blastnOutFrmt,
+#              " -out ",    paste(testContamPath, "T24-2_BC20.unmapped.DeRep.fasta2.bls", sep = ""),
+#              sep = "")
+# suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+```
+
+MUST DO CLEAN UP OF TMP FILES WITHIN FOLDERS
+- fix the matching to temp tophat files to be removed
+```{r}
+# For paired-end not merged
+cmd <- with(metadataAdapRem, paste("rm -r ", sharedPathAn, metadataAdapRem$LibraryName, "/", 
+                                   metadataAdapRem$LibraryName, ".TopHat.2016-07-19/tmp", sep = ""))
+
+# # For merged or single-end reads:
+# cmd <- with(metadataAdapRM, paste("rm -r ", sharedPathAn, metadataAdapRM$LibraryName, "/", 
+#                                   metadataAdapRM$LibraryName, ".TopHat.2016-07-10/tmp", sep = ""))
+system(cmd)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Setting up the folder date
+```{r}
+# could have automatic search for most recent
+topHatDate <- ".2016-07-19"
+```
+
+To run Samtools on the Tophat folder that has the right date
+```{r}
+prefix <- "K_SamtoolsSortQsub"
+# cmd <- with(metadataAdapRM, # For merged or single-end reads
+cmd <- with(metadataAdapRem,  # For paired-end not merged
+            (paste(samtools1Path, " sort",   " -n ", 
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", "accepted_hits.bam ", sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn", sep = ""),
+                   "\n",
+                   samtools1Path, " view ", " -o ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn.bam", sep = ""),
+                   "\n",
+                   samtools1Path, " sort ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", "accepted_hits.bam ", sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_s", sep = ""),
+                   "\n",
+                   samtools1Path, " index ", 
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat",
+                         topHatDate, "/", LibraryName, "_s.bam", sep = ""),
+                   sep = "")))
+node   <- 1
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+HTSeq-count for TopHat2 hits:  
+Prepare the metadata table for recording TopHat counts:
+```{r}
+# For paired-end not merged
+metadataAdapRem$countfTopHat = paste(metadataAdapRem$LibraryName, "TopHat2Count", sep = ".")
+
+# # For merged or single-end reads:
+# metadataAdapRM$countfTopHat = paste(metadataAdapRM$LibraryName, "TopHat2Count", sep = ".")
+```
+
+Read count with HT-Seq:
+```{r}
+# Set HT-Seq options:
+stranded <- "no"
+MINAQUAL <- 10
+prefix   <- "L_HTSeq_Qsub"
+node     <- 1
+
+# cmd <- with(metadataAdapRM, # For merged or single-end reads
+cmd <- with(metadataAdapRem,  # For paired-end not merged
+            paste(htseqCountPath, 
+                  " -s ", stranded,
+                  " -a ", MINAQUAL,
+                  " --idattr=Parent ", 
+                  paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
+                        topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
+                  pyuugff3Path, " > ",
+                  paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
+                        topHatDate, "/", metadataAdapRem$countfTopHat, sep = ""),  # PE not merged
+                        # topHatDate, "/", metadataAdapRM$countfTopHat, sep = ""), # Merged/SE reads
+                  sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Fix permissions for files:
+```{r}
+cmd <- paste( "find ", sharedPathAn, " -type d -exec chmod 770 {} + ", sep = ""); system(cmd)
+cmd <- paste( "find ", sharedPathAn, " -type f -exec chmod 770 {} + ", sep = ""); system(cmd)
+```
+
+Get all data together and add the counts for libraries representing the same treatments:
+```{r}
+library("edgeR")
+# Identify the count files and read them into R using readDGE:
+
+# For paired-end not merged:
+countsListTopHat <- paste(sharedPathAn, metadataAdapRem$LibraryName, "/", metadataAdapRem$LibraryName,
+                          ".TopHat", topHatDate, "/", metadataAdapRem$countfTopHat, sep = "")
+
+# # For merged or single-end reads:
+# countsListTopHat <- paste(sharedPathAn, metadataAdapRM$LibraryName, "/", metadataAdapRM$LibraryName,
+#                           ".TopHat", topHatDate, "/", metadataAdapRM$countfTopHat, sep = "")
+
+# Turn the count of the list into a data.frame
+countsTopHat <- readDGE(countsListTopHat)$counts
+
+colnames(countsTopHat) <- basename(colnames(countsTopHat))
+
+write.table(countsTopHat, file = file.path(sharedPathAn, "counts_readDGE_TopHat.annotated.csv"),
+            sep = ",", row.names = TRUE, col.names = NA, quote = FALSE) 
+```
+
+Only for this set of data, extract control columns based on their names.
+```{r}
+# List the controls that you want to drop from count analyses, if there are none do: c("","") 
+controlToDrop <- c("T7-c3_BC30_a1", "T7-c3_BC30_a2", "T7-c3_BC31_a1", "T7-c3_BC31_a2", 
+                   "Tneg-H2O_BC32_a1", "Tneg-H2O_BC32_a2", "T48-2_BC22_a1", "T48-2_BC22_a2") 
+tempCountsTopHat <- data.frame(countsTopHat)
+colnames(tempCountsTopHat) <- colnames(countsTopHat)
+countsTopHatDf   <- tempCountsTopHat[, !(colnames(tempCountsTopHat) %in% controlToDrop)]
+```
+
+The trick was from here
+http://stackoverflow.com/questions/19321053/sum-together-columns-of-data-frame-based-on-name-type
+Make the names of the columns with different libraries of the same experimental unit identical - some 
+columns have the same name. Then a row sum for each unique name is done. When a library is sequenced 
+twice, the numbers will be added up.
+```{r}
+library("reshape2")
+# For paired-end not merged:
+metadataAdapRem$ExpUnit <- sub("_.*", "", metadataAdapRem$LibraryName)
+
+# # For merged or single-end reads:
+# metadataAdapRM$ExpUnit <- sub("_.*", "", metadataAdapRM$LibraryName)
+
+countsTopHatDf$gene <- rownames(countsTopHatDf)
+countsTopHatMelt    <- melt(countsTopHatDf)
+colnames(countsTopHatMelt)[2] <- "LibraryName"
+
+# For paired-end not merged:
+df <- merge(countsTopHatMelt, metadataAdapRem[,c("LibraryName", "ExpUnit")], 
+            by = "LibraryName", all.x = TRUE)
+
+# # For merged or single-end reads:
+# df <- merge(countsTopHatMelt, metadataAdapRM[,c("LibraryName", "ExpUnit")], 
+#             by = "LibraryName", all.x = TRUE)
+
+countsTopHatSum <- dcast(data = df[,c("gene", "value", "ExpUnit")], 
+                         gene ~ ExpUnit, sum, value.var = "value")
+rownames(countsTopHatSum) <- countsTopHatSum$gene
+countsTopHatSum$gene      <- NULL
+```
+
+
+
+Normalization after removing rDNA data.  Not sure if this is the best approach.
+```{r}
+library(Biostrings)
+library("edgeR")
+library("reshape2")
+rowsRemove1 <- row.names(countsTopHatSum)[1:37] # These are unwanted ribosomal or mitochondrial genes 
+rowsRemove2 <- c("__no_feature", 
+                 "__ambiguous", 
+                 "__too_low_aQual", 
+                 "__not_aligned", 
+                 "__alignment_not_unique")
+
+countsTopHatGenes <- countsTopHatSum[-which(rownames(countsTopHatSum) 
+                                            %in% c(rowsRemove1, rowsRemove2)), ]
+
+# To see the proportion of reads not ribosomal compared to ribosomal and all else (for fun):
+countsTopHatDf$gene <- NULL
+mean(colSums(countsTopHatGenes)/colSums(countsTopHatDf))
+
+cpms <- cpm(countsTopHatGenes)  # counts per million
+tempPyuuTrans <- readDNAStringSet(pyuuTranscripts)
+namesTranscripts <- sub(" .*$", "", names(tempPyuuTrans))
+
+# Create a vector with names:
+geneLength <- setNames(width(tempPyuuTrans), namesTranscripts)
+temp2      <- merge(countsTopHatGenes, geneLength, by.x = 0, by.y = 0)
+rownames(temp2) <- temp2$Row.names
+temp2$Row.names <- NULL
+
+write.table(temp2, file = file.path(paste(sharedPathAn, sep = ""), "readDGEcountsWithGeneLength.csv"),
+            append = FALSE, sep = ",", col.names = NA)
+```
+
+
+
+
+
+
+
+Read Oospore conversion Time course
+```{r}
+sharedPathAn <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Oospore_Conversion_TimeCourse/HiSeq_Analyses2/"
+
+Oosp_conv_counts <- read.csv(file = paste(sharedPathAn, "counts_readDGE_TopHat.annotated.csv", sep=""), stringsAsFactors = FALSE)
+
+
+
+
+
+
+
+summary(Oosp_conv_counts)
+rownames(Oosp_conv_counts) <- Oosp_conv_counts$X
+Oosp_conv_counts$X <- NULL
+
+Oosp_conv_counts$X[duplicated(Oosp_conv_counts$X)]
+
+library("edgeR")
+Oosp_conv_rpkmCount <- rpkm(Oosp_conv_counts[,1:18], # All columns except y, in HiSeq it's col 19
+                  gene.length = Oosp_conv_counts$y, normalized.lib.sizes = TRUE) 
+
+```
+
+
+
+
+
+
+Read Oospore genesis Time course
+```{r}
+sharedPathAn <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+
+Oosp_gen_counts <- read.csv(file = paste(sharedPathAn, "counts_readDGE_TopHat.annotated.csv", sep=""), stringsAsFactors = FALSE)
+rownames(Oosp_gen_counts) <- Oosp_gen_counts$X
+Oosp_gen_counts$X <- NULL
+
+library("edgeR")
+Oosp_conv_rpkmCount <- rpkm(Oosp_conv_counts[,1:18], # All columns except y, in HiSeq it's col 19
+                  gene.length = Oosp_conv_counts$y, normalized.lib.sizes = TRUE) 
+
+```
+
+
+
+
+
+
+
+
+
+Read Oospore conversion Time course
+```{r}
+sharedPathAn <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Oospore_Conversion_TimeCourse/HiSeq_Analyses2/"
+
+Oosp_conv_counts <- read.csv(file = paste(sharedPathAn, "readDGEcountsWithGeneLength.csv", sep=""), stringsAsFactors = FALSE)
+
+summary(Oosp_conv_counts)
+rownames(Oosp_conv_counts) <- Oosp_conv_counts$X
+Oosp_conv_counts$X <- NULL
+
+library("edgeR")
+Oosp_conv_rpkmCount <- rpkm(Oosp_conv_counts[,1:18], # All columns except y, in HiSeq it's col 19
+                  gene.length = Oosp_conv_counts$y, normalized.lib.sizes = TRUE) 
+
+```
+
+
+Read Oospore conversion Time course
+```{r}
+sharedPathAn <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+
+Oosp_time_course_counts <- read.csv(file = paste(sharedPathAn, "readDGEcountsWithGeneLength.csv", sep=""), stringsAsFactors = FALSE)
+
+summary(Oosp_time_course_counts)
+rownames(Oosp_time_course_counts) <- Oosp_time_course_counts$X
+Oosp_time_course_counts$X <- NULL
+
+library("edgeR")
+Oosp_time_course_rpkmCount <- rpkm(Oosp_time_course_counts[,1:18], # All columns except y, in HiSeq it's col 19
+                  gene.length = Oosp_time_course_counts$y, normalized.lib.sizes = TRUE) 
+
+```
+
+
+
+
+
+Setting up for Differential Analysis: Generating CAZy families, all Secreted and CAZy secreted, 
+as well as House-Keeping subsets
+
+Selecting the subset of reads that are to be analysed (experiment-specific)
+```{r}
+# To look at all CAZy in Pyuu, not just secreted:
+allCazyFasta     <- paste(referencesPath, "Secretome/all_CAZy.fasta", sep = "")
+allCazy          <- readAAStringSet(paste(allCazyFasta), format = "fasta")
+allCazyNames     <- names(allCazy)
+allCazyPyuuNames <- subset(allCazyNames, grepl("^Pyuu_", allCazyNames))
+allCazyPyuuNames <- sub("_secreted$", "", allCazyPyuuNames)
+
+# To look at only secreted CAZy in Pyuu:
+secCazyFasta <- paste(referencesPath, "Secretome/CAZy_secreted.fasta", sep = "")
+secretedCAZyAll   <- readAAStringSet(paste(secCazyFasta), format = "fasta")
+secretedNames     <- names(secretedCAZyAll)
+secretedPyuuNames <- subset(secretedNames, grepl("^Pyuu_", secretedNames))
+
+# Name the names file from the above options that will be analyzed:
+namesForPlots <- secretedPyuuNames
+# namesForPlots <- allCazyPyuuNames
+cazyDataSub <- data.frame(matrix(unlist(strsplit(as.character(namesForPlots), "_")), 
+                                nrow  = length(namesForPlots), 
+                                byrow = TRUE), stringsAsFactors = FALSE)
+
+cazyDataSub$SequenceID   <- paste(cazyDataSub$X3, cazyDataSub$X4, sep = "_")
+colnames(cazyDataSub)[2] <- "CazyFam"
+cazyFam <- unique(cazyDataSub$CazyFam)
+```
+
+Counts per million from the gene counts from TopHat for Cazy data 
+```{r}
+countsForBarPlots <- melt(cpms, id.vars = colnames(cpms))
+
+colnames(countsForBarPlots)[1] <- "SequenceID"
+colnames(countsForBarPlots)[2] <- "ExpUnit"
+colnames(countsForBarPlots)[3] <- "Read_Counts"
+
+metadataColsToMerge <- c("LibraryName", "TimePoint", "RNASeq_Replicate", "ExpUnit") 
+
+# For paired-end not merged:
+cazyCounts <- merge(countsForBarPlots, unique(metadataAdapRem[,c(metadataColsToMerge)]),  
+                    by = "ExpUnit", all.x = TRUE)
+
+# # For merged or single-end reads:
+# cazyCounts <- merge(countsForBarPlots, unique(metadataAdapRM[,c(metadataColsToMerge)]),  
+#                     by = "ExpUnit", all.x = TRUE)
+
+cazyCounts$TimePoint <- factor(cazyCounts$TimePoint, levels = c(timePoints))        
+length(unique(cazyCounts$TimePoint))
+cazyCountsSub <- cazyCounts[which(cazyCounts$SequenceID %in% unique(cazyDataSub[,c("SequenceID")])), ]
+```
+
+rpkmCount for Cazy
+```{r}
+rpkmForBarPlots <- melt(rpkmCount, id.vars = colnames(rpkmCount))
+colnames(rpkmCount)
+length(unique(rpkmForBarPlots$Var2)) 
+colnames(rpkmForBarPlots)[1] <- "SequenceID"
+colnames(rpkmForBarPlots)[2] <- "ExpUnit"
+colnames(rpkmForBarPlots)[3] <- "Read_Counts"
+
+unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y"
+rpkmForBarPlots <- rpkmForBarPlots[rpkmForBarPlots$ExpUnit!="y",]
+unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y" is gone
+
+#I took out library name because we added two libraries
+metadataColsToMerge <- c("TimePoint", "RNASeq_Replicate", "ExpUnit") 
+
+# For paired-end not merged:
+cazyRpkm <- merge(rpkmForBarPlots, unique(metadataAdapRem[,c(metadataColsToMerge)]),
+                  by = "ExpUnit", all.x = TRUE)
+
+# # For merged or single-end reads:
+# cazyRpkm <- merge(rpkmForBarPlots, unique(metadataAdapRM[,c(metadataColsToMerge)]),
+#                   by = "ExpUnit", all.x = TRUE)
+
+cazyRpkm$TimePoint <- factor(cazyRpkm$TimePoint, levels = c(timePoints))        
+
+cazyRpkmSub  <- cazyRpkm[which(cazyRpkm$SequenceID 
+                              %in% unique(cazyDataSub[,c("SequenceID")])), ]
+
+# this duplicate some of the enzymes that are in two groups
+cazyRpkmSub2 <- merge(cazyRpkmSub, cazyDataSub[,c("CazyFam", "SequenceID")],  
+                      by = "SequenceID", all.x = TRUE)
+
+cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, cazyRpkmSub2$SequenceID, sep = "-")
+
+nameReadDGEcsv <- "countsReadDGE_TopHat_SecretedCAZy.csv"
+write.table(cazyRpkmSub2, file = file.path(sharedPathAn, nameReadDGEcsv),
+            sep = ",", row.names = TRUE, col.names = NA, quote = FALSE) 
+```
+
+Finding potential house-keeping (HK) genes
+```{r}
+colnames(rpkmCount)
+logRpkmCount      <- data.frame(log10(rpkmCount[,1:17]+1))
+logRpkmCount$mean <- apply(logRpkmCount, 1, mean)
+logRpkmCount$min  <- apply(logRpkmCount, 1, min)
+logRpkmCount$max  <- apply(logRpkmCount, 1, max)
+logRpkmCount$SD   <- apply(logRpkmCount, 1, sd)
+
+potentialHK <- subset(logRpkmCount, min > 0 & SD < 0.25)
+potentialHK <- potentialHK[order(-potentialHK$mean),]  
+
+write.table(potentialHK, 
+            file   = file.path(paste(sharedPathAn, sep = ""), "potential_houseKeepingGenes.csv"),
+            append = FALSE, sep = ",", col.names = NA)
+```
+
+The following was done by Andre, and the shared path was not the same. I can't get "rentrez" to 
+work for me, so I won't repeat this. Instead I will refer to tab-delinited file with the genes 
+using a hard path reference.
+This is to generate a list of Gi queries to search for BLAST (makes it a lot faster)
+```{r}
+# Make a list of potential HK genes:
+interestListHK <- rownames(potentialHK)
+
+dir.create(paste(sharedPathAn, "Blast_HK", sep = ""), showWarnings = TRUE, recursive = FALSE)
+
+# Read all transcripts:
+interestHK <- readAAStringSet(pyuuProteins, format = "fasta") 
+
+# fixes the names to match list
+names(interestHK) <- gsub(" .*", "", names(interestHK), ignore.case = FALSE)
+
+# makes a subset of only the potential
+interestHK <- interestHK[which(names(interestHK) %in% interestListHK)]
+
+writeXStringSet(interestHK, 
+                file   = paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep = ""), 
+                append = FALSE, format = "fasta") 
+
+install.packages("rentrez")
+library("rentrez") # Error in library("rentrez") : there is no package called ‘rentrez’
+query <- "(Oomycetes[ORGN])"
+
+webEnvSearch <- entrez_search(db = "protein", query, retmax = 999999)
+webEnvSearch
+length(webEnvSearch$ids)
+write.table(webEnvSearch$ids, 
+            file = paste(sharedPathAn,"Blast_HK/gilist.txt", sep = ""), 
+            append = FALSE, quote = FALSE, row.names = FALSE, col.names = FALSE)
+```
+
+This is to prerform a BLAST on the best candidate House Keeping genes
+```{r}
+ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nr/nr"
+ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastp"
+blastnOutFrmt  <-  c("sseqid", "qseqid", "sacc", "pident", "length",
+                     "mismatch", "gapopen", "qstart", "qend", "sstart",
+                     "send", "evalue", "bitscore")
+#maxTargetsSeqs <- 3
+prefix   <- "Blast_HK"  # need to clean up by inserting below
+node <- 1
+
+cmd <- paste(ncbiBlastnPath,
+             " -db ",     ncbiDbPath,
+             " -query ",  paste(sharedPathAn, "Blast_HK/HK_InterestSubset.fasta", sep = ""),
+             " -evalue  1.00E-90", 
+             " -num_threads ", node,
+             " -gilist ", sharedPathAn,   "Blast_HK/gilist.txt",
+             " -outfmt '6 ", paste(blastnOutFrmt, collapse=" "), "'",
+             " -out ",    paste(sharedPathAn, "Blast_HK/HK_InterestSubsetNt2.tab", sep = ""),
+             sep = "")
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+
+```
+
+
+Andre did the next chunk, it's not working for me due to library("spider") error. 
+This is to get the names of the genes and select/sort  the results by BLAST statistics
+```{r}
+install.packages("spider")
+library("spider")
+subsetHKinterestPath <- paste(sharedPath, analysis, 
+                              "HiSeq_Analyses/Blast_HK/HK_InterestSubsetNt.tab", 
+                              sep = "")
+
+hitsHK <- read.table(subsetHKinterestPath, sep = "\t", header = FALSE,
+                     comment.char = "", quote = "", as.is = TRUE) 
+colnames(hitsHK) <- blastnOutFrmt
+
+hitSeqHK <- read.GB(hitsHK$sacc, seq.names = hitsHK$sacc, species.names = TRUE, gene = TRUE,
+                    access = TRUE, as.character = FALSE)
+#rm("hitSeqHK")
+
+hitGenesHK <- data.frame(attr(hitSeqHK, "gene"), attr(hitSeqHK, "accession_num"), 
+                           stringsAsFactors = FALSE)
+
+colnames(hitGenesHK) <- c("gene", "sacc")
+length(unique(hitGenesHK$sacc))
+
+hitsHK <- merge(unique(hitGenesHK), hitsHK, by  = "sacc",  all.y= TRUE)
+temp   <- hitsHK[-grep("unnamed|hypothetical",hitsHK$gene),]
+temp   <- temp[order(temp$qseqid,temp$evalue,-temp$bitscore),] 
+
+write.table(temp, 
+            file = file.path(paste(sharedPathAn, sep=""),"potential_houseKeepingGenes_BLAST.csv"),
+            append = FALSE, sep = ",", col.names = NA)
+```
+
+**** Over here - Andre, recall at line 1852, we swapped temp and temp2 - I fixed this again
+when I realized that you were trying to remove duplicate rows in the same temp, not pulling
+stuff out from temp 2 for temp. I just made both variables "temp".
+This pulls the first line of each of the BLAST hits.  Because they were sorted, the one with 
+the lowest evalue and highest bit score is kept.
+```{r}
+# Emily had to skip some above and import Andre's tables directly 
+# (import temp, from csv read.csv(), collect names, then):
+genesHKNames <- paste(sharedPath, analysis, "HiSeq_Analyses/potential_houseKeepingGenes_BLAST.csv", 
+                      sep = "")
+temp         <- read.csv(genesHKNames, stringsAsFactors = FALSE)
+bestHitHK    <- temp[!duplicated(temp$qseqid), ]  # duplicate removal
+bestHitHK$HK_gene <- sub("_\\[.*","",bestHitHK$gene)
+rpkmHKCount  <- rpkmCount[bestHitHK$qseqid, ]
+
+rpkmHKforBarPlots <- melt(rpkmHKCount, id.vars = colnames(rpkmHKCount))
+colnames(rpkmHKforBarPlots)[1] <- "SequenceID"
+colnames(rpkmHKforBarPlots)[2] <- "ExpUnit"
+colnames(rpkmHKforBarPlots)[3] <- "Read_Counts"
+
+# temp <- merge(rpkmHKforBarPlots, bestHitHKs, by  = "sacc",  all.y= TRUE)
+
+# I took out library name because we added two libraries
+metadataColsToMerge <- c("TimePoint", "RNASeq_Replicate", "ExpUnit") 
+
+# For paired-end not merged:
+rpkmHKforBarPlots <- merge(rpkmHKforBarPlots, 
+                           unique(metadataAdapRem[,c(metadataColsToMerge)]), 
+                           by = "ExpUnit", all.x = TRUE)
+
+# # For merged or single-end reads:
+# rpkmHKforBarPlots <- merge(rpkmHKforBarPlots, unique(metadataAdapRM[,c(metadataColsToMerge)]), 
+#                            by = "ExpUnit", all.x = TRUE)
+
+unique(rpkmHKforBarPlots$ExpUnit) # Notice ExpUnit "y"
+rpkmHKforBarPlots <- rpkmHKforBarPlots[rpkmHKforBarPlots$ExpUnit!="y",]
+unique(rpkmForBarPlots$ExpUnit) # Notice ExpUnit "y" is gone
+
+rpkmHKforBarPlots$TimePoint <- factor(rpkmHKforBarPlots$TimePoint, levels = c(timePoints))        
+
+rpkmHKforBarPlots <- merge(rpkmHKforBarPlots, bestHitHK[,c("HK_gene", "qseqid")],
+                           by.x = "SequenceID", by.y = "qseqid", all.x = TRUE)
+
+rpkmHKforBarPlots$House_Keeping_genes <- paste(rpkmHKforBarPlots$SequenceID,
+                                               rpkmHKforBarPlots$HK_gene, sep = "-")
+```
+
+**** Over here there is a problem - for Andre ( I left a useless loop there - sorry! André)
+Housekeeping Bar plots
+```{r}
+library("ggplot2")
+dir.create(paste(sharedPathAn, "HK_ggplots", sep = ""), showWarnings = TRUE, recursive = FALSE)
+ggplotsPath <- paste(sharedPathAn, "HK_ggplots/", sep = "")
+
+pdf(file   = paste(ggplotsPath, "HK_plots", ".pdf", sep = ""), 
+    width  = 8, 
+    height = 24)
+bp  <- ggplot(aes(y = Read_Counts, x = TimePoint), data = rpkmHKforBarPlots) + 
+  theme_bw() + 
+  scale_y_log10(breaks=c(10, 100,1000)) +
+  theme(axis.text.y = element_text(size  = 6, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 6, 
+                                   angle  = 45, 
+                                   hjust  = 1, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads (rpkm-normalized)") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 12, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 0.2, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 12, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  -0.2, 
+                                    face   = 'bold')) +
+  geom_boxplot(position = position_dodge(0.8), 
+               width    = 0.8, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 1, 
+               position = position_dodge(0.8))  +
+  facet_wrap(~House_Keeping_genes,
+             ncol = 4) +
+  theme(strip.text.x = element_text(size   = 4, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = 0))
+print(bp)
+dev.off()
+
+```
+
+*** Over here - Andre, I did this, but I'm not sure anymore if we wanted this inlog-scale too?
+  Emily -  Not sure what you mean by inlog scale.  These plots are not on log scale like the HK genes
+Bar plots per CAZy family group:
+```{r}
+library("ggplot2")
+
+dir.create(paste(sharedPathAn, "ggplotsByCazyFam", sep = ""),
+           showWarnings = TRUE,
+           recursive    = FALSE)
+
+ggplotsByCazyFamPath <- paste(sharedPathAn, "ggplotsByCazyFam/", sep = "")
+
+i <- 1
+
+for(i in 1:length(cazyFam)){
+temp <- subset(cazyRpkmSub2, cazyRpkmSub2$CazyFam == cazyFam[i])
+
+pdf(file   = paste(ggplotsByCazyFamPath, cazyFam[i], ".pdf", sep = ""),
+    width  = 8, 
+    height = 7*ceiling(nrow(temp)/90))
+
+bp <- ggplot(aes(y = Read_Counts, x = TimePoint), data  = temp) +
+  theme_bw() +
+  theme(axis.text.y = element_text(size  = 6, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 6, 
+                                   angle  = 45, 
+                                   hjust  = 1, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads (rpkm-normalized)") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 12, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 0.2, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 12, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  -0.2, 
+                                    face   = 'bold')) +
+  geom_boxplot(position = position_dodge(0.8), 
+               width    = 0.8, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 1, 
+               position = position_dodge(0.8))  +
+  facet_wrap(~SequenceID, 
+             scales = "free", 
+             ncol = 5) +
+  theme(strip.text.x = element_text(size   = 6, 
+                                    face   = 'bold.italic', 
+                                    colour = "black", 
+                                    angle  = 0))
+print(bp)
+dev.off()
+}
+
+```
+
+
+*** Over here - Andre, I did this, but I'm not sure anymore if we wanted this inlog-scale too?
+Individual multiple Bar plots
+```{r}
+library("ggplot2")
+dir.create(paste(sharedPathAn, "ggplots", sep = ""), showWarnings = TRUE, recursive = FALSE)
+ggplotsPath <- paste(sharedPathAn, "ggplots/", sep = "")
+
+cazyRpkmSub2$Secreted_CAZy <- paste(cazyRpkmSub2$CazyFam, cazyRpkmSub2$SequenceID, sep = "-")
+forPlot <- unique(cazyRpkmSub2$Secreted_CAZy) 
+i <- 1
+for(i in 1:length(forPlot)){
+  temp <- subset(cazyRpkmSub2, cazyRpkmSub2$Secreted_CAZy == forPlot[i])
+  png(file   = paste(ggplotsPath, forPlot[i], "-secreted.png", sep = ""), 
+      width  = 3, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+  bp <- ggplot(aes(y = Read_Counts, x = TimePoint), data = temp) +
+    theme_bw() +
+    theme(axis.text.y = element_text(size  = 6, 
+                                     hjust = 1, 
+                                     vjust = 0.5)) +
+    theme(axis.text.x = element_text(colour = 'black', 
+                                     size   = 6, 
+                                     angle  = 0, 
+                                     hjust  = 0.5, 
+                                     vjust  = 1)) +
+    theme(axis.ticks = element_line(colour = 'black', 
+                                    size   = 0.5)) +
+    labs(y = "Total Number of Reads (rpkm-normalized)") +
+    theme(axis.title.y = element_text(colour = 'black', 
+                                      size   = 7, 
+                                      angle  = 90, 
+                                      hjust  = 0.5, 
+                                      vjust  = 0.5, 
+                                      face   = 'bold')) +
+    theme(axis.title.x = element_text(colour = 'black', 
+                                      size   = 7, 
+                                      angle  = 0, 
+                                      hjust  = 0.5, 
+                                      vjust  = 0.5, 
+                                      face   = 'bold')) +
+    geom_boxplot(position = position_dodge(0.8), 
+                 width    = 0.8, 
+                 outlier.size   = 1, 
+                 outlier.colour = "black", 
+                 outlier.shape  = 20) +
+    stat_summary(fun.y = mean, 
+                 geom  = "point", 
+                 shape = 5, 
+                 size  = 1, 
+                 position = position_dodge(0.8))  +
+    facet_wrap(~Secreted_CAZy, 
+               scales = "free", 
+               ncol   = 1) +
+    theme(strip.text.x = element_text(size   = 6, 
+                                      face   = 'bold', 
+                                      colour = "black", 
+                                      angle  = 0))
+  print(bp)
+  dev.off()
+}
+```
+#####################################################################################################
+*** Over here - for Emily - I left up to here 29July2016
+This I had done manually when I ran the script for merging the HiSeq reads - After looking at plots, 
+I narrowed in on those genes that had similar diff. expression in both oosporogenesis and oospore 
+conversion time-course - I'll need to see about repeating this for the Hi-Seq_Analyses2 with reads 
+not merged.
+```{r}
+
+cazyInterestList <- c("PYU1_T010810", "PYU1_T003056", "PYU1_T006946", 
+                      "PYU1_T006947", "PYU1_T009144", "PYU1_T004665", 
+                      "PYU1_T006327", "PYU1_T013821", "PYU1_T014660", 
+                      "PYU1_T009505", "PYU1_T006194", "PYU1_T006546",
+                      "PYU1_T010982", "PYU1_T010437", "PYU1_T006878",
+                      "PYU1_T007490", "PYU1_T000471", "PYU1_T000490",
+                      "PYU1_T010809", "PYU1_T003515", "PYU1_T013496",
+                      "PYU1_T008966", "PYU1_T000955", "PYU1_T012530",
+                      "PYU1_T001495", "PYU1_T001658", "PYU1_T001170",
+                      "PYU1_T006485", "PYU1_T012512", "PYU1_T015040",
+                      "PYU1_T005056", "PYU1_T005072", "PYU1_T011896",
+                      "PYU1_T001346", "PYU1_T005252", "PYU1_T005445",
+                      "PYU1_T014041", "PYU1_T005135", "PYU1_T014584",
+                      "PYU1_T000438", "PYU1_T005971", "PYU1_T005972",
+                      "PYU1_T005973", "PYU1_T006030", "PYU1_T003173",
+                      "PYU1_T009242", "PYU1_T010978", "PYU1_T004531",
+                      "PYU1_T004532", "PYU1_T001515", "PYU1_T005968",
+                      "PYU1_T008740", "PYU1_T009220", "PYU1_T009223", 
+                      "PYU1_T009228", "PYU1_T002046", "PYU1_T002299", 
+                      "PYU1_T008222", "PYU1_T013005", "PYU1_T002412",
+                      "PYU1_T012179", "PYU1_T001053", "PYU1_T002541",
+                      "PYU1_T002542", "PYU1_T007532", "PYU1_T012442", 
+                      "PYU1_T012455", "PYU1_T004680")
+
+length(cazyInterestList)
+unique(cazyInterestList)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+I think this is junk.  André
+```{r}
+# To look at only secreted CAZy in Pyuu:
+# secCazyFasta <- paste(referencesPath, "Secretome/CAZy_secreted.fasta", sep = "")
+# secretedCAZyAll   <- readAAStringSet(paste(secCazyFasta), format = "fasta")
+# pyuuAllTranscript <- readAAStringSet(paste(pyuuTranscripts), format = "fasta")
+pyuuInterestFastaPath <- paste(sharedPathAn, "pyuuCazyInterestSubset.fasta", sep = "")
+pyuuCazyInterest <- readAAStringSet(paste(pyuuInterestFastaPath), format = "fasta")
+# secretedNames     <- names(secretedCAZyAll)
+pyuuInterestNames <- names(pyuuCazyInterest)
+
+# Read in the Pythium ultimum transcriptome file from the Pythium Genome Browser
+# (We did this earlier in the script)
+# my_names_pyuu <- gsub(" .*", "", names(Pyuu_fasta_seqs), ignore.case = FALSE)
+pyuuNamesTranscript <- gsub(" .*", "", names(pyuuAllTranscript), ignore.case = FALSE)
+
+#now take vector of names, and make these the names to refer to for readAAstringsset, recall, we put our readAAStringSet into Pyuu_fasta_seqs
+# names(Pyuu_fasta_seqs) <- my_names_pyuu
+names(pyuuAllTranscript) <- pyuuNamesTranscript
+
+#now we can match signalp4 names to fasta names because they are in the same format
+# pyuu_subset_signalp4 <- Pyuu_fasta_seqs[which(names(Pyuu_fasta_seqs) %in% list_gff_seq_names_sp4)]
+pyuuCazyInterestSubset <- pyuuAllTranscript[which(names(pyuuAllTranscript) %in% cazyInterestList)]
+
+
+# writeXStringSet(pyuu_subset_signalp4, file=paste(signalp4_gff_path, "pyuu_subset_signalp4.fasta", sep=""), append=FALSE, format="fasta") 
+writeXStringSet(pyuuCazyInterestSubset, file=paste(sharedPathAn, "pyuuCazyInterestSubsetNt.fasta", sep=""), append=FALSE, format="fasta") 
+
+
+ncbiDbPath     <- "/isilon/biodiversity/reference/ncbi/blastdb/reference/nt/nt"
+ncbiBlastnPath <- "/opt/bio/ncbi-blast+/bin/blastn"
+blastnOutFrmt  <- paste(" '", 
+                        "6", " qseqid", " sallacc", " pident", " length", 
+                        " mismatch", " gapopen", " qstart", " qend", " sstart", 
+                        " send", " evalue", " bitscore", 
+                        "'",
+                        sep = "") 
+maxTargetsSeqs <- 1
+
+prefix <- "pyuuCazyInterestSubset"
+cmd <- paste(ncbiBlastnPath,
+             " -db ",     ncbiDbPath,
+             " -query ",  paste(sharedPathAn, "pyuuCazyInterestSubsetNt.fasta",
+                                sep = ""),
+             " -max_target_seqs ", maxTargetsSeqs,
+             " -outfmt ", blastnOutFrmt,
+             " -out ",    paste(sharedPathAn, "pyuuCazyInterestSubsetNt.fasta.bls",
+                                sep = ""),
+             sep = "")
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+```
+
+```{r}
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+**** Over here - Andre, can we delete the next chunk?
+Subset of table for Edge R (not relevant anymore I think)
+Emily.  These will spit out p-values.  Not there yet for model testing.  André
+
+```{r}
+# Just the secreted Cazy genes
+rpkmCountCazy <- rpkmCount[which(rownames(rpkmCount) %in% unique(cazyDataSub[,c(3)])), ]
+
+# keep only certain columnms because of principal components analysis of PlotMDS
+rpkmCountCazySub <- rpkmCountCazy[ , -which(colnames(rpkmCountCazy) %in% c("T0-1",  "T0-2",  "T0-4"))]
+
+# Had to turn cholesterol/control as numeric by making them factors and then numbers 
+#dat_agg2 <- dat_agg[order(dat_agg$Group.2, -as.numeric(as.factor(dat_agg$Group.1)), dat_agg$Group.3,  decreasing=c(F,F,F)),] 
+```
+
+**** Over here - Andre, can we delete the next chunk? This was for oosporogenesis.
+Create Sample sheet
+```{r}
+samples <- data.frame(colnames(rpkmCountCazySub))
+colnames(samples)[1] <- "shortname"
+
+samples$Condition <- samples$shortname
+samples$Condition  <- sub("^T.*-", "", samples$Condition, ignore.case = FALSE)
+samples$Condition  <- sub("[1-9]$", "", samples$Condition, ignore.case = FALSE)
+samples$Condition  <- sub("c", "Control", samples$Condition, ignore.case = FALSE)
+samples$Condition  <- sub("x", "Cholesterol", samples$Condition, ignore.case = FALSE)
+
+samples$TimePoint <- samples$shortname
+samples$TimePoint  <- sub("^T", "", samples$TimePoint, ignore.case = FALSE)
+samples$TimePoint  <- sub("-.*$", "", samples$TimePoint, ignore.case = FALSE)
+
+samples$Treatment <- paste(samples$Condition, samples$TimePoint, sep="-")
+                      
+```
+                      
+**** Over here - Andre, can we delete the next chunk?                                      
+```{r}
+colnames(rpkmCountCazySub)
+samples
+
+#### HTSEQ_COUNT RESULTS 
+# 4. Filter weakly expressed and noninformative (e.g., non-aligned) features: 
+# noint <- rownames(countsTopHat) %in% c("__no_feature","__ambiguous","__too_low_aQual", 
+#                                 "__not_aligned","__alignment_not_unique") 
+# In edgeR, it is recommended to remove features without  
+# at least 1 read per million in n of the samples,  
+# where n is the size of the smallest group of replicates,  
+#keep = rowSums(cpms >1) >=3  
+#dim(countsTopHatGenes) ## the number of features you started with 
+#countsTopHatGenes = countsTopHatGenes[keep,] 
+#dim(countsTopHatGenes) ## count counts of features you have left over after initial filter 
+#colnames(countsTopHatGenes) = metadataProcessed$LibraryName 
+#Create a DGEList object (edgeR's container for RNA-seq count data): 
+dTopH = DGEList(counts=rpkmCountCazySub, group=samples$Treatments) 
+#Estimate normalization factors using, RNA composition and adjust for read depth: 
+dTopH = calcNormFactors(dTopH)
+#Inspect the relationships between samples using a multidimensional scaling (MDS) plot, as shown in Figure 4:
+results <- "3-March-2016-TopHat-edgeR"
+dir.create(paste(sharedPathAn, results, sep=""), showWarnings = TRUE, recursive = FALSE)
+pdf(file.path(paste(sharedPathAn,results,sep=""),"MDS-edgeR_TopHat-T3.pdf")) 
+plotMDS(dTopH, labels=colnames(rpkmCountCazySub), 
+        col = rainbow(length(levels(factor(samples$Treatments))))[factor(samples$Treatments)],cex=0.6, main="MDS") 
+dev.off() 
+
+# edgeR - using glm 
+#Create a design matrix to specify the factors that are expected to affect expression levels: 
+designTopH = model.matrix( ~ Group.1, dat_agg2[c(10:15),]) ## samples is your sample sheet, treatment is a column in the sample sheet 
+designTopH 
+
+### Here it is pH6 - pH2.5 (so positive fold change indicates higher expression in Normal, negative is higher in Affected) 
+#Estimate dispersion values, relative to the design matrix, using the Cox-Reid (CR)-adjusted likelihood 
+d2TopH = estimateGLMCommonDisp(dTopH, designTopH) 
+d2TopH = estimateGLMTrendedDisp(d2TopH, designTopH) 
+d2TopH = estimateGLMTagwiseDisp(d2TopH, designTopH) 
+
+#plot the mean-variance relationship: 
+pdf(file.path(paste(sharedPathAn,results,sep=""),"mean.variance-edgeR_TopHat.pdf")) 
+
+# Plot the relationship between mean expression and variance of expression 
+plotMeanVar(d2TopH, show.tagwise.vars=TRUE, NBline=TRUE,main="MeanVar") 
+
+# Plot the Biological Coefficient of Variation (as opposed to technical coefficient of variation) 
+plotBCV(d2TopH,main="BCV") 
+dev.off() 
+
+#Given the design matrix and dispersion estimates, fit a GLM to each feature: 
+fTopH = glmFit(d2TopH, designTopH) 
+
+#Perform a likelihood ratio test, specifying the difference of interest 
+deTopH = glmLRT(fTopH, coef=2) ## Treatment coefficient 
+
+#Use the topTags function to present a tabular summary of the differential expression statistics 
+ttTopH = topTags(deTopH, n=nrow(dTopH)) ## all tags, sorted 
+head(ttTopH$table) ## Check result 
+table(ttTopH$table$FDR< 0.05) ## the number of "Statistically Differentially Expressed Genes" at an FDR of 0.05 
+
+#Inspect the depth-adjusted reads per million for some of the top differentially expressed genes: 
+ncTopH = cpm(dTopH, normalized.lib.sizes=TRUE) 
+rnTopH = rownames(ttTopH$table) 
+head(ncTopH[rnTopH,order(dat_agg2$Group.1[10:15])],5) 
+
+#Plot the M (log-fold change) versus A (log-average expression) 
+degTopH = rnTopH[ttTopH$table$FDR < .05] 
+pdf(file.path(paste(sharedPathAn,results,sep=""),"smear-edgeR_TopHat-T3.pdf")) 
+plotSmear(dTopH, de.tags=degTopH,main="Smear") 
+dev.off() 
+ 
+#Save the result table as a CSV file: 
+write.table(ttTopH$table,file=file.path(paste(sharedPathAn,results,sep=""),"toptags_edgeR_TopHat.annotated-T3.csv"), append = FALSE, sep =",", col.names=NA)                      
+```
+
+**** Over here - Andre, can we delete the next chunk?                     
+Read Cazy data and merge some data
+```{r}
+cazyData <- read.xlsx(paste(sharedPathAn, "References/Final\ Table\ CAZyme\ 050813.xlsx", sep=""), sheetName="Pyuu", startRow=2, header=TRUE,  stringsAsFactors = FALSE)
+
+cazyCounts <- subset(as.data.frame(cpms), rownames(cpms) %in% cazyData$SequenceID)
+
+length(unique(cazyData$SequenceID))
+```
+**** Over here - Andre, can we delete the next chunk?
+Prepare data for bar plot
+```{r}
+cazyCounts$gene <- rownames(cazyCounts)
+cazyDataMelt <- melt(cazyCounts)
+
+cazyCounts <- merge(cpms, cazyData[,c(1,3,5,6,7,8,9,20)],  by.x = 0, by.y = "SequenceID", all = FALSE, all.y = TRUE)
+
+#countsTopHatMelt <- countsTopHatMelt[countsTopHatMelt$value>0,]
+colnames(countsTopHatMelt)[2] <- "LibraryName"
+df <- merge(countsTopHatMelt, metadataProcessed[,c(1,8)], by= "LibraryName", all.x=TRUE)
+
+countsTopHatSum <- dcast(data = df[,2:4], gene ~ ExpUnit, sum, value.var="value")
+
+cazyCountsT <- t(cazyCounts)
+```

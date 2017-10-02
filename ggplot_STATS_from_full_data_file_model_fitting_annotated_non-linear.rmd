@@ -1,0 +1,324 @@
+# Generating p-values for oosporogenesis and oospore conversion experiments, analyzed separately
+## (Non-linear only with time as continuous variable as factors)
+***
+
+## Importing, merging and organizing the data
+
+Path of folder
+```{r}
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+```
+
+Read file with all the data.  This file was made after normalizing oosporogenesis and oospore conversion together with EdgeR
+```{r}
+rpkmPlotsFullImport <- read.table(paste(sharedPath, 
+                                        "rpkmForBarPlots_full.csv", 
+                                        sep = ""), 
+                                  sep = ",", 
+                                  header = TRUE, 
+                                  as.is = TRUE, 
+                                  stringsAsFactors = FALSE)
+
+rpkmPlotsFullImport$xLab <- paste(rpkmPlotsFullImport$Condition,
+                                  rpkmPlotsFullImport$TimePoint, 
+                                  sep = "_")
+unique(rpkmPlotsFullImport$xLab)
+
+rpkmPlotsFullImport$xLab <- sub("OoCTimeCourse_", "", rpkmPlotsFullImport$xLab)
+rpkmPlotsFullImport$xLab <- sub("Various_0", "Various", rpkmPlotsFullImport$xLab)
+unique(rpkmPlotsFullImport$xLab)
+unique(rpkmPlotsFullImport$Experiment)
+
+# Creates ordered factors (very important for plotting or to see coefficients in the right order)
+labOrdered <- c("Various", "Control_0", "Control_3", "Cholesterol_3", 
+                "Control_7", "Cholesterol_7", "Control_24", "Cholesterol_24", 
+                "0", "12", "24", "48", "72", "120", "240") 
+rpkmPlotsFullImport$xLab <- factor(rpkmPlotsFullImport$xLab, levels = c(labOrdered))   
+levels(rpkmPlotsFullImport$xLab)
+
+expOrdered <- c("Mycelium", "Oosporogenesis", "OosporeConversion") 
+rpkmPlotsFullImport$Experiment <- factor(rpkmPlotsFullImport$Experiment, 
+                                         levels = c(expOrdered))
+rm(expOrdered)
+rm(labOrdered)
+
+# note, there is a bug in the way RNA replicate was carried forward (probably because levels were used instead of actual numbers), this is why Exp_Unit is being used to rebuild it here.
+rpkmPlotsFullImport$RNA_Rep <- sub("^T","", rpkmPlotsFullImport$ExpUnit)
+rpkmPlotsFullImport$RNA_Rep <- sub("^[0-9]+-","", rpkmPlotsFullImport$RNA_Rep)
+rpkmPlotsFullImport$RNA_Rep <- sub("^c|^x","", rpkmPlotsFullImport$RNA_Rep)
+rpkmPlotsFullImport$RNA_Rep <- sub("\\.","", rpkmPlotsFullImport$RNA_Rep)
+rpkmPlotsFullImport$RNA_Rep <- sub("^[A-z]*.[A-z]$","1", rpkmPlotsFullImport$RNA_Rep)
+rpkmPlotsFullImport$RNA_Rep <- sub("emp35C","1", rpkmPlotsFullImport$RNA_Rep)
+
+rpkmPlotsFullImport <- rpkmPlotsFullImport[order(rpkmPlotsFullImport$Experiment, rpkmPlotsFullImport$SequenceID, rpkmPlotsFullImport$xLab, rpkmPlotsFullImport$ExpUnit),]
+
+levels(as.factor(rpkmPlotsFullImport$RNA_Rep))
+```
+Read the file with CAZy and secretome data 
+```{r}
+
+mainFolder <- "GGPLOTS_FROM_FULL_DATA_continuous_X/from_Emily_24_March_2017"
+
+
+listLoci <- read.table(paste(sharedPath, mainFolder, "/CAZy_of_interest_list.csv", sep = ""), 
+                                  sep = ",",header = TRUE, as.is = TRUE,  stringsAsFactors = FALSE)
+
+# Note that I am not using the fread command from data.table.  This one creates a real problem later as column indexing no longer works with data,
+# table that has the feature of usinf<g column names instead.  A real problem if you want to use columns in a loop.
+# library(data.table)
+# listLoci <- fread(paste(sharedPath, mainFolder, "/CAZy_of_interest_list.csv", sep = ""),
+#                   sep = "auto", header = TRUE)
+```
+
+
+Show duplicated secreted genes
+```{r}
+Secreted_duplicated <-  listLoci[which(listLoci$Secreted=="secreted"),]
+Secreted_duplicated[duplicated(Secreted_duplicated$SequenceID),]
+```
+
+
+Aggregate together CAZy families for genes with more than one family, and remove duplicated
+```{r}
+dat_agg <- aggregate(listLoci[,c(2,3)], by=list(listLoci$SequenceID),FUN=c)
+for(i in 1:length(dat_agg$CAZyFamily)){
+  dat_agg$CAZyFamily2[i] <-paste(unlist(dat_agg$CAZyFamily[i]), collapse="-")
+}
+
+dat_agg$SequenceID <- NULL
+colnames(dat_agg)[1] <- "SequenceID"
+dat_agg$CAZyFamily <- NULL
+colnames(dat_agg)[2] <- "CAZyFamily"
+
+#remove duplicated loci
+listLoci <- listLoci[!duplicated(listLoci$SequenceID),]
+listLoci$CAZyFamily <- NULL
+#replace names with concatenated names
+listLoci <- merge(listLoci, dat_agg, by= "SequenceID")
+```
+
+
+Integrate gene loci CAZy and secreted data into main data table and write non-CAZy for NA
+```{r}
+rpkmPlotsFullImport <- merge(listLoci[,c(1,3,6)], rpkmPlotsFullImport[,2:10], by = "SequenceID", all.y = TRUE)
+rpkmPlotsFullImport$Secreted[is.na(rpkmPlotsFullImport$Secreted)] <- "non-CAZy"
+rpkmPlotsFullImport$CAZyFamily[is.na(rpkmPlotsFullImport$CAZyFamily)] <- "non-CAZy"
+```
+
+
+Create Main plot folder
+```{r}
+mainFolder <- "GGPLOTS_FROM_FULL_DATA_continuous_X_coeff_pvalues"
+
+if (dir.exists(paste(sharedPath, mainFolder , sep = ""))) {} else {
+  dir.create(paste(sharedPath, mainFolder , sep = ""), showWarnings = TRUE, recursive = FALSE)  }
+```
+
+Create a folder for the outputs:
+```{r}
+analysisDir <- "30_Aug_2017_annotated_script"
+if (dir.exists(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""))) {} else {
+  dir.create(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""), showWarnings = TRUE, recursive = FALSE)  }
+
+analysisPath <- paste(sharedPath, mainFolder , "/", analysisDir, sep = "")
+```
+
+
+## Analysing the data
+
+### Set Up the main parameters for these datasets
+The two decisions that affect most analyses.  Adding 1 or 1e-10 to eadr read data point and using time 24 or nor for Oospore conversion
+```{r}
+# add_to_read_count <- 1
+# add_to_read_count <- 1e-10
+add_to_read_count <- 0
+
+
+#T48 <- "yes"
+T48 <- "no"
+```
+
+
+
+Get a subset and run my own non linear analysis - Reorganize the data so each column is a gene and each line an experimental unit.  Somehow, adding 1e-10 to the data did not solve some of the minus infinity issue.  I added +1, which is also quite standard for this.  One needs to remember to remove 1 to the fitted data but given that we do this only for p-values, it is not an issue.
+```{r}
+#library(data.table)
+#Get only certain columns and oosporogenesis experiment
+if(T48 == "yes"){
+  subset_count3 <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment=="OosporeConversion" & rpkmPlotsFullImport$Secreted=="secreted"),c("ExpUnit", "Experiment", "SequenceID", "Condition", "TimePoint", "RNA_Replicate","Read_Counts")]
+} else {
+    subset_count3 <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment=="OosporeConversion" & rpkmPlotsFullImport$Secreted=="secreted" & rpkmPlotsFullImport$TimePoint!= 48),c("ExpUnit", "Experiment", "SequenceID", "Condition", "TimePoint", "RNA_Replicate","Read_Counts")]
+}
+  
+  subset_count3$sqrt_time <- sqrt(subset_count3$TimePoint)
+
+
+```
+
+
+
+### Oospore Conversion data 
+
+
+
+
+** Non linear modelling
+
+Get a subset for analysis
+
+```{r}
+
+# get the secreted subset
+#subset_count2 <- subset_count2[subset_count2$SequenceID %in% All_CAZy_names,]
+
+
+my_counts_NL0 <- dcast(data = subset_count3, ExpUnit + Condition + TimePoint + sqrt_time + RNA_Replicate ~ SequenceID, value.var = "Read_Counts")
+
+my_counts_NL0$sqrt_time <- sqrt(my_counts_NL0$TimePoint)
+
+
+```
+
+
+Gaussian fit (see https://en.wikipedia.org/wiki/Gaussian_function)
+
+```{r}
+library("nlsMicrobio")
+library(nlstools)
+
+
+#my_counts_NL$log_PYU1_T011896 <- log(my_counts_NL$PYU1_T011896 +1)
+
+   NL_fit <- nls(PYU1_T010810 ~   exp(max*exp(-((sqrt_time - cent)^2) / (2 * StDev^2))), 
+              start=list(max = 100, cent = 5, StDev =3), data=my_counts_NL, trace=TRUE,
+            # algorithm = "port",
+            #  algorithm = "port",
+              control=nls.control(maxiter = 200,printEval=TRUE, minFactor=2^-24, warnOnly=TRUE))
+
+      summary(NL_fit)
+   plotfit(NL_fit, smooth = TRUE)
+
+   overview(NL_fit)
+   
+   coefficients(summary(NL_fit))["max",1]
+
+
+t <- seq(from = 1, to = 16, by = 0.2)
+fitted <- exp(coefficients(summary(NL_fit))["max",1]*exp(-((t - coefficients(summary(NL_fit))["cent",1])^2) / 
+        (2 * coefficients(summary(NL_fit))["StDev",1]^2)))
+plot(t,fitted)
+   
+
+```
+
+
+
+```{r}
+
+add_to_read_count
+my_counts_NL <- my_counts_NL0
+my_counts_NL[,6:ncol(my_counts_NL)] <- my_counts_NL0[,6:ncol(my_counts_NL0)] + add_to_read_count
+
+
+#dat_coeff3 <- data.frame()
+remove(NL_fit)
+remove(Temporary3)
+remove(ii)
+ii <- 6
+ii <- as.numeric(66)
+ii <- which( colnames(my_counts_NL)=="PYU1_T000471" )
+
+exclude <- c(102)
+
+dat_coeff3 <- data.frame(stringsAsFactors = FALSE)
+  for(ii in 7:(ncol(my_counts_NL))) { 
+    print("######################################################################################################")   
+    print(c(ii, colnames(my_counts_NL)[ii]))
+
+       
+# upper_max <- 5 * log(max(my_counts_NL[,ii]))
+# start_max <- log(mean(my_counts_NL[,ii]))
+ start_StDev <- sd(my_counts_NL[,ii])
+ 
+my_counts_NL[,ii]
+# start_cent <- log(my_counts_NL[which.max(my_counts_NL[,ii]), 2] +1)
+ 
+  whichmax <- my_counts_NL[,c(4,ii)]
+  whichmax <- whichmax[order(-whichmax[,2]),] 
+  whichmax$log_count  <- log(whichmax[,2] + 1)
+  whichmax_sub <- dcast(whichmax[1:6, c(1,3),], sqrt_time ~ . , value.var = "log_count", mean)
+
+ start_cent  <- mean(whichmax_sub[,2])
+ start_max  <- mean(whichmax$log_count[1:8])
+ upper_max  <- 5 * start_max
+
+ try(
+   NL_fit <- nls(my_counts_NL[,ii] ~   exp(max*exp(-((sqrt_time - cent)^2) / (2 * StDev^2))),
+              algorithm = "port",
+            start=list(max = start_max, cent = start_cent, StDev =start_StDev),
+ #            start=list(max = 8, cent = 4, StDev =2), 
+              lower= list(max = 0, cent = 0, StDev =0.001* start_StDev),
+              upper= list(max = upper_max, cent = 16, StDev =100 *start_StDev),
+#              weights = 1/my_counts_NL[,ii],
+                data=my_counts_NL, trace=TRUE)
+, silent=FALSE)
+
+  if (class(NL_fit) != "try-error")  {
+
+    #    summary(NL_fit)
+    # plotfit(NL_fit, smooth = TRUE)
+    # overview(NL_fit)
+    # 
+    # coefficients(summary(NL_fit))
+
+    Temporary3 <- data.frame(colnames(my_counts_NL)[ii],row.names(coefficients(summary(NL_fit))),coefficients(summary(NL_fit)))
+    dat_coeff3 <- rbind(dat_coeff3,Temporary3) 
+    
+  } else {
+   Temporary3 <- data.frame(colnames(my_counts_NL)[ii],  "NA", "NA",  "NA", "NA", "NA")
+   colnames(Temporary3) <- colnames(dat_coeff3)
+    dat_coeff3 <- rbind(dat_coeff3,Temporary3) 
+ }
+  }
+
+colnames(dat_coeff3)[1:2] <- c("SequenceID","coeff")
+
+coeff2.melted <- melt(dat_coeff3, id.vars = c("SequenceID","coeff"))
+nl_coeff_by_gene_estimate <- dcast(data = coeff2.melted, SequenceID ~ coeff + variable, value.var = c("value"))
+
+nl_coeff_by_gene_estimate[duplicated(nl_coeff_by_gene_estimate[,2:ncol(nl_coeff_by_gene_estimate)]) , 2:ncol(nl_coeff_by_gene_estimate) ] <- NA
+
+```
+
+
+```{r}
+write.table(nl_coeff_by_gene_estimate, paste(sharedPath,mainFolder,"/",analysisDir, "/",
+        "Oospore_conversion_RPKM_plus_", add_to_read_count, "_T48_", T48, "_non_linear_secreted_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
+        col.names = NA, row.names = TRUE)
+
+```
+
+
+Make a Table only with genes in figs of thesis
+```{r}
+Fig_7A <- c("PYU1_T010810", "PYU1_T006952","PYU1_T009144", "PYU1_T001945")
+Fig_7E <- c("PYU1_T001949", "PYU1_T001346","PYU1_T005445", "PYU1_T001777")
+Fig_7I <- c("PYU1_T014660", "PYU1_T008966","PYU1_T012530", "PYU1_T006030")
+Fig_7M <- c("PYU1_T011896", "PYU1_T009223","PYU1_T009228", "PYU1_T003553")
+Fig_8 <- "PYU1_T006194"
+
+mult_figs <- c(Fig_7A,Fig_7E,Fig_7I,Fig_7M,Fig_8)
+
+Thesis_subset <- nl_coeff_by_gene_estimate[nl_coeff_by_gene_estimate$SequenceID %in% mult_figs,]
+Thesis_subset$SequenceID <- factor(Thesis_subset$SequenceID, levels=as.character(mult_figs))
+Thesis_subset <- Thesis_subset[order(Thesis_subset$SequenceID),]
+
+write.table(Thesis_subset, paste(sharedPath,mainFolder,"/",analysisDir, "/",
+        "Oospore_conversion_RPKM_plus_", add_to_read_count, "_T48_", T48, "_non_linear_Thesis_Figs_secreted_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
+        col.names = NA, row.names = TRUE)
+
+
+```
+
+
+

@@ -1,0 +1,1542 @@
+############################################################################################################################
+#Installing the required packages for R:
+# to be done in the R command line and not in R studio
+#source("http://www.Bioconductor.org/biocLite.R")
+#biocLite("BiocUpgrade")
+############################################################################################################################
+#Getting started in R
+#set the working directory > setwd("~/")
+#check version installed
+############################################################################################################################
+#Building the STAR Reference Genome Index:
+
+```{r}
+# library(knitr)
+# source("http://www.Bioconductor.org/biocLite.R")
+# biocLite("BiocUpgrade")
+# 
+```
+
+Many of the commands and approach are from:
+  Count-based differential expression analysis of RNA sequencing data using R and Bioconductor 
+Simon Anders, Davis J McCarthy, Yunshun Chen, Michal Okoniewski, Gordon K Smyth, Wolfgang Huber & Mark D Robinson
+nature protocols | VOL.8 NO.9 | 2013
+
+Use one or the other.  This defines where main working folder is.  Used throughout the script
+```{r}
+#shared_path <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+#shared_path <- "/home/AAFC-AAC/girouxem/RNASeq/"
+
+
+#seq_data_dir <- "MiSeq_data_Sci1"
+seq_data_dir <- "HiSeq_data"
+
+# Create fastq directory in shared_path folder
+dir.create(paste(shared_path, seq_data_dir, sep=""), showWarnings = TRUE, recursive = FALSE)
+
+# makes directory "HiSeq_data" on the shared drive
+path_fastq <- paste(shared_path, seq_data_dir, "/", sep="")
+
+```
+
+
+Emily: Setting up the working directory and paths for the Oospore conversion time-course:
+In the shared directory I made a sub-directory for the oospore conversion time-course data set. I then copied the bin, tools, and References folder to it.
+```{r}
+#Shared path for oospore conversion time-course:
+data_shared_path <- "~/Pythium_ultimum_RNAseq/Oospore_Conversion_TimeCourse/"
+appli_shared_path <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Oospore_Conversion_TimeCourse/"
+seq_data_dir <- "MiSeq_data_Sci2"
+# Create fastq directory in shared_path folder
+dir.create(paste(data_shared_path, seq_data_dir, sep=""), showWarnings = TRUE, recursive = FALSE)
+
+# makes directory "MiSeq_data_Sci2" on the shared drive
+path_fastq <- paste(data_shared_path, seq_data_dir, "/", sep="")
+```
+
+
+
+This is for Star I believe
+```{r}
+# makes directory "GenomeDir" on the shared drive
+dir.create(paste(shared_path, "GenomeDir", sep=""), showWarnings = TRUE, recursive = FALSE)
+GenomeDir_path <- paste(shared_path, "GenomeDir", "/", sep="")
+
+Pyuu_ref_path <- paste(shared_path, "References/Pyuu_ref_no_mito.fa", sep="")
+Pyuu_gff3_path <- paste(shared_path, "References/Pyuu_ref_no_mito.gff3", sep="")
+Pyuu_gtf_path <- "/home/AAFC-AAC/girouxem/RNASeq/References/Pyuu_ref.gtf"
+
+STAR_path <- "/opt/bio/STAR/STAR"
+#STAR_path <- "/home/AAFC-AAC/girouxem/RNASeq/tools/STAR-STAR_2.4.2a/source/STAR"
+P <- "Parent"
+Gff3_overhang <- 280 #needs to be max len -1, max length of R1 and R2 is ~280? This must be for the pair?
+cmd <- paste(STAR_path,"--runMode",
+             "genomeGenerate",
+             "--genomeDir",GenomeDir_path,
+             "--outFileNamePrefix",GenomeDir_path,
+             "--genomeFastaFiles",Pyuu_ref_path,
+             "--sjdbGTFtagExonParentTranscript",P,
+             "--sjdbGTFfile",Pyuu_gff3_path,
+             "--sjdbOverhang",Gff3_overhang
+)
+cmd
+
+#system(cmd)
+
+```
+
+
+Creating bowtie reference index from the fasta file 
+```{r}
+bowtie2_build_path <- "/opt/bio/bowtie2/bowtie2-build"
+
+cmd <- paste(bowtie2_build_path, " -f ", data_shared_path, "References/GU138662no_inverted_4.fa ", 
+             data_shared_path, "References","/", "GU138662no_inverted_4",  sep="")
+#cmd <- paste(bowtie2_build_path, " -f ", data_shared_path, "References/Pyuu_ref_1ribo_mito_no_repeats.fa ", 
+#             data_shared_path, "References","/", "Pyuu_ref_1ribo_mito_no_repeats",  sep="")
+cmd
+system(cmd)
+
+```
+
+**Pull out HiSeq data**
+  Generates a meta data file from Genome Quebec csv file.  It is possible to generate a metadata file manually.  Ignore this chunck and to the next one if you do that.
+```{r}
+
+################
+# paths of Genome Quebec Data
+HiSeq_path1 <- "/isilon/biodiversity/data/raw/illumina/GQC/HI.3222.003/"
+HiSeq_path2 <- "/isilon/biodiversity/data/raw/illumina/GQC/HI.3292.002/"
+
+# csv files are now in raw data folders
+GC_csv1 <- list.files(path = HiSeq_path1, pattern = "^HiSeq.*OG_.*\\.csv$", recursive = FALSE)
+GC_csv2 <- list.files(path = HiSeq_path2, pattern = "^HiSeq.*OG_.*\\.csv$", recursive = FALSE)
+
+
+
+
+
+# Used it before from working directory (the OG_HI picks up only one file)
+#GC_csv <- list.files(path = shared_path, pattern = "^HiSeq.*OG_Hi.*\\.csv$", recursive = FALSE)
+
+# read that csv file
+GC_meta1 <- read.csv(paste(HiSeq_path1,GC_csv1, sep=""), stringsAsFactors=FALSE)
+GC_meta1$rawpath <- HiSeq_path1
+GC_meta2 <- read.csv(paste(HiSeq_path2,GC_csv2, sep=""), stringsAsFactors=FALSE)
+GC_meta2$rawpath <- HiSeq_path2
+
+GC_meta <- rbind(GC_meta1,GC_meta2)
+
+
+# Because of the one missing sequence
+# GC_meta[grep("T24-x2_BC08",GC_meta$Name), 41] <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/missing_sequence/"
+
+
+#create OTRI like it was for MiSeq
+OTRI1 <- GC_meta[,c("Name","Run","Filename.Prefix","Run.Type","rawpath")]
+OTRI1$Read_Direction <- "R1"
+OTRI2 <- OTRI1
+OTRI2$Read_Direction <- "R2"
+OTRI <- rbind(OTRI1, OTRI2)
+
+
+rm(list = ls(pattern = ".*[1-2]$"))
+
+OTRI$FastqFilePath <- paste(OTRI$rawpath,OTRI$Filename.Prefix,"_",OTRI$Read_Direction,".fastq.gz", sep="")
+#OTRI$FastqFilePath <- paste(HiSeq_path1,OTRI$Filename.Prefix,"_",OTRI$Read_Direction,".fastq.gz", sep="")
+
+colnames(OTRI)[colnames(OTRI)=="Name"] <- "LibraryName"
+
+
+#Parsing the Metadata:
+parsed_columns <- data.frame(matrix(unlist(strsplit(as.character(OTRI$LibraryName), "_|-")), 
+                                    nrow=length(OTRI$LibraryName), byrow=T), stringsAsFactors = FALSE)
+colnames(parsed_columns) <- c("TimePoint","Condition","Library")
+Metadata <- cbind(parsed_columns, OTRI)
+Metadata$Platform <- "Illumina"
+Metadata$ScientificName <- "Pythium ultimum var ultimum"
+Metadata$TimePoint <- sub("T","", Metadata$TimePoint, ignore.case = FALSE)
+Metadata$RNA_Replicate <- sub("[^0-9$]", "", Metadata$Condition, ignore.case = FALSE)
+Metadata$Condition <- sub("^x.*", "Cholesterol", Metadata$Condition, ignore.case = FALSE)
+Metadata$Condition <- sub(".*1$|.*2$|.*3$|.*4$", "Control", Metadata$Condition, ignore.case = FALSE)
+Metadata$BaseCallsName <- paste(OTRI$Filename.Prefix,"_",OTRI$Read_Direction,".fastq", sep="")
+write.table(Metadata, file = paste(shared_path,"My_Metadata.csv",sep=""), append = FALSE, sep =",", col.names=NA)
+###########################################################################################################################
+
+
+
+```
+
+Import a Metadata file if not using the csv file generated by sequencing service
+```{r}
+#Metadata <- read.table(paste(shared_path, "My_Metadata_MiSeq_Sci1.csv",sep=""),sep=",",header=T,comment.char="",quote="",as.is=T) 
+```
+
+*!**!*!*!*
+Emily: After generating a Metadata csv file in the script in the working directory called "MakingMetadataOosporeConversionTimeCourse.R", if I open it in R
+I see that everything is quoted. I opened the csv in Word Pad, and replaced all " with nothing, then saved the file again to resolve this. 
+For the oospore conversion time-course:
+```{r}
+Metadata <- read.table(paste(appli_shared_path, "OosporeConversionTimeCourse_Metadata.csv",sep=""),sep=",",header=T,comment.char="",quote="",as.is=T)
+```
+
+Generating a function to make qsub jobs and a bash script to submit them
+====================
+```{r}
+# this makes a function to generate qsub commands and a bash to submit them in parallel using 3 inputs
+# often used later whenever a Linux command needs to be done on several data files
+make_qsubs <- function(cmd, prefix, suffix = ".sub", node =1) {
+  dir.create(paste(data_shared_path, prefix, sep=""), showWarnings = TRUE, recursive = FALSE)
+  out_path <- paste(data_shared_path, prefix, "/", sep="")
+  for(k in 1:length(cmd)) {
+    cat(paste("#!/bin/bash
+#$ -S /bin/sh
+# To make sure that the .e and .o and other outputs files arrive in the working directory
+#$ -cwd
+# request one slot in the smp environment
+#$ -pe smp ", node, "\n",
+"# Actual linux command for qsub \n",
+              cmd[k],
+              sep=""),
+        file=paste(out_path, prefix, k, suffix, sep=""))
+  }
+  # make a bash script to run all qsub
+  cat(paste("#!/bin/bash
+          argc=$#
+          requiredArgc=0
+          
+          if [ $argc -ne $requiredArgc ]; then
+          echo './test_mkdir.sh'
+          exit 1
+          fi
+          
+          prefixInFiles=", prefix, "\n",
+            "suffixInFiles=", suffix, "\n",
+            "for (( i = 1; i <= ", length(cmd), " ; i++ )); do 
+          # keep track of what is going on...
+          echo 'Treating file'  $prefixInFiles$i$suffixInFiles
+          # define a script name that will be submited to the queue
+          qsubFile=$prefixInFiles$i$suffixInFiles
+          # make the script executable
+          chmod a+x $qsubFile
+          # submit the script to the queue
+          qsub -cwd $qsubFile
+          done", sep=""), 
+      file=paste(out_path, prefix, ".sh", sep=""))
+  cat(c("\n"," *** SUBMIT FROM THE HEAD NODE THE FOLLOWING TWO COMMANDS ***","\n",
+        "    1- to make sure you are in the working directory to have the outputs there:", "\n",
+        paste("cd", out_path), "\n",
+        "    2- to run the bash from within this working directory:", "\n",
+        paste("bash ", prefix, ".sh", sep="")))
+}
+# end of qsub and bash making function
+
+```
+
+
+
+Copy and gunzip files
+Emily - The commands below successfully copy over the files, but do not appear to be unzipping them:
+```{r}
+# to copy all files using multiple processors (this is a lot faster than the above)
+cmd <-  with(Metadata, paste("cp ", FastqFilePath," ", shared_path, seq_data_dir, "/", basename(FastqFilePath) ,
+                             "\n",
+                             " gunzip ", shared_path, seq_data_dir, "/", basename(Metadata$FastqFilePath) ,
+                             sep=""))
+
+# now this is all to do I have to enter to make qsub and bash files
+prefix <- "A_copy_unzip"; suffix <- ".sub" #; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+make_qsubs(cmd, prefix, suffix) 
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+
+```
+Emily:
+Because my fastq.gz files are being copied over to the MiSeq_data_Sci2 directory, but are not being uncompressed according to gunzip,
+I tried  adding the gunzip bash as a separate set of commands (next chunk), but it also didn't work. So I went on the cluster directly to ghe MiSeq_data_Sci2 directory
+and did $ gunzip *.gz to manually uncompress the fastq.gz files one after the other. I think there is a problem when I issue a command from 
+within a subdirectory, like the A_copy_unzip subdirectory, that has to move up in th parent directory and then back down to the other subdirectory MiSeq_data_Sci2.
+```{r}
+# to copy all files using multiple processors (this is a lot faster than the above)
+cmd <-  with(Metadata, paste("gunzip ", shared_path, seq_data_dir, "/", basename(Metadata$FastqFilePath) ,
+                             sep=""))
+
+# now this is all to do I have to enter to make qsub and bash files
+prefix <- "A_copy2_unzip"; suffix <- ".sub" #; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+make_qsubs(cmd, prefix, suffix) 
+```
+
+
+
+
+
+To remove the output files after you are done.  This way you keep the qsub and bash file.
+```{r}
+system(paste("rm ", shared_path, prefix, "/", prefix, "*", suffix, ".*", sep=""))
+```
+
+
+Make a Metadata table called MetadataRawPairs that has the raw reads rows collapsed by R1 and R2
+```{r}
+library("reshape2")
+MetadataRawPairs <- dcast(data = Metadata, LibraryName + Condition + TimePoint + RNASeq_Replicate ~ Read_Direction, value.var
+                          ="BaseCallsName", FUN=c)
+MetadataRawPairs$ShortName <- paste(MetadataRawPairs$Condition, MetadataRawPairs$TimePoint, 
+                                    MetadataRawPairs$RNASeq_Replicate, sep=".")
+```
+
+Run FastqPairedEndValidator for the first time
+```{r}
+FastqPairedEndValidator_path <- paste(shared_path, "tools/FastqPairedEndValidator.pl", sep="")
+
+#  prepares processes for qsub
+cmd <-  with(MetadataRawPairs, paste(FastqPairedEndValidator_path, " ", path_fastq, R1, " ", path_fastq, R2,sep=""))
+
+# now this is all all I have to enter to make qsub and bash files
+prefix <- "B_Validator"; suffix <- ".sub" #; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+make_qsubs(cmd, prefix, suffix)  
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+
+```
+
+
+
+To show the output of each pair on the console in Rstudio
+```{r}
+for(k in 1:nrow(MetadataRawPairs)) {
+  cat(c(k, MetadataRawPairs$R1[k], MetadataRawPairs$R2[k]))
+  system(paste("cat ", shared_path, prefix, "/", prefix, k, suffix, ".o*" , sep=""))
+  cat("\n")
+}
+```
+
+to remove the output files after you are done
+```{r}
+system(paste("rm ", shared_path, prefix, "/", prefix, "*", suffix, ".e*", sep=""))
+system(paste("rm ", shared_path, prefix, "/", prefix, "*", suffix, ".p*", sep=""))
+```
+
+to test of the choice of adapters is good using the first fastq read 1 sequence. Ignore broken pipe error.  This seems to be an artifact of running commands within R.  The number is the number of reads with this adapter.
+```{r}
+FwdAdapter <- "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"  # Genome Quebec
+RevAdapter <- "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"  # Genome Quebec
+
+to_check <- 25
+cmd <- paste("cat ", path_fastq, MetadataRawPairs$R1[to_check], " | head -n 1000000 |grep '", FwdAdapter, "' | wc -l", sep="")
+system(cmd)
+cmd <- paste("cat ", path_fastq, MetadataRawPairs$R1[to_check], " | head -n 1000000 |grep '", RevAdapter, "' | wc -l", sep="")
+system(cmd)
+```
+
+Removal of adapters from fastq reads and unzip files. Do this prior to any other processing to make them easier to detect.
+```{r}
+SeqPrep_path <- paste(shared_path, "tools/SeqPrep/SeqPrep", sep="")
+
+cmd <- with(MetadataRawPairs, paste(SeqPrep_path, " -f ", path_fastq,R1, " -r ", path_fastq,R2, " -1 ", 
+                                    path_fastq, "AdapRem_", R1,".gz", " -2 " ,path_fastq,"AdapRem_",R2,".gz", " -A ", FwdAdapter, " -B ", RevAdapter, 
+                                    "\n",
+                                    "gunzip ", path_fastq, "AdapRem_", R1,".gz", 
+                                    "\n",
+                                    "gunzip " ,path_fastq,"AdapRem_",R2, ".gz",
+                                    sep=""))
+
+# now this is all all I have to enter to make qsub and bash files
+prefix <- "C_SeqPrep"; suffix <- ".sub" #; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+make_qsubs(cmd, prefix, suffix)  
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+
+```
+
+To show the output of each pair on the console in Rstudio
+```{r}
+for(k in 1:nrow(MetadataRawPairs)) {
+  cat(c(k, MetadataRawPairs$R1[k], MetadataRawPairs$R2[k]))
+  cat("\n")
+  system(paste("tail ", shared_path, prefix, "/", prefix, k, suffix, ".e* | head -n 10" , sep=""))
+  cat("\n")
+}
+```
+
+to remove the output files after you are done
+```{r}
+system(paste("rm ", shared_path, prefix, "/",  prefix, "*", suffix, ".o*", sep=""))
+system(paste("rm ", shared_path, prefix, "/",  prefix, "*", suffix, ".p*", sep=""))
+```
+
+Test for MiSeq adapters
+```{r}
+FwdAdapter <- "ATCTCGTATGCCGTCTTCTGCTTG"  # MiSeq adapters
+RevAdapter <- "TAGAGCATACGGCAGAAGACGAAC"  # MiSeq adapterscd 
+
+cmd <- paste("cat ", path_fastq, "AdapRem_", MetadataRawPairs$R1[10], " | head -n 1000000 | grep '", FwdAdapter, "' | wc -l", sep="")
+system(cmd)
+cmd <- paste("cat ", path_fastq, "AdapRem_", MetadataRawPairs$R1[10], " | head -n 1000000 |grep '", RevAdapter, "' | wc -l", sep="")
+system(cmd)
+
+```
+
+Delete unnecessary fastq files
+```{r}
+To_delete_fastq <- list.files(path = path_fastq, pattern = "^HI.*fastq$")
+for(k in 1:length(To_delete_fastq)) {
+  cmd = paste("rm ", path_fastq, To_delete_fastq[k], sep="")
+  system(cmd)
+}
+
+```
+
+Validate fastq R1 and R2 pairs order: 
+  Make a Metadata table called MetadataAdapRem that has the raw reads rows collapsed.
+```{r}
+for(k in 1:nrow(Metadata)){
+  Metadata$Adapters_Removed <- paste("AdapRem", substr(Metadata$BaseCallsName, 1, nchar(Metadata$BaseCallsName)-6), sep="_")
+}
+MetadataAdapRem <- dcast(data = Metadata, LibraryName + Condition + TimePoint + RNA_Replicate ~Read_Direction, value.var
+                         = "Adapters_Removed", FUN=c)
+MetadataAdapRem$ShortName <- paste(MetadataAdapRem$Condition, MetadataAdapRem$TimePoint, MetadataAdapRem$RNA_Replicate, sep=".")
+
+```
+
+Second round of FastqPairedEndValidator with adapters removed
+```{r}
+cmd <-  with(MetadataAdapRem, paste(FastqPairedEndValidator_path, " ", path_fastq, R1, ".fastq ", path_fastq, R2, ".fastq", sep=""))
+
+########################################################################
+#  This is to process  FastqPairedEndValidator, using one node per pair of file
+# now this is all all I have to enter to make qsub and bash files
+prefix <- "D_Validator"; suffix <- ".sub"  #; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+make_qsubs(cmd, prefix, suffix)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+```
+
+To show the output of each pair on the console in Rstudio
+```{r}
+for(k in 1:nrow(MetadataAdapRem)) {
+  cat(c(k, MetadataAdapRem$R1[k], MetadataAdapRem$R2[k]))
+ # system(paste("cat ", path_fastq, prefix, k, suffix, ".o*" , sep=""))
+  system(paste("cat ", shared_path, prefix,"/",prefix, k, suffix, ".o*" , sep=""))
+  cat("\n")
+}
+```
+
+to remove the output files after you are done
+```{r}
+system(paste("rm ", shared_path, prefix, "/",  prefix, "*", suffix, ".e*", sep=""))
+system(paste("rm ", shared_path, prefix, "/",  prefix, "*", suffix, ".p*", sep=""))
+
+```
+
+PrinSeq graph fastq reports: Note - this is time-intensive, consider if better to do fastqc 
+```{r}
+PrinSeq_path <- paste(appli_shared_path, "tools/prinseq-lite-0.20.4/prinseq-lite-0.20.4/prinseq-lite.pl", sep="")
+
+prefix <- "E_Print_Seq_graph"
+
+#Generate QC graphs for the processed fastq, output the graph files to the graph directory:
+cmd = with(MetadataAdapRem, paste(PrinSeq_path,
+                                  " -fastq ", path_fastq, R1, ".fastq -fastq2 ", path_fastq, R2, ".fastq",
+                                  " -verbose ",
+                                  " -out_good null", 
+                                  " -out_bad null", 
+                                  " -graph_data ", data_shared_path, prefix ,"/",paste(LibraryName,"processed.gd", sep="_"),
+                                  sep=""))
+
+# now this is all all I have to enter to make qsub and bash files
+suffix <- ".sub"  
+make_qsubs(cmd, prefix, suffix)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+
+```
+
+GO HERE TO READ THE .gd files (could we run this to get html outputs?)
+http://edwards.sdsu.edu/cgi-bin/prinseq/prinseq.cgi?report=1
+How to interpret plots here
+http://prinseq.sourceforge.net/manual.html
+
+
+To show the output of each pair on the console in Rstudio
+```{r}
+for(k in 1:nrow(MetadataAdapRem)) {
+  cat(c(k, MetadataAdapRem$R1[k], MetadataAdapRem$R2[k]))
+  cat("\n")
+  system(paste("tail ", shared_path, prefix, "/",  prefix, k, suffix, ".e* | head -n 19" , sep=""))
+  cat("\n")
+}
+```
+
+to remove the output files after you are done
+```{r}
+system(paste("rm ", shared_path, prefix, "/",  prefix, "*", suffix, ".o*", sep=""))
+system(paste("rm ", shared_path, prefix, "/",  prefix, "*", suffix, ".p*", sep=""))
+```
+
+Possibly to add columns with graph file names
+Processed_graphs_PrinSeq <- list.files(path = paste(shared_path, "PrinSeq_graph_data",sep=""), pattern=glob2rx("*_processed.gd"), full.names=T)
+Processed_graphs_PrinSeq
+Metadata$PrinSeq_Processed_fastq_graph <- paste(Metadata$LibraryName,"processed.gd", sep="_")
+
+
+
+This is to processPrinSeq trimming and cleaning, using one node per pair of file
+```{r}
+dir.create(paste(data_shared_path, "PrinSeq_logs", sep=""), showWarnings = TRUE, recursive = FALSE)
+
+prefix <- "F_Print_Seq_trim"; suffix <- ".sub" #; out_path <- paste(data_shared_path, "HiSeq_data/", sep="")
+
+nmax <- 1
+trim_left <- 3
+trim_right <- 2
+trim_tail_left <- 5
+trim_tail_right <- 5
+trim_qual_window <- 3
+trim_qual_type <- "mean"
+trim_qual_right <- 32 #See about increasing to 30 - see after running with Andre's modified gff.
+trim_qual_left <- 32 #See about increasing to 30 - see after running with Andre's modified gff.
+trim_qual_rule <- "lt"
+lc_method <- "dust"
+lc_threshold <- 7
+out_good <- "processed"
+out_bad <- "null"
+min_len <- 50
+trim_to_len <- 200 #may need to make shorter - need pairs to be ~230 bp because that is the average length of mapped pairs during STAR for our 
+#reads. But not sure how to do this - what about using another program to merge pairs? or, try increasing trim_qual_rule to 30.
+log <- "processed_log"
+
+cmd = with(MetadataAdapRem, paste(PrinSeq_path, " -fastq ",  path_fastq, R1, ".fastq -fastq2 ",  path_fastq, R2, ".fastq",
+                                  " -ns_max_n ", nmax, 
+                                  " -trim_left ", trim_left, 
+                                  " -trim_right ", trim_right, 
+                                  " -trim_tail_left ", trim_tail_left, 
+                                  " -trim_tail_right ", trim_tail_right, 
+                                  " -trim_qual_window ", trim_qual_window, 
+                                  " -trim_qual_type ", trim_qual_type, 
+                                  " -trim_qual_left ",  trim_qual_left,
+                                  " -trim_qual_right ",  trim_qual_right,
+                                  " -trim_qual_rule ", trim_qual_rule, 
+                                  " -lc_method ", lc_method, 
+                                  " -lc_threshold ", lc_threshold, 
+                                  #          " -out_good ", paste("Processed",R1, sep="_"), 
+                                  #         " -out_bad ", out_bad, 
+                                  " -verbose ",  
+                                  " -min_len ", min_len,
+                                  #           " -trim_to_len ", trim_to_len,
+                                  " -no_qual_header ", 
+                                  " -log ", data_shared_path, prefix, "/", "Processed_log_",LibraryName ,
+                                  #           " -graph_data ", data_shared_path, "PrinSeq_graph_data" ,"/", LibraryName,"_processed2.gd", 
+                                  sep=""))
+
+# now this is all all I have to enter to make qsub and bash files
+make_qsubs(cmd, prefix, suffix)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+
+```
+
+to remove the output files after you are done
+```{r}
+system(paste("rm ", shared_path, prefix, "/", prefix, "*", suffix, ".*", sep=""))
+```
+
+
+Metadata update
+Must integrate the Processed fastq names from PrinSeq in new metadata :
+```{r}
+
+ProcessedLogs_PrinSeq <- list.files(path = paste(data_shared_path, prefix, "/", sep=""),  pattern=glob2rx("Processed_log*"), full.names=T)
+ProcessedLogs_PrinSeq 
+Metadata$PrinSeq_Processed_fastq_log <- paste("Processed_log",Metadata$LibraryName, sep="_")
+
+trimmed_files <- list.files(path=path_fastq, pattern=glob2rx("^AdapRem*_prinseq_good_*.fastq$"), full.names=F)
+#use below only if singletons are there
+#trimmed_files <- trimmed_files[-grep("^AdapRem.*_prinseq_good_singletons_.*\\.fastq$", trimmed_files, ignore.case = FALSE)]
+
+trimmed_files <- data.frame(trimmed_files,trimmed_files)
+colnames(trimmed_files) <- c("Processed_Fastq", "Adapters_Removed")
+trimmed_files$Adapters_Removed <- sub("_prinseq_good_.*\\.fastq$", "", trimmed_files$Adapters_Removed)
+Metadata <- merge(Metadata, trimmed_files, by = "Adapters_Removed", all.x = TRUE)
+
+MetadataProcessed <- dcast(data = Metadata, LibraryName + Condition + TimePoint + RNA_Replicate ~ Read_Direction, value.var ="Processed_Fastq", FUN=c)
+
+```
+
+
+
+prepares processes for qsub with paired end validator, third round
+```{r}
+cmd <-  with(MetadataProcessed, paste(FastqPairedEndValidator_path, " ", path_fastq, R1, " ", path_fastq, R2, sep=""))
+
+prefix <- "G_Validator"; suffix <- ".sub" #; out_path <- paste(shared_path, "HiSeq_data/", sep="")
+make_qsubs(cmd, prefix, suffix)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+```
+
+
+To show the output of each pair on the console in Rstudio
+```{r}
+for(k in 1:nrow(MetadataProcessed)) {
+  cat(c(k, MetadataProcessed$R1[k], MetadataProcessed$R2[k]))
+  system(paste("cat ", path_fastq, prefix, k, suffix, ".o*" , sep=""))
+  cat("\n")
+}
+```
+
+to remove the output files after you are done
+```{r}
+system(paste("rm ", shared_path, prefix, "/",  prefix, "*", suffix, ".o*", sep=""))
+system(paste("rm ", shared_path, prefix, "/", prefix, "*", suffix, ".p*", sep=""))
+```
+
+This is the second round of PrintSeq to check if trimming worked
+```{r}
+prefix <- "H_Print_Seq_graph2"; 
+
+cmd = with(MetadataProcessed, paste(PrinSeq_path,
+                                    " -fastq ", path_fastq, R1, " -fastq2 ", path_fastq, R2,
+                                    " -verbose ",
+                                    " -out_good null", 
+                                    " -out_bad null", 
+                                    " -graph_data ", shared_path, prefix ,"/",paste(LibraryName,"processed_2.gd", sep="_"),
+                                    sep=""))
+
+
+
+# now this is all all I have to enter to make qsub and bash files
+suffix <- ".sub" 
+make_qsubs(cmd, prefix, suffix)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+
+```
+
+
+
+To show the output of each pair on the console in Rstudio
+```{r}
+for(k in 1:nrow(MetadataProcessed)) {
+  cat(c(k, MetadataProcessed$R1[k], MetadataProcessed$R2[k]))
+  cat("\n")
+  system(paste("tail ", shared_path, prefix, "/",  prefix, k, suffix, ".e* | head -n 19" , sep=""))
+  cat("\n")
+}
+
+```
+
+
+To remove unnecessary fastq files (singleton, bad filed and original fastq after adapter removal)
+```{r}
+processed_singletons <- list.files(path= path_fastq, pattern=glob2rx("^AdapRem*_prinseq_good_singletons_*.fastq$"), full.names=T)
+processed_singletons
+file.remove(processed_singletons)
+
+processed_bad <- list.files(path= path_fastq, pattern=glob2rx("^AdapRem*_prinseq_bad_*.fastq$"), full.names=T)
+processed_bad
+file.remove(processed_bad)
+
+all_fastq <- list.files(path=path_fastq, pattern=glob2rx("^AdapRem*.fastq$"), full.names=T)
+adapters_removed_no_trim <- all_fastq[-grep("AdapRem.*_prinseq_good_.*\\.fastq$", all_fastq, ignore.case = FALSE)]
+adapters_removed_no_trim
+file.remove(adapters_removed_no_trim)
+
+rm(processed_singletons,processed_bad,adapters_removed_no_trim)
+
+```
+
+
+
+
+
+Not sure if we need this now
+FastQC is quote slow compared to multiprocessing with PrintSeq
+############################################################################################################################
+#FastQC - I'm putting this in because it's simpler than generating all the PrinSeq graphs and having to break to go online,
+#Also, the outputs are very similar, and you can do all the most relevant stats.
+#Can you take a look at the reads for quality vs length? Maybe after processing I should trim further? Or adjust some of the PrinSeq Parameters?
+
+# With HiSeq this is very slow and there seems to be some errors at the first qa step
+
+# library("ShortRead")
+# list.files(path=path_fastq, pattern=glob2rx("^AdapRem*_prinseq_good_*.fastq$"), full.names=F)
+# # runs qa with the files in the directory and with the pattern
+# fqQC = qa(dirPath = path_fastq, pattern = "_prinseq_good_", type = "fastq")
+# report(fqQC, type = "html", dest = "fastqQAreport")
+# ###Performing some stats (optional):
+# df <- fqQC[["readQualityScore"]]
+# #[['readCounts']] # inspect read yield
+# #[['baseCalls']] # inspect base composition
+# #[['frequentSequences']] # inspect most common sequences
+# #df <- within(df, acc_sum <- cumsum(density))
+# df <- within(df, {cumsumDensity <- ave(density, lane, FUN = cumsum)})
+# df <- within(df, {sumDensity <- ave(density, lane, FUN = sum)})
+# df$percentile <- df$cumsumDensity / df$sumDensity
+# library(ggplot2)
+# pdf(file = "quality_scores_distribution.pdf", width = 7, height =10)
+# p1 <-   ggplot(df, aes(x=quality, y=density)) +
+#   geom_line() + 
+#   facet_wrap( ~ lane, ncol=4) +
+#   theme_bw() + 
+#   theme(strip.text.x = element_text(size = 6)) 
+# print(p1)
+# p2 <-   ggplot(df, aes(x=quality, y=percentile)) +
+#   geom_line() +
+#   facet_wrap( ~ lane, ncol=4) +
+#   theme_bw() +  
+#   theme(strip.text.x = element_text(size = 6)) 
+# print(p2)
+# dev.off()
+# # checks some stats
+# ag <- aggregate(density ~ lane, data = df, max)
+# df.max <- merge(ag, df)
+# see_cut_off <- subset(df, df$quality > 35 & df$quality < 35.1)
+
+#Looking at the fastQC html, with respect to nucleotide frequency base calls. How do we know that the difference in AT (higher)
+#versus GC(lower), is due to actual GC content unique to species and not due to a GC that is introduced during DNA amplification
+# by PCR during library preparation - as this is a major source in variation whereby GC-rich regions remain annealed during
+#amplification.
+
+
+
+
+
+Create folders to put Tophat results and runs the jobs.  This one uses multiple processors for each files.  It appears that it is counterproductive to go above 4 nodes per job.  You can check how tbusy is the server with    qhost     or      qstat -q all.q -u "*"
+check out gff3 validator here
+http://genometools.org/cgi-bin/gff3validator.cgi
+```{r}
+for(j in 1:length(MetadataProcessed$LibraryName)) {
+  dir.create(paste(data_shared_path, MetadataProcessed$LibraryName[j], sep=""), showWarnings = TRUE, recursive = FALSE)
+
+#for(j in 1:length(MetadataAdapRem$LibraryName)) {
+#   dir.create(paste(data_shared_path, MetadataAdapRem$LibraryName[j], sep=""), showWarnings = TRUE, recursive = FALSE)
+
+    
+}
+
+
+tophat2_path <- "/opt/bio/tophat/bin/tophat2"
+
+# system(tophat2_path) ##Andre - here I can see so many options - surely there's a way to improve the alignment issue we have
+#gff3 <- paste(data_shared_path, "References/GU138662no_inverted_4.gff", sep="")
+#bowind = "GU138662no_inverted_4"
+gff3 <- paste(data_shared_path, "References/Pyuu_ref_1ribo_mito_no_repeats_4.gff3", sep="")
+bowind = "Pyuu_ref_1ribo_mito_no_repeats"
+
+
+
+node <- 2
+
+ cmd = with(MetadataProcessed, paste(tophat2_path, " -G ", gff3,
+#    cmd = with(MetadataAdapRem, paste(tophat2_path, " -G ", gff3,
+                                    " -p ", node, " -o ", data_shared_path,LibraryName,"/",LibraryName,"_TopHat_",format(Sys.time(), "%Y_%m_%d_%Hh"),
+                                    " ", data_shared_path,"References/",bowind, 
+                                    " ", path_fastq, R1," ", path_fastq, R2,
+                                    sep=""))
+########################################################################
+#  This is to process  FastqPairedEndValidator, using one node per pair of file
+# now this is all I have to enter to make qsub and bash files
+prefix <- "I_TophatQsub_"; suffix <- ".sub"  #; out_path <- paste(shared_path, "TophatQsub/", sep=""); 
+make_qsubs(cmd, prefix, suffix, node)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+
+```
+
+
+
+#  MUST DO CLEAN UP OF TMP FILES WITHIN FOLDERS
+```{r}
+cmd <- with(MetadataProcessed, paste("rm -r ", shared_path, LibraryName,"/", LibraryName,"_TopHat/tmp" , sep=""))
+```
+
+
+
+To run Samtools on the Tophat folder that has the right date
+```{r}
+samtools1_path <- "/opt/bio/samtools1/bin/samtools1"
+
+# could have automatic search for most recent
+TopHat_date <- "_2016_05_10_17h"
+
+cmd = with(MetadataProcessed, (paste(samtools1_path, 
+                                     " sort",   " -n ",
+                                     data_shared_path,LibraryName,"/",LibraryName,"_TopHat",TopHat_date,"/","accepted_hits.bam ",
+                                     data_shared_path,LibraryName,"/",LibraryName,"_TopHat",TopHat_date,"/",LibraryName,"_sn", 
+                                     "\n",                                    
+                                     samtools1_path,  " view ", 
+                                     " -o ", 
+                                     data_shared_path,LibraryName,"/",LibraryName,"_TopHat",TopHat_date,"/",LibraryName,"_sn.sam ",
+                                     data_shared_path,LibraryName,"/",LibraryName,"_TopHat",TopHat_date,"/",LibraryName,"_sn.bam",
+                                     "\n",
+                                     samtools1_path,               " sort ", 
+                                     data_shared_path,LibraryName,"/",LibraryName,"_TopHat",TopHat_date,"/","accepted_hits.bam ",
+                                     data_shared_path,LibraryName,"/",LibraryName,"_TopHat",TopHat_date,"/",LibraryName,"_s",
+                                     "\n",
+                                     samtools1_path,        " index ", 
+                                     data_shared_path,LibraryName,"/",LibraryName,"_TopHat",TopHat_date,"/",LibraryName,"_s.bam",
+                                     sep="")))
+
+########################################################################
+#  This is to process  FastqPairedEndValidator, using one node per pair of file
+# now this is all I have to enter to make qsub and bash files
+node <- 1
+prefix <- "J_Samtools_sort_Qsub"; suffix <- ".sub" #; out_path <- paste(data_shared_path, "L_Samtools_Qsub/", sep=""); 
+make_qsubs(cmd, prefix, suffix, node)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+```
+
+
+HTSeq-count for TopHat2 hits:
+  
+  First, prepare metadata
+```{r}
+MetadataProcessed$countf_TopHat = paste(MetadataProcessed$LibraryName, "TopHat2_count", sep=".")
+```
+
+I could only get this to run on my own directory (André)
+I installed numpy and htseq with bug information in #5656
+```{r}
+htseq_count_path <- "~/test-python26-env/bin/htseq-count"
+
+#system(htseq_count_path)
+#gff3 <- "/home/AAFC-AAC/girouxem/RNASeq/References/Pyuu_ref_no_mito.gff3"
+#gff3 <- paste(data_shared_path, "References/Pyuu_ref_no_mito_1ribo_short2.gff3.txt", sep="")
+stranded <- "no"
+MINAQUAL <- 10
+cmd = with(MetadataProcessed, paste(htseq_count_path, 
+                                    " -s ", stranded,
+                                    " -a ", MINAQUAL,
+                                    " --idattr=Parent ",
+                                    data_shared_path, LibraryName, "/", LibraryName,"_TopHat",TopHat_date,"/",LibraryName,"_sn.sam ",
+                                    gff3,
+                                    " > ",
+                                    data_shared_path, LibraryName, "/", LibraryName,"_TopHat",TopHat_date,"/",MetadataProcessed$countf_TopHat,
+                                    sep=""))
+
+
+# now this is all I have to enter to make qsub and bash files
+node <- 1
+prefix <- "L_HTSeq_Qsub"; suffix <- ".sub"; #out_path <- paste(data_shared_path, "M_HTSeq_Qsub/", sep=""); 
+make_qsubs(cmd, prefix, suffix) #, out_path, node)
+########################################################################################
+########  ***** SUBMIT BASH FILE FROM HEAD NODE, AND WAIT FOR COMPLETION ****###########
+########          watch output from this command in the console              ###########
+########################################################################################
+
+```
+
+
+To do permissions for sharing data
+```{r}
+
+linux commands:
+  find /isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/ -type d -exec chmod 770 {} +
+  find /isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/ -type f -exec chmod 660 {} +
+  
+```
+
+
+
+Get all data together and add the counts for libraries representing the same treatments
+```{r}
+library("edgeR")
+#library(xlsx)
+
+
+#Identify the count files and read them into R using readDGE
+
+
+counts_list_TopHat <-  paste(data_shared_path, MetadataProcessed$LibraryName,"/", MetadataProcessed$LibraryName,"_TopHat",TopHat_date,"/",MetadataProcessed$countf_TopHat, sep="")
+
+counts_list_TopHat
+# turns the count of the list into a data.frame
+counts_TopHat <-  readDGE(counts_list_TopHat)$counts
+counts_TopHat <-  readDGE(counts_list_TopHat)
+
+
+colnames(counts_TopHat) <- basename(colnames(counts_TopHat))
+
+write.table(counts_TopHat,file=file.path(data_shared_path,"counts_readDGE_TopHat.annotated.csv"),sep=",",row.names=T,col.names=NA,quote=F) 
+
+```
+
+
+The trick was from here
+http://stackoverflow.com/questions/19321053/sum-together-columns-of-data-frame-based-on-name-type
+The idea is to make the names of the columns with different libraries of the same experimental unit identical, which means that some columns have the same name.  Then a row sum for each unique name is done.
+```{r}
+MetadataProcessed$Exp_Unit <- sub("_.*","",MetadataProcessed$LibraryName)
+
+counts_TopHat_df <- as.data.frame(counts_TopHat)
+
+counts_TopHat_df$gene <- rownames(counts_TopHat_df)
+counts_TopHat_melt <- melt(counts_TopHat_df)
+#counts_TopHat_melt <- counts_TopHat_melt[counts_TopHat_melt$value>0,]
+colnames(counts_TopHat_melt)[2] <- "LibraryName"
+df <- merge(counts_TopHat_melt, MetadataProcessed[,c(1,8)], by= "LibraryName", all.x=TRUE)
+
+counts_TopHat_sum <- dcast(data = df[,2:4], gene ~ Exp_Unit, sum, value.var="value")
+
+rownames(counts_TopHat_sum) <- counts_TopHat_sum$gene
+counts_TopHat_sum$gene <- NULL
+
+```
+
+
+```{r}
+# Normalization after removinf rDNA data.  Nor completely sure if this is the best approach
+counts_TopHat_genes <- counts_TopHat_sum[-which(rownames(counts_TopHat_sum) %in% c("__no_feature","__ambiguous","__too_low_aQual", 
+                                                                                   "__not_aligned","__alignment_not_unique", "PYU1_R000002", "PYU1_R000003", "PYU1_R000004", "PYU1_R000005", "PYU1_R000006")), ]
+# mean(colSums(counts_TopHat[!noint,])/colSums(counts_TopHat))
+mean(colSums(counts_TopHat_genes)/colSums(counts_TopHat))
+## MEAN % of reads map to features
+#cpms <- cpm(counts_TopHat)  ## counts per million
+cpms <- cpm(counts_TopHat_genes)  ## counts per million
+
+library(Biostrings)
+temp <- readDNAStringSet(paste(shared_path, "References/pythium_ultimum_transcripts.fasta", sep=""))
+names_transcripts <- sub(" .*$", "", names(temp))
+# created a vector with names
+gene_length <- setNames(width(temp), names_transcripts)
+
+temp2 <- merge(counts_TopHat_genes, gene_length, by.x= 0, by.y =0)
+
+rownames(temp2) <- temp2$Row.names
+temp2$Row.names <- NULL
+
+rpkm_count <- rpkm(temp2[,1:21], gene.length=temp2$y, normalized.lib.sizes=TRUE) #, log=FALSE, prior.count=0.25, ...)
+
+```
+
+cpms for Cazy data
+```{r}
+#Cazy_data <- read.xlsx(paste(shared_path, "References/Final\ Table\ CAZyme\ 050813.xlsx", sep=""), sheetName="Pyuu", startRow=2, header=TRUE,  stringsAsFactors = FALSE)
+
+library(openxlsx)
+Cazy_data <- read.xlsx(paste(shared_path, "References/CAZYexpression-Secretome_details_emily.xlsx", sep=""), sheet="Sheet2", startRow=2, rows=c(1:412),colNames=TRUE)
+
+sapply(Cazy_data, class)
+
+# just the secreted CZAy genes
+Cazy_data_sub <- subset(Cazy_data, Cazy_data[,33] == "Y")
+
+counts_for_bar_plots <- melt(cpms, id.vars=colnames(cpms))
+
+colnames(counts_for_bar_plots)[1] <- "SequenceID"
+colnames(counts_for_bar_plots)[2] <- "Exp_Unit"
+colnames(counts_for_bar_plots)[3] <- "Read_Counts"
+#counts_for_bar_plots$Exp_Unit <- as.character(counts_for_bar_plots$Exp_Unit)
+
+
+Cazy_counts <- merge(counts_for_bar_plots,unique(MetadataProcessed[,c(2,3,4,8)]),  by = "Exp_Unit", all.x = TRUE)
+
+Cazy_counts$TimePoint <- factor(Cazy_counts$TimePoint, levels = c("0", "3" , "7", "24"))        
+
+length(unique(Cazy_counts$TimePoint))
+
+Cazy_counts_sub <- Cazy_counts[which(Cazy_counts$SequenceID %in% unique(Cazy_data_sub[,c(3)])), ]
+
+
+```
+
+rpkm_count for Cazy
+```{r}
+
+rpkm_for_bar_plots <- melt(rpkm_count, id.vars=colnames(cpms))
+
+colnames(rpkm_for_bar_plots)[1] <- "SequenceID"
+colnames(rpkm_for_bar_plots)[2] <- "Exp_Unit"
+colnames(rpkm_for_bar_plots)[3] <- "Read_Counts"
+#counts_for_bar_plots$Exp_Unit <- as.character(counts_for_bar_plots$Exp_Unit)
+
+
+Cazy_rpkm <- merge(rpkm_for_bar_plots,unique(MetadataProcessed[,c(2,3,4,8)]),  by = "Exp_Unit", all.x = TRUE)
+
+Cazy_rpkm$TimePoint <- factor(Cazy_rpkm$TimePoint, levels = c("0", "3" , "7", "24"))        
+
+length(unique(Cazy_rpkm$TimePoint))
+
+Cazy_rpkm_sub <- Cazy_rpkm[which(Cazy_rpkm$SequenceID %in% unique(Cazy_data_sub[,c(3)])), ]
+
+
+```
+
+To make a data subset without time point 0 and to make another subset that merges the Cazy classification (duplicating rows when one proteins belongs to more than one family.)
+```{r}
+
+Cazy_rpkm_sub2 <- subset(Cazy_rpkm_sub, Cazy_rpkm_sub$TimePoint != 0)
+
+Cazy_rpkm_sub3 <- merge(Cazy_rpkm_sub2, Cazy_data_sub[,c(1,3)],  by = "SequenceID", all.x = TRUE)
+
+write.table(Cazy_rpkm_sub3,file=file.path(shared_path,"counts_readDGE_TopHat_secreted_CAZy.csv"),sep=",",row.names=T,col.names=NA,quote=F) 
+
+
+```
+
+
+Bar plots
+```{r}
+library("ggplot2")
+
+pdf(file = "Bar_plot_Cazy_rpkm_sub_by_CAZy.pdf", width = 11, height =30)
+bp <- ggplot(aes(y = Read_Counts, x = TimePoint, color=Condition), data = Cazy_rpkm_sub3) +
+  theme_bw() +
+  theme(axis.text.y = element_text(size = 6, hjust = 1, vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', size = 6, angle = 45, hjust = 1, vjust = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', size = 0.5)) +
+  labs(y="Total Number of Reads (rpkm normalized)") +
+  #theme(axis.ticks.margin = unit(1, "mm")) +
+  #coord_flip() +
+  #xlab("Dye") + ylab("Peak Height/Area Ratio") +
+  theme(axis.title.y = element_text(colour = 'black', size = 12, angle = 90, hjust = 0.5, vjust = 0.2, face = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', size = 12, angle = 0, hjust = 0.5, vjust =  -0.2, face = 'bold')) +
+  geom_boxplot(position=position_dodge(0.8), width = 0.8, outlier.size = 1, outlier.colour="black", outlier.shape = 20) +
+  stat_summary(fun.y=mean, geom="point", shape=5, size=1, fatten=0.1, position=position_dodge(0.8))  +
+  #geom_abline(intercept = 0.15, slope = 0, linetype = "dotted", colour = "red") +
+  facet_wrap(~SequenceID, scales = "free", ncol= 9) +
+  #facet_grid(Subject ~ ., scales = "free") +
+  theme(strip.text.x = element_text(size = 6, face = 'bold.italic', colour = "black", angle = 0))
+print(bp)
+dev.off()
+
+
+```
+
+
+Individual multiple Bar plots
+```{r}
+library("ggplot2")
+
+Cazy_rpkm_sub3$Secreted_CAZy <- paste(Cazy_rpkm_sub3$Subject, Cazy_rpkm_sub3$SequenceID, sep="-")
+
+for_plot <- unique(Cazy_rpkm_sub3$Secreted_CAZy) 
+
+i <- 1
+
+for(i in 1:length(for_plot)){
+  
+  temp <- subset(Cazy_rpkm_sub3, Cazy_rpkm_sub3$Secreted_CAZy == for_plot[i])
+  
+  png(file = paste(shared_path,"ggplots/",for_plot[i],"-secreted.png", sep=""), width = 3, height = 3, units = "in", res = 300, bg = "white")
+  bp <- ggplot(aes(y = Read_Counts, x = TimePoint, color=Condition), data = temp) +
+    theme_bw() +
+    theme(axis.text.y = element_text(size = 6, hjust = 1, vjust = 0.5)) +
+    theme(axis.text.x = element_text(colour = 'black', size = 6, angle = 0, hjust = 0.5, vjust = 1)) +
+    theme(axis.ticks = element_line(colour = 'black', size = 0.5)) +
+    # theme(legend.position="none") +
+    labs(y="Total Number of Reads (rpkm normalized)") +
+    #theme(axis.ticks.margin = unit(1, "mm")) +
+    #coord_flip() +
+    #xlab("Dye") + ylab("Peak Height/Area Ratio") +
+    theme(axis.title.y = element_text(colour = 'black', size = 7, angle = 90, hjust = 0.5, vjust = 0.5, face = 'bold')) +
+    theme(axis.title.x = element_text(colour = 'black', size = 7, angle = 0, hjust =  0.5, vjust = 0.5 ,face = 'bold')) +
+    geom_boxplot(position=position_dodge(0.8), width = 0.8, outlier.size = 1, outlier.colour="black", outlier.shape = 20) +
+    stat_summary(fun.y=mean, geom="point", shape=5, size=1, fatten=0.1, position=position_dodge(0.8))  +
+    #geom_abline(intercept = 0.15, slope = 0, linetype = "dotted", colour = "red") +
+    facet_wrap(~Secreted_CAZy, scales = "free", ncol= 1) +
+    #facet_grid(Subject ~ ., scales = "free") +
+    theme(strip.text.x = element_text(size = 6, face = 'bold', colour = "black", angle = 0))
+  print(bp)
+  dev.off()
+}
+
+```
+
+
+
+
+Subset of table for Edge R
+```{r}
+# Just the secreted Cazy genes
+rpkm_count_cazy <- rpkm_count[which(rownames(rpkm_count) %in% unique(Cazy_data_sub[,c(3)])), ]
+
+# keep only certain columnms because of principal components analysis of PlotMDS
+rpkm_count_cazy_sub <- rpkm_count_cazy[ , -which(colnames(rpkm_count_cazy) %in% c("T0-1",  "T0-2",  "T0-4"))]
+
+# Had to turn cholesterol/control as numeric by making them factors and then numbers 
+#dat_agg2 <- dat_agg[order(dat_agg$Group.2, -as.numeric(as.factor(dat_agg$Group.1)), dat_agg$Group.3,  decreasing=c(F,F,F)),] 
+
+
+
+```
+
+
+Create Sample sheet
+```{r}
+
+
+samples <- data.frame(colnames(rpkm_count_cazy_sub))
+colnames(samples)[1] <- "shortname"
+
+samples$Condition <- samples$shortname
+samples$Condition  <- sub("^T.*-", "", samples$Condition, ignore.case = FALSE)
+samples$Condition  <- sub("[1-9]$", "", samples$Condition, ignore.case = FALSE)
+samples$Condition  <- sub("c", "Control", samples$Condition, ignore.case = FALSE)
+samples$Condition  <- sub("x", "Cholesterol", samples$Condition, ignore.case = FALSE)
+
+samples$TimePoint <- samples$shortname
+samples$TimePoint  <- sub("^T", "", samples$TimePoint, ignore.case = FALSE)
+samples$TimePoint  <- sub("-.*$", "", samples$TimePoint, ignore.case = FALSE)
+
+samples$Treatment <- paste(samples$Condition, samples$TimePoint, sep="-")
+                      
+```
+                      
+                      
+                      
+```{r}
+                      
+colnames(rpkm_count_cazy_sub)
+samples
+
+#### HTSEQ_COUNT RESULTS 
+# 4. Filter weakly expressed and noninformative (e.g., non-aligned) features: 
+# noint <- rownames(counts_TopHat) %in% c("__no_feature","__ambiguous","__too_low_aQual", 
+#                                 "__not_aligned","__alignment_not_unique") 
+# In edgeR, it is recommended to remove features without  
+# at least 1 read per million in n of the samples,  
+# where n is the size of the smallest group of replicates,  
+#keep = rowSums(cpms >1) >=3  
+#dim(counts_TopHat_genes) ## the number of features you started with 
+#counts_TopHat_genes = counts_TopHat_genes[keep,] 
+#dim(counts_TopHat_genes) ## count counts of features you have left over after initial filter 
+#colnames(counts_TopHat_genes) = MetadataProcessed$LibraryName 
+#Create a DGEList object (edgeR's container for RNA-seq count data): 
+dTopH = DGEList(counts=rpkm_count_cazy_sub, group=samples$Treatments) 
+#Estimate normalization factors using, RNA composition and adjust for read depth: 
+dTopH = calcNormFactors(dTopH)
+#Inspect the relationships between samples using a multidimensional scaling (MDS) plot, as shown in Figure 4:
+results <- "3-March-2016-TopHat-edgeR"
+dir.create(paste(shared_path, results, sep=""), showWarnings = TRUE, recursive = FALSE)
+pdf(file.path(paste(shared_path,results,sep=""),"MDS-edgeR_TopHat-T3.pdf")) 
+plotMDS(dTopH, labels=colnames(rpkm_count_cazy_sub), 
+        col = rainbow(length(levels(factor(samples$Treatments))))[factor(samples$Treatments)],cex=0.6, main="MDS") 
+dev.off() 
+
+
+# edgeR - using glm 
+#Create a design matrix to specify the factors that are expected to affect expression levels: 
+designTopH = model.matrix( ~ Group.1, dat_agg2[c(10:15),]) ## samples is your sample sheet, treatment is a column in the sample sheet 
+designTopH 
+
+
+### Here it is pH6 - pH2.5 (so positive fold change indicates higher expression in Normal, negative is higher in Affected) 
+#Estimate dispersion values, relative to the design matrix, using the Cox-Reid (CR)-adjusted likelihood 
+d2TopH = estimateGLMCommonDisp(dTopH, designTopH) 
+d2TopH = estimateGLMTrendedDisp(d2TopH, designTopH) 
+d2TopH = estimateGLMTagwiseDisp(d2TopH, designTopH) 
+
+
+#plot the mean-variance relationship: 
+pdf(file.path(paste(shared_path,results,sep=""),"mean.variance-edgeR_TopHat.pdf")) 
+
+# Plot the relationship between mean expression and variance of expression 
+plotMeanVar(d2TopH, show.tagwise.vars=TRUE, NBline=TRUE,main="MeanVar") 
+
+# Plot the Biological Coefficient of Variation (as opposed to technical coefficient of variation) 
+plotBCV(d2TopH,main="BCV") 
+dev.off() 
+
+
+#Given the design matrix and dispersion estimates, fit a GLM to each feature: 
+fTopH = glmFit(d2TopH, designTopH) 
+
+#Perform a likelihood ratio test, specifying the difference of interest 
+deTopH = glmLRT(fTopH, coef=2) ## Treatment coefficient 
+
+#Use the topTags function to present a tabular summary of the differential expression statistics 
+ttTopH = topTags(deTopH, n=nrow(dTopH)) ## all tags, sorted 
+head(ttTopH$table) ## Check result 
+table(ttTopH$table$FDR< 0.05) ## the number of "Statistically Differentially Expressed Genes" at an FDR of 0.05 
+
+
+#Inspect the depth-adjusted reads per million for some of the top differentially expressed genes: 
+ncTopH = cpm(dTopH, normalized.lib.sizes=TRUE) 
+rnTopH = rownames(ttTopH$table) 
+head(ncTopH[rnTopH,order(dat_agg2$Group.1[10:15])],5) 
+
+
+#Plot the M (log-fold change) versus A (log-average expression) 
+degTopH = rnTopH[ttTopH$table$FDR < .05] 
+pdf(file.path(paste(shared_path,results,sep=""),"smear-edgeR_TopHat-T3.pdf")) 
+plotSmear(dTopH, de.tags=degTopH,main="Smear") 
+dev.off() 
+ 
+#Save the result table as a CSV file: 
+write.table(ttTopH$table,file=file.path(paste(shared_path,results,sep=""),"toptags_edgeR_TopHat.annotated-T3.csv"), append = FALSE, sep =",", col.names=NA)
+                      
+```
+                      
+                      
+                      Read Cazy data and merge some data
+```{r}
+Cazy_data <- read.xlsx(paste(shared_path, "References/Final\ Table\ CAZyme\ 050813.xlsx", sep=""), sheetName="Pyuu", startRow=2, header=TRUE,  stringsAsFactors = FALSE)
+
+Cazy_counts <- subset(as.data.frame(cpms), rownames(cpms) %in% Cazy_data$SequenceID)
+
+
+length(unique(Cazy_data$SequenceID))
+
+
+```
+                      
+                      Prepare data for bar plot
+```{r}
+Cazy_counts$gene <- rownames(Cazy_counts)
+Cazy_data_melt <- melt(Cazy_counts)
+
+
+Cazy_counts <- merge(cpms, Cazy_data[,c(1,3,5,6,7,8,9,20)],  by.x = 0, by.y = "SequenceID", all = FALSE, all.y = TRUE)
+
+
+#counts_TopHat_melt <- counts_TopHat_melt[counts_TopHat_melt$value>0,]
+colnames(counts_TopHat_melt)[2] <- "LibraryName"
+df <- merge(counts_TopHat_melt, MetadataProcessed[,c(1,8)], by= "LibraryName", all.x=TRUE)
+
+counts_TopHat_sum <- dcast(data = df[,2:4], gene ~ Exp_Unit, sum, value.var="value")
+
+
+
+Cazy_counts_t <- t(Cazy_counts)
+
+
+```
+                      
+                      
+                      
+                      
+                      
+                      ############################################################################################################################
+                      #Using STAR instead of TopHat:
+                      STAR_path <- "/home/AAFC-AAC/girouxem/RNASeq/tools/STAR-STAR_2.4.2a/source/STAR"
+                      GenomeDir_path <- "/home/AAFC-AAC/girouxem/RNASeq/GenomeDir/"
+                      #Running STAR mapping: **I still need to work on setting parameters.
+                      winAnchorMultimapNmax <- 1000
+                      outFilterMultimapNmax <- 1000
+                      outFilterMatchNminOverLread <- 0.4
+                      outFilterScoreMinOverLread <- 0.4
+                      outFilterMismatchNmax <- 100
+                      seedSearchStartLmax <- 15
+                      outFilterScoreMin <- 0
+                      cmd = with(MetadataProcessed, paste(STAR_path, 
+                      " --genomeDir ", GenomeDir_path,
+                      " --readFilesIn ", R1, " ", R2,
+                      " --outFileNamePrefix ", "/home/AAFC-AAC/girouxem/RNASeq", "/", LibraryName, "/", LibraryName,
+                      " --winAnchorMultimapNmax ", winAnchorMultimapNmax,
+                      " --outFilterMultimapNmax ", outFilterMultimapNmax,
+                      " --outFilterMatchNminOverLread ", outFilterMatchNminOverLread,
+                      " --outFilterScoreMinOverLread ", outFilterScoreMinOverLread,
+                      " --outFilterMismatchNmax ", outFilterMismatchNmax,
+                      " --seedSearchStartLmax ", seedSearchStartLmax,
+                      " --outFilterScoreMin ", outFilterScoreMin,
+                      " --runThreadN 12", sep=""))
+                      cmd
+                      sapply(cmd, function(x) system(x))
+                      #Notes:
+                      #High % unmapped: Too short - rRNA are typically multi-mappers (getplenty in our samples), and if the rRNA repeats are not in the 
+                      #assembly, they will not be mapped and will be reported as "alignment too short".
+                      #Recall that we removed the mitochondrial DNA from our references fasta and gff3 - perhaps only remove the repeats and keep single copy?
+                      #They will map, and we'll know to remove these..?
+                      ############################################################################################################################
+                      #Samtools for STAR alignment outputs:
+                      samtools1_path <- "/opt/bio/samtools1/bin/samtools1"
+                      # Convert to BAM for IGV
+                      cmd = with(MetadataProcessed, paste(samtools1_path, 
+                      " view ", 
+                      " -b ",
+                      " -o ", "/home/AAFC-AAC/girouxem/RNASeq", "/", LibraryName, "/", LibraryName,"Aligned.out.bam",
+                      " /home/AAFC-AAC/girouxem/RNASeq", "/", LibraryName, "/", LibraryName,"Aligned.out.sam",
+                      sep=""))
+                      cmd
+                      sapply(cmd, function(x) system(x))
+                      # Sort BAM for IGV
+                      cmd = with(MetadataProcessed, paste(samtools1_path, 
+                      " sort ", 
+                      "/home/AAFC-AAC/girouxem/RNASeq", "/", LibraryName, "/", LibraryName,"Aligned.out.bam",
+                      " /home/AAFC-AAC/girouxem/RNASeq", "/", LibraryName, "/", LibraryName,"_s",
+                      sep=""))
+                      # Index BAM files for IGV
+                      cmd
+                      sapply(cmd, function(x) system(x))
+                      cmd = with(MetadataProcessed, paste(samtools1_path, 
+                      " index ", 
+                      "/home/AAFC-AAC/girouxem/RNASeq", "/", LibraryName, "/", LibraryName,"_s.bam",
+                      sep=""))
+                      cmd
+                      sapply(cmd, function(x) system(x))
+                      #IGV run command: $ java -jar /opt/bio/IGV/igv.jar
+                      #make genome
+                      #load _s.bam file
+                      #load gff3 file
+                      ############################################################################################################################
+                      #HTSeq-count
+                      htseq_count_path <- "/home/AAFC-AAC/girouxem/RNASeq/tools/HTSeq-0.6.1/HTSeq-0.6.1/build/scripts-2.7/htseq-count"
+                      system(htseq_count_path)
+                      MetadataProcessed$countf = paste(MetadataProcessed$LibraryName, "count", sep=".")
+                      gff3 <- "/home/AAFC-AAC/girouxem/RNASeq/References/Pyuu_ref_no_mito.gff3"
+                      stranded <- "no"
+                      MINAQUAL <- 10
+                      cmd = with(MetadataProcessed, paste(htseq_count_path, 
+                      " -s ", stranded,
+                      " -a ", MINAQUAL,
+                      " --idattr=Parent ",
+                      " /home/AAFC-AAC/girouxem/RNASeq", "/", LibraryName, "/", LibraryName,"Aligned.out.sam ",
+                      gff3,
+                      " > ",
+                      "/home/AAFC-AAC/girouxem/RNASeq", "/", LibraryName, "/", MetadataProcessed$countf,
+                      sep=""))
+                      cmd
+                      sapply(cmd, function(x) system(x))
+                      ############################################################################################################################
+                      library("edgeR")
+                      #Identify the count files and read them into R using readDGE
+                      counts_list = sapply(file.path("/home/AAFC-AAC/girouxem/RNASeq", MetadataProcessed$LibraryName, sep=""), dir,pattern=".count$",full.names=T)
+                      counts_list
+                      counts = readDGE(counts_list)$counts
+                      counts
+                      #The names of each list is the following 
+                      names(counts_list)
+                      #### HTSEQ_COUNT RESULTS 
+                      # 4. Filter weakly expressed and noninformative (e.g., non-aligned) features: 
+                      noint = rownames(counts) %in% c("__no_feature","__ambiguous","__too_low_aQual", 
+                      "__not_aligned","__alignment_not_unique") 
+                      mean(colSums(counts[!noint,])/colSums(counts))
+                      ## MEAN % of reads map to features
+                      cpms = cpm(counts)  ## counts per million
+                      # In edgeR, it is recommended to remove features without  
+                      # at least 1 read per million in n of the samples,  
+                      # where n is the size of the smallest group of replicates,  
+                      keep = rowSums(cpms >1) >=3 & !noint 
+                      dim(counts) ## the number of features you started with 
+                      counts = counts[keep,] 
+                      dim(counts) ## count counts of features you have left over after initial filter 
+                      colnames(counts) = MetadataProcessed$LibraryName 
+                      #Create a DGEList object (edgeR's container for RNA-seq count data): 
+                      d = DGEList(counts=counts, group=MetadataProcessed$Condition) 
+                      #Estimate normalization factors using, RNA composition and adjust for read depth: 
+                      d = calcNormFactors(d)
+                      #Inspect the relationships between samples using a multidimensional scaling (MDS) plot, as shown in Figure 4:
+                      results <- "14-Aug-2015-Star-edgeR"
+                      dir.create(results)
+                      pdf(file.path(results,"MDS-edgeR.pdf")) 
+                      plotMDS(d, labels=MetadataProcessed$LibraryName, 
+                      col = rainbow(length(levels(factor(MetadataProcessed$Condition))))[factor(MetadataProcessed$Condition)],cex=0.6, main="MDS") 
+                      dev.off() 
+                      
+                      
+                      # edgeR - using glm 
+                      #Create a design matrix to specify the factors that are expected to affect expression levels: 
+                      design = model.matrix( ~ Condition, MetadataProcessed) ## samples is your sample sheet, treatment is a column in the sample sheet 
+                      design 
+                      
+                      
+                      ### Here it is pH6 - pH2.5 (so positive fold change indicates higher expression in Normal, negative is higher in Affected) 
+                      #Estimate dispersion values, relative to the design matrix, using the Cox-Reid (CR)-adjusted likelihood 
+                      d2 = estimateGLMCommonDisp(d, design) 
+                      d2 = estimateGLMTrendedDisp(d2, design) 
+                      d2 = estimateGLMTagwiseDisp(d2, design) 
+                      
+                      
+                      #plot the mean-variance relationship: 
+                      pdf(file.path(results,"mean.variance-edgeR.pdf")) 
+                      
+                      # Plot the relationship between mean expression and variance of expression 
+                      plotMeanVar(d2, show.tagwise.vars=TRUE, NBline=TRUE,main="MeanVar") 
+                      
+                      # Plot the Biological Coefficient of Variation (as opposed to technical coefficient of variation) 
+                      plotBCV(d2,main="BCV") 
+                      dev.off() 
+                      
+                      
+                      #Given the design matrix and dispersion estimates, fit a GLM to each feature: 
+                      f = glmFit(d2, design) 
+                      
+                      #Perform a likelihood ratio test, specifying the difference of interest 
+                      de = glmLRT(f, coef=2) ## Treatment coefficient 
+                      
+                      #Use the topTags function to present a tabular summary of the differential expression statistics 
+                      tt = topTags(de, n=nrow(d)) ## all tags, sorted 
+                      head(tt$table) ## Check result 
+                      table(tt$table$FDR< 0.05) ## the number of "Statistically Differentially Expressed Genes" at an FDR of 0.05 
+                      
+                      
+                      #Inspect the depth-adjusted reads per million for some of the top differentially expressed genes: 
+                      nc = cpm(d, normalized.lib.sizes=TRUE) 
+                      rn = rownames(tt$table) 
+                      head(nc[rn,order(MetadataProcessed$Condition)],5) 
+                      
+                      
+                      #Plot the M (log-fold change) versus A (log-average expression) 
+                      deg = rn[tt$table$FDR < .05] 
+                      pdf(file.path(results,"smear-edgeR.pdf")) 
+                      plotSmear(d, de.tags=deg,main="Smear") 
+                      dev.off() 
+                      
+                      #Save the result table as a CSV file: 
+                      write.table(tt$table,file=file.path(results,"toptags_edgeR.annotated.txt"),sep="\t",row.names=T,col.names=T,quote=F) 
+                      
+                      
+                      
+                      ### if you have annotation 
+                      # anno <- read.table(annof,sep="\t",header=T,comment.char="",quote="",as.is=T) 
+                      # write.table(data.frame(tt$table,anno[match(rownames(tt$table),anno$Ensembl.Gene.ID),]),file=file.path(results,"toptags_tibia_edgeR.annotated.txt"),sep="\t",row.names=T,col.names=T,quote=F) 
+                      ### END OF DIFFERENTIAL EXPRESSION ANALYSIS, ADDITIONAL PROCESSING ON THE TABLE CAN BE PERFORMED 
+                      
+                      #Repeat for timepoint comparisons - just curious...:
+                      #da = DGEList(counts=counts, group=MetadataProcessed$TimePoint) 
+                      #da = calcNormFactors(da) 
+                      #pdf(file.path(results,"MDS-timepoint-edgeR.pdf"))
+                      #plotMDS(da, labels=MetadataProcessed$LibraryName, 
+                      #col = rainbow(length(levels(factor(MetadataProcessed$TimePoint))))[factor(MetadataProcessed$TimePoint)],cex=0.6, main="MDS") 
+                      #dev.off() 
+                      #designa = model.matrix( ~ TimePoint, MetadataProcessed) ## samples is your sample sheet, treatment is a column in the sample sheet 
+                      #designa 
+                      #d2a = estimateGLMCommonDisp(da, designa) 
+                      #d2a = estimateGLMTrendedDisp(d2a, designa) 
+                      #d2a = estimateGLMTagwiseDisp(d2a, designa) 
+                      #pdf(file.path(results,"mean.variance-timepoint-edgeR.pdf")) 
+                      #plotMeanVar(d2a, show.tagwise.vars=TRUE, NBline=TRUE,main="MeanVar") 
+                      #plotBCV(d2a,main="BCV") 
+                      #dev.off() 
+                      #fa = glmFit(d2a, design) 
+                      #dea = glmLRT(fa, coef=2) ## Treatment coefficient 
+                      #tta = topTags(dea, n=nrow(d)) ## all tags, sorted 
+                      #head(tta$table) ## Check result 
+                      #table(tta$table$FDR< 0.05) ## the number of "Statistically Differentially Expressed Genes" at an FDR of 0.05 
+                      #nca = cpm(da, normalized.lib.sizes=TRUE) 
+                      #rna = rownames(tta$table) 
+                      #head(nca[rna,order(MetadataProcessed$TimePoint)],5) 
+                      #dega = rna[tta$table$FDR < .05] 
+                      #pdf(file.path(results,"smear-edgeR-timepoint.pdf")) 
+                      #plotSmear(da, de.tags=deg,main="Smear") 
+                      #dev.off() 
+                      #write.table(tta$table,file=file.path(results,"toptags_edgeR.annotated.timepoint.txt"),sep="\t",row.names=T,col.names=T,quote=F) 
+                      
+                      
+                      # these two commands will show you the first list
+                      counts_list[[1]]
+                      counts_list$samples
+                      
+                      # The second list is your counts with $counts name and this why they had the $counts at the end
+                      # here is another way to do this
+                      counts <- counts_list$count
+                      head(counts,5)
+                      
+                      
+                      #ii Filter weakly expressed and noninformative (e.g., non-aligned) features using a command like:
+                      
+                      noint = rownames(counts) %in%
+                      c("__no_feature", "__ambiguous", "too_low_aQual",
+                      "__not_aligned", "__alignment_not_unique")
+                      
+                      # This is a check to see these values
+                      counts[noint, ]
+                      
+                      cpms = cpm(counts)
+                      keep = rowSums(cpms > 0.1) & !noint
+                      #in the part above that has '=0.1' - this is for the number of replicates - I only have 0.1 at the moment for each, but this will change later.
+                      # problem with too many ambiguous reads
+                      counts = counts[keep, ]
+                      
+                      #iii Visualize and inspect the count table as follows:
+                      colnames(counts) = Metadata2$shortname
+                      head( counts[,order(Metadata2$Condition)], 5 )
+                      
+                      #iv Create a DGEList object (edgeR's container for RNA-seq count data), as follows:
+                      d = DGEList(counts=counts, group=Metadata2$Condition)
+                      
+                      # Names of the list in d
+                      names(d)
+                      
+                      d$samples
+                      head(d$counts,5)
+                      
+                      #v) Estimate normalization factors using:
+                      d = calcNormFactors(d)
+                      # this creates two matrices into a list
+                      d$samples
+                      head(d$counts,5)
+                      
+                      
+                      #vi) Inspect the relationships between samples using a multidimensional scaling plot, as shown in Figure 4A:
+                      plotMDS(d, labels=Metadata2$shortname,
+                      col=c("darkgreen","blue")[factor(Metadata2$Condition)])
+                      
+                      #vii) Estimate tagwise dispersion (simple design) using:
+                      d = estimateCommonDisp(d)
+                      d = estimateTagwiseDisp(d)
+                      
+                      names(d)
+                      
+                      
+                      
+                      #viii) Create a visual representation of the mean-variance relationship using the plotMeanVar (shown in Figure 5A) and plotBCV (Figure 5B) functions, as follows:
+                      plotMeanVar(d, show.tagwise.vars=TRUE, NBline=TRUE)
+                      plotBCV(d)
+                      
+                      #ix) Test for differential expression (\classic" edgeR), as follows:
+                      de = exactTest(d, pair=c("Control","Cholesterol"))
+                      
+                      # data in list
+                      names(de)
+                      head(de$table,5)
+                      head(de$comparison,5)
+                      head(de$genes,5)
+                      
+                      
+                      
+                      #x) Follow Step 14 B vi)-ix).
+                      #vi) Use the topTags function to present a tabular summary of the differential expression statistics 
+                      #(Note: topTags operates on the output of exactTest or glmLRT, while only the latter is shown here):
+                      
+                      tt = topTags(de, n=nrow(d))
+                      names(tt)
+                      head(tt$table)
+                      tt$adjust.method
+                      tt$comparison
+                      tt$test
+                      
+                      #vii) Inspect the depth-adjusted reads per million for some of the top differentially expressed genes:
+                      
+                      nc = cpm(d, normalized.lib.sizes=TRUE)
+                      rn = rownames(tt$table)
+                      length(rn)
+                      head(nc,5)
+                      head(nc[rn,],5)
+                      head(nc[rn,order(Metadata2$Condition)],5)
+                      
+                      
+                      #viii) Create a graphical summary, such as an M (log-fold-change) versus A (log-averageexpression) plot, here showing the 
+                      #genes selected as differentially expressed (with a 5% false discovery rate; see Figure 6A):
+                      # we do not have enough data that passed
+                      deg = rn[tt$table$FDR < .9]
+                      length(deg)
+                      plotSmear(d, de.tags=deg)
+                      
+                      
+                      #ix) Save the result table as a CSV (comma-separated values) le (alternative formats are possible) as follows:
+                      write.csv(tt$table, file="toptags_edgeREG22June2015.csv")
+                      

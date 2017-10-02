@@ -28,7 +28,7 @@ rpkmPlotsFullImport$xLab <- sub("Various_0", "Various", rpkmPlotsFullImport$xLab
 unique(rpkmPlotsFullImport$xLab)
 unique(rpkmPlotsFullImport$Experiment)
 
-# Creates orderes factors (very important for plotting)
+# Creates ordered factors (very important for plotting)
 labOrdered <- c("Various", "Control_0", "Control_3", "Cholesterol_3", 
                 "Control_7", "Cholesterol_7", "Control_24", "Cholesterol_24", 
                 "0", "12", "24", "48", "72", "120", "240") 
@@ -54,7 +54,7 @@ levels(as.factor(rpkmPlotsFullImport$RNA_Rep))
 ```
 
 
-Add a column in the large data file about being CAZy (secreted or not) on non CAZy
+Read the file with CAZy and secretome data 
 ```{r}
 
 mainFolder <- "GGPLOTS_FROM_FULL_DATA_continuous_X/from_Emily_24_March_2017"
@@ -76,9 +76,6 @@ Show duplicated secreted genes
 Secreted_duplicated <-  listLoci[which(listLoci$Secreted=="secreted"),]
 Secreted_duplicated[duplicated(Secreted_duplicated$SequenceID),]
 ```
-
-
-
 
 
 Aggregate together CAZy families for genes with more than one family, and remove duplicated
@@ -128,13 +125,13 @@ analysisPath <- paste(sharedPath, mainFolder , "/", analysisDir, sep = "")
 
 Creating log10 + 1 read
 ```{r}
-library(doBy)
 rpkmPlotsFullImport$log_Read_Counts <- log10(rpkmPlotsFullImport$Read_Counts + 1)
 head(rpkmPlotsFullImport)
 ```
 
 Create a Table with mean by experimental unit and remove time 0 (except for mycelium=Various).
 ```{r}
+library(doBy)
 mean_per_exp <- summaryBy(log_Read_Counts ~ SequenceID + CAZyFamily + Secreted + Experiment + Condition + TimePoint, data=rpkmPlotsFullImport, FUN = c(mean) )
 
 mean_per_exp_no_time0  <- mean_per_exp[which(mean_per_exp$TimePoint != 0 | mean_per_exp$Condition =="Various"),]

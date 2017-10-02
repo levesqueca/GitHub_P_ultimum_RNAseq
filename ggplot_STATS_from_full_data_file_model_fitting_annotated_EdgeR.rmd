@@ -1,0 +1,671 @@
+# Generating p-values for oosporogenesis and oospore conversion experiments, analyzed separately
+## (Non-linear only with time as continuous variable as factors)
+***
+
+## Importing, merging and organizing the data
+
+Path of folder
+```{r}
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+```
+
+Read file with all the data.  This file was made after normalizing oosporogenesis and oospore conversion together with EdgeR
+```{r}
+rpkmPlotsFullImport <- read.table(paste(sharedPath, 
+                                        "rpkmForBarPlots_full.csv", 
+                                        sep = ""), 
+                                  sep = ",", 
+                                  header = TRUE, 
+                                  as.is = TRUE, 
+                                  stringsAsFactors = FALSE)
+
+rpkmPlotsFullImport$xLab <- paste(rpkmPlotsFullImport$Condition,
+                                  rpkmPlotsFullImport$TimePoint, 
+                                  sep = "_")
+unique(rpkmPlotsFullImport$xLab)
+
+rpkmPlotsFullImport$xLab <- sub("OoCTimeCourse_", "", rpkmPlotsFullImport$xLab)
+rpkmPlotsFullImport$xLab <- sub("Various_0", "Various", rpkmPlotsFullImport$xLab)
+unique(rpkmPlotsFullImport$xLab)
+unique(rpkmPlotsFullImport$Experiment)
+
+# Creates ordered factors (very important for plotting or to see coefficients in the right order)
+labOrdered <- c("Various", "Control_0", "Control_3", "Cholesterol_3", 
+                "Control_7", "Cholesterol_7", "Control_24", "Cholesterol_24", 
+                "0", "12", "24", "48", "72", "120", "240") 
+rpkmPlotsFullImport$xLab <- factor(rpkmPlotsFullImport$xLab, levels = c(labOrdered))   
+levels(rpkmPlotsFullImport$xLab)
+
+expOrdered <- c("Mycelium", "Oosporogenesis", "OosporeConversion") 
+rpkmPlotsFullImport$Experiment <- factor(rpkmPlotsFullImport$Experiment, 
+                                         levels = c(expOrdered))
+rm(expOrdered)
+rm(labOrdered)
+
+# note, there is a bug in the way RNA replicate was carried forward (probably because levels were used instead of actual numbers), this is why Exp_Unit is being used to rebuild it here.
+rpkmPlotsFullImport$RNA_Rep <- sub("^T","", rpkmPlotsFullImport$ExpUnit)
+rpkmPlotsFullImport$RNA_Rep <- sub("^[0-9]+-","", rpkmPlotsFullImport$RNA_Rep)
+rpkmPlotsFullImport$RNA_Rep <- sub("^c|^x","", rpkmPlotsFullImport$RNA_Rep)
+rpkmPlotsFullImport$RNA_Rep <- sub("\\.","", rpkmPlotsFullImport$RNA_Rep)
+rpkmPlotsFullImport$RNA_Rep <- sub("^[A-z]*.[A-z]$","1", rpkmPlotsFullImport$RNA_Rep)
+rpkmPlotsFullImport$RNA_Rep <- sub("emp35C","1", rpkmPlotsFullImport$RNA_Rep)
+
+rpkmPlotsFullImport <- rpkmPlotsFullImport[order(rpkmPlotsFullImport$Experiment, rpkmPlotsFullImport$SequenceID, rpkmPlotsFullImport$xLab, rpkmPlotsFullImport$ExpUnit),]
+
+levels(as.factor(rpkmPlotsFullImport$RNA_Rep))
+```
+Read the file with CAZy and secretome data 
+```{r}
+
+mainFolder <- "GGPLOTS_FROM_FULL_DATA_continuous_X/from_Emily_24_March_2017"
+
+
+listLoci <- read.table(paste(sharedPath, mainFolder, "/CAZy_of_interest_list.csv", sep = ""), 
+                                  sep = ",",header = TRUE, as.is = TRUE,  stringsAsFactors = FALSE)
+
+# Note that I am not using the fread command from data.table.  This one creates a real problem later as column indexing no longer works with data,
+# table that has the feature of usinf<g column names instead.  A real problem if you want to use columns in a loop.
+# library(data.table)
+# listLoci <- fread(paste(sharedPath, mainFolder, "/CAZy_of_interest_list.csv", sep = ""),
+#                   sep = "auto", header = TRUE)
+```
+
+
+Show duplicated secreted genes
+```{r}
+Secreted_duplicated <-  listLoci[which(listLoci$Secreted=="secreted"),]
+Secreted_duplicated[duplicated(Secreted_duplicated$SequenceID),]
+```
+
+
+Aggregate together CAZy families for genes with more than one family, and remove duplicated
+```{r}
+dat_agg <- aggregate(listLoci[,c(2,3)], by=list(listLoci$SequenceID),FUN=c)
+for(i in 1:length(dat_agg$CAZyFamily)){
+  dat_agg$CAZyFamily2[i] <-paste(unlist(dat_agg$CAZyFamily[i]), collapse="-")
+}
+
+dat_agg$SequenceID <- NULL
+colnames(dat_agg)[1] <- "SequenceID"
+dat_agg$CAZyFamily <- NULL
+colnames(dat_agg)[2] <- "CAZyFamily"
+
+#remove duplicated loci
+listLoci <- listLoci[!duplicated(listLoci$SequenceID),]
+listLoci$CAZyFamily <- NULL
+#replace names with concatenated names
+listLoci <- merge(listLoci, dat_agg, by= "SequenceID")
+```
+
+
+Integrate gene loci CAZy and secreted data into main data table and write non-CAZy for NA
+```{r}
+rpkmPlotsFullImport <- merge(listLoci[,c(1,3,6)], rpkmPlotsFullImport[,2:10], by = "SequenceID", all.y = TRUE)
+rpkmPlotsFullImport$Secreted[is.na(rpkmPlotsFullImport$Secreted)] <- "non-CAZy"
+rpkmPlotsFullImport$CAZyFamily[is.na(rpkmPlotsFullImport$CAZyFamily)] <- "non-CAZy"
+```
+
+
+Create Main plot folder
+```{r}
+mainFolder <- "GGPLOTS_FROM_FULL_DATA_continuous_X_coeff_pvalues"
+
+if (dir.exists(paste(sharedPath, mainFolder , sep = ""))) {} else {
+  dir.create(paste(sharedPath, mainFolder , sep = ""), showWarnings = TRUE, recursive = FALSE)  }
+```
+
+Create a folder for the outputs:
+```{r}
+analysisDir <- "30_Aug_2017_annotated_script"
+if (dir.exists(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""))) {} else {
+  dir.create(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""), showWarnings = TRUE, recursive = FALSE)  }
+
+analysisPath <- paste(sharedPath, mainFolder , "/", analysisDir, sep = "")
+```
+
+
+## Analysing the data
+
+### Set Up the main parameters for these datasets
+The two decisions that affect most analyses.  Adding 1 or 1e-10 to eadr read data point and using time 24 or nor for Oospore conversion
+```{r}
+# add_to_read_count <- 1
+# add_to_read_count <- 1e-10
+add_to_read_count <- 0
+
+
+T48 <- "yes"
+#T48 <- "no"
+```
+
+
+
+Get a subset and run my own non linear analysis - Reorganize the data so each column is a gene and each line an experimental unit.  Somehow, adding 1e-10 to the data did not solve some of the minus infinity issue.  I added +1, which is also quite standard for this.  One needs to remember to remove 1 to the fitted data but given that we do this only for p-values, it is not an issue.
+```{r}
+#library(data.table)
+#Get only certain columns and oosporogenesis experiment
+subset_count <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment=="OosporeConversion" & rpkmPlotsFullImport$Secreted=="secreted"),]
+
+subset_count$sqrt_time <- sqrt(subset_count$TimePoint)
+library(reshape2)
+my_counts_NL <- dcast(data = subset_count, ExpUnit+ TimePoint + sqrt_time + Condition + RNA_Rep ~ SequenceID, value.var = "Read_Counts")
+my_counts_NL$sqrt_time <- sqrt(my_counts_NL$TimePoint)
+head(my_counts_NL)
+
+```
+
+
+
+### Oospore Conversion data 
+
+
+** Non linear modelling
+
+Get a subset for analysis
+
+```{r}
+#library(data.table)
+#Get only certain columns and oosporogenesis experiment
+if(T48 == "yes"){
+  subset_count3 <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment=="OosporeConversion" & rpkmPlotsFullImport$Secreted=="secreted"),c("ExpUnit", "Experiment", "SequenceID", "Condition", "TimePoint", "RNA_Replicate","Read_Counts")]
+} else {
+    subset_count3 <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment=="OosporeConversion" & rpkmPlotsFullImport$Secreted=="secreted" & rpkmPlotsFullImport$TimePoint!= 48),c("ExpUnit", "Experiment", "SequenceID", "Condition", "TimePoint", "RNA_Replicate","Read_Counts")]
+}
+  
+  subset_count3$sqrt_time <- sqrt(subset_count3$TimePoint)
+
+
+# get the secreted subset
+#subset_count2 <- subset_count2[subset_count2$SequenceID %in% All_CAZy_names,]
+
+
+my_counts_NL0 <- dcast(data = subset_count3, ExpUnit + Condition + TimePoint + sqrt_time + RNA_Replicate ~ SequenceID, value.var = "Read_Counts")
+
+my_counts_NL0$sqrt_time <- sqrt(my_counts_NL$TimePoint)
+
+
+```
+
+
+
+EdgeR tutorial at https://cgrlucb.wikispaces.com/file/view/edgeR_Tutorial.pdf
+```{r}
+library(edgeR)
+pnas_file <- "https://sites.google.com/site/davismcc/useful-documents/pnas_expression.txt?attredirects=0&d=1"
+
+raw.data <- read.table( file = pnas_file , header = TRUE )
+
+counts <- raw.data[ , -c(1,ncol(raw.data)) ]
+
+is.data.frame(counts)
+
+rownames( counts ) <- raw.data[ , 1 ] # gene names
+
+colnames( counts ) <- paste(c(rep("C_R",4),rep("T_R",3)),c(1:4,1:3),sep="") # sample names
+
+dim( counts )
+colSums( counts ) # Library Sizes
+colSums( counts ) / 1e06 # Library Sizes in millions of reads
+table( rowSums( counts ) )[ 1:30 ] # Number of genes with low counts
+
+group <- c(rep("C", 4) , rep("T", 3))
+cds <- DGEList( counts , group = group )
+names( cds )
+dimnames(cds)
+head(cds$samples)
+head(cds$counts) # original count matrix
+cds$samples # contains a summary of your samples
+sum( cds$all.zeros ) # How many genes have 0 counts across all samples
+cds # or type the name of the object
+
+cds <- cds[rowSums(1e+06 * cds$counts/expandAsMatrix(cds$samples$lib.size, dim(cds)) > 1) >= 3, ]
+dim( cds )
+cds <- calcNormFactors( cds )
+cds$samples
+# effective library sizes
+cds$samples$lib.size * cds$samples$norm.factors
+
+cds <- estimateCommonDisp( cds )
+names( cds )
+# The estimate
+cds$common.dispersion
+
+
+```
+
+
+
+
+
+
+Dump list file as single column and read it.  
+The list could have 2 column, one with better labels.
+List was sent by e-mail we think
+Use next chunk instead
+```{r}
+# #listName <- "Loci_list.txt"
+# #listName <- "listRefCandidates.txt"
+# listName <- "CAZy_of_interest_list"
+# 
+# library(data.table)
+# listLoci <- fread(paste(analysisPath, "/", listName, "", sep = ""), 
+#                   sep = "\t", header = TRUE,  
+#                   stringsAsFactors = FALSE)
+# colnames(listLoci)[1] <- "SequenceID"
+# colnames(listLoci)[2] <- "CAZyFamily"
+# 
+# #listLoci$geneInfo <- paste(listLoci$SequenceID, listLoci$CAZyFamily, sep = " -\n ")
+```
+
+
+
+Read CAZy of entire recent run of dbcan pipeline (from March 2016 version)
+```{r}
+
+library(data.table)
+
+cazySecreted <- fread(file = "data/dbCAN_SecretedPyuu_Final_subsetColumns.csv", sep = "auto", header = TRUE, fill=TRUE)
+
+```
+
+
+
+Single file, multiple Bar plots for gene in listLoci
+```{r}
+library("ggplot2")
+
+svg(file   = paste(analysisPath, "/", listName,  ".svg", sep = ""),
+    width  = 8, 
+    height = 7*ceiling(nrow(temp)/200))
+    # 200 in seems to be the maximum length for a pdf file, so I used sgv
+    #height = 200)
+
+bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp) +
+  theme_bw() +
+  theme(axis.text.y = element_text(size  = 6, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 6, 
+                                   angle  = 45, 
+                                   hjust  = 1, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads\n (rpkm-normalized)") + 
+  labs(x = "Treatment") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 0.2, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  -0.2, 
+                                    face   = 'bold')) +
+  geom_boxplot(position = position_dodge(0.8), 
+               width    = 0.8, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 1, 
+               position = position_dodge(0.8))  +
+#   facet_wrap(~SequenceID, 
+#   facet_grid(SequenceID~Experiment,
+  facet_grid(geneInfoTab~Experiment,
+             scales = "free", space = "free_x") +
+  theme(strip.text.x = element_text(size   = 6, 
+                                    face   = 'bold.italic', 
+                                    colour = "black", 
+                                    angle  = 0))
+print(bp)
+dev.off()
+
+```
+
+Chunk to generate bar plots for individual genes and output them
+to the specified folder for "analysisPath"
+```{r}
+library("ggplot2")
+
+dir.create(paste(analysisPath, "/Individual_plots", sep = ""), 
+           showWarnings = TRUE, recursive = FALSE)
+i<- 1
+for(i in 1:length(listLoci$geneInfoTab)){
+  temp2 <- subset(temp, temp$SequenceID == listLoci$SequenceID[i])
+  temp2$Experiment <- sub("Mycelium", "Mycel.", temp2$Experiment )
+  png(file   = paste(analysisPath, "/Individual_plots/", 
+                     listLoci$SequenceID[i], ".png", sep = ""), 
+      width  = 7, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+  bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp2) +
+  theme_bw() +
+  theme(axis.text.y = element_text(size  = 8, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 8, 
+                                   angle  = 45, 
+                                   hjust  = 1, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads\n(rpkm-normalized)") +
+  labs(x = "Treatment") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 8, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 1.5, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  0, 
+                                    face   = 'bold')) +
+  geom_boxplot(position = position_dodge(0.8), 
+               width    = 0.8, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 0.5, 
+               position = position_dodge(0.8))  +
+#   facet_wrap(~SequenceID, 
+#   facet_grid(SequenceID~Experiment,
+  facet_grid(geneInfoTab~Experiment,
+             scales = "free", space= "free_x") +
+  theme(strip.text.x = element_text(size   = 9, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = 0)) +
+  theme(strip.text.y = element_text(size   = 7, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = -90))
+print(bp)
+dev.off()
+}
+```
+
+
+*** Over here Andre - just ran this after you left, 19March2017:
+Bar plots per CAZy family group:
+```{r}
+library("ggplot2")
+cazyFam <- unique(listLoci$CAZyFamily)
+dirPlotName <- "ggplotsByCAZyFam"
+
+dir.create(paste(analysisPath, "/", dirPlotName, sep = ""), 
+           showWarnings = TRUE, recursive = FALSE)
+
+ggplotsByCazyFamPath <- paste(analysisPath, "/", dirPlotName, "/", sep = "")
+
+i <- 1
+for(i in 1:length(cazyFam)){
+  temp3 <- subset(temp, temp$CAZyFamily == cazyFam[i])
+  temp3$Experiment <- sub("Mycelium", "Mycel.", temp3$Experiment )
+
+pdf(file   = paste(ggplotsByCazyFamPath, cazyFam[i], ".pdf", sep = ""),
+    width  = 8, 
+    height = 7*ceiling(nrow(temp3)/90))
+
+bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp3) +
+theme_bw() +
+  theme(axis.text.y = element_text(size  = 8, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 8, 
+                                   angle  = 45, 
+                                   hjust  = 1, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads\n(rpkm-normalized)") +
+  labs(x = "Treatment") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 8, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 1.5, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  0, 
+                                    face   = 'bold')) +
+  geom_boxplot(position = position_dodge(0.8), 
+               width    = 0.8, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 0.5, 
+               position = position_dodge(0.8))  +
+#   facet_wrap(~SequenceID, 
+#   facet_grid(SequenceID~Experiment,
+  facet_grid(geneInfoTab~Experiment,
+             scales = "free", space= "free_x") +
+  theme(strip.text.x = element_text(size   = 9, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = 0)) +
+  theme(strip.text.y = element_text(size   = 7, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = -90))
+print(bp)
+dev.off()
+}
+
+```
+
+
+
+EdgeR for OosporeConversion
+```{r}
+
+library(edgeR)
+# make table in proper format
+my_counts <- dcast(data = subset_count, SequenceID ~ ExpUnit, value.var = "Read_Counts")
+rownames(my_counts) <- my_counts$SequenceID
+my_counts$SequenceID <- NULL
+
+is.data.frame(my_counts)
+
+
+colSums( my_counts ) # Library Sizes
+colSums( my_counts ) / 1e06 # Library Sizes in millions of reads
+table( rowSums( my_counts ) )[ 1:30 ]
+
+Time <- sub("-.*","",colnames(my_counts))
+Time <- sub("T","",Time)
+Time <- as.factor(as.numeric(Time))
+levels(Time)
+
+
+cds2 <- DGEList( my_counts ,  group = Time )
+# Somehow rownames did not follow
+dimnames(cds2)[[1]] <- rownames(my_counts)
+
+names( cds2 )
+sum( cds2$all.zeros )
+
+cds2$samples$lib.size
+
+cds2 <- estimateCommonDisp( cds2 )
+names( cds2 )
+# The estimate
+cds2$common.dispersion
+# 
+# # Default Setting
+# cds2 <- estimateTagwiseDisp( cds2  )
+# names( cds2 )
+# summary( cds$tagwise.dispersion )
+# # More shrinkage/sqeezing toward the common
+# cds2 <- estimateTagwiseDisp( cds2 , prior.n = 25 )
+# summary( cds2$tagwise.dispersion ) # not much changed, but the ends got squeezed in quite a bit.
+# # # The recommended setting for this data set is the default of 10. Let's stick with that.
+# cds2 <- estimateTagwiseDisp( cds2 , prior.n = 10 )
+# 
+# de.cmn2 <- exactTest( cds2 , common.disp = TRUE )
+# de.tgw2 <- exactTest( cds2 , common.disp = FALSE , pair = c( "Control" , "Cholesterol" ) )
+# de.poi2 <- exactTest( cds2 , dispersion = 1e-06  , pair = c( "Control" , "Cholesterol" ) )
+# et <- exactTest(cds2)
+# topTags(et)
+
+# from edgeR User Guide
+
+design <- model.matrix(~Time -1)
+
+cds2 <- estimateDisp(cds2, design)
+
+fit <- glmQLFit(cds2, design )
+qlf <- glmQLFTest(fit)
+topTags(qlf)
+
+Fit_results2 <- data.frame(qlf$coefficients, qlf$table)
+
+write.table(Fit_results2, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp,"EdgeR_glmQLFit_CAZy_Anyone_diff_0.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", col.names = NA, row.names = TRUE) 
+
+
+fit2 <- glmFit(cds2,design) 
+lrt <- glmLRT(fit2)
+topTags(lrt)
+lrt.2vs1 <- glmLRT(fit2, coef=2)
+head(cds2$counts)
+
+
+
+Fit_results <- data.frame(lrt$coefficients, lrt$table)
+                          
+write.table(Fit_results, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "EdgeR_glmFit_CAZy_Anyone_diff_0.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", col.names = NA, row.names = TRUE)
+
+cds2 <- estimateGLMCommonDisp(cds2, design)
+#To estimate trended dispersions:
+cds2 <- estimateGLMTrendedDisp(cds2, design)
+#To estimate tagwise dispersions:
+cds2 <- estimateGLMTagwiseDisp(cds2, design)
+
+
+```
+
+EdgeR for Oosporogenesis
+```{r}
+
+library(edgeR)
+
+# select which experiment to analyze
+Exp <- levels(rpkmPlotsFullImport$Experiment)[2]
+Exp
+CAZy <- levels(as.factor(rpkmPlotsFullImport$Secreted))[2]
+
+#Get only certain columns and oosporogenesis experiment
+subset_count <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment==Exp & rpkmPlotsFullImport$Secreted!="non-CAZy"),]
+
+subset_count$TRT <- paste(subset_count$Condition,subset_count$TimePoint,subset_count$RNA_Replicate,sep="_")
+
+#keep only secreted
+subset_count <-  subset_count[which(subset_count$Secreted== "secreted"),]
+
+# make table in proper format
+my_counts <- dcast(data = subset_count, SequenceID ~ Condition + TimePoint + RNA_Replicate, value.var = "Read_Counts")
+rownames(my_counts) <- my_counts$SequenceID
+my_counts$SequenceID <- NULL
+
+is.data.frame(my_counts)
+
+
+colSums( my_counts ) # Library Sizes
+colSums( my_counts ) / 1e06 # Library Sizes in millions of reads
+table( rowSums( my_counts ) )[ 1:30 ]
+
+Condition <- sub("_.*","",colnames(my_counts))
+TimePoint <- sub("Control_|Cholesterol_","",colnames(my_counts))
+TimePoint <- sub("_.*","",TimePoint)
+CondTime  <- sub("_[0-9]$","",colnames(my_counts))
+
+
+cds2 <- DGEList( my_counts ,  group = Condition )
+cds2 <- DGEList( my_counts ,  group = CondTime )
+# Somehow rownames did not follow
+dimnames(cds2)[[1]] <- rownames(my_counts)
+
+names( cds2 )
+sum( cds2$all.zeros )
+
+cds2$samples$lib.size
+
+cds2 <- estimateCommonDisp( cds2 )
+names( cds2 )
+# The estimate
+cds2$common.dispersion
+#
+# # Default Setting
+# cds2 <- estimateTagwiseDisp( cds2  )
+# names( cds2 )
+# summary( cds$tagwise.dispersion )
+# # More shrinkage/sqeezing toward the common
+# cds2 <- estimateTagwiseDisp( cds2 , prior.n = 25 )
+# summary( cds2$tagwise.dispersion ) # not much changed, but the ends got squeezed in quite a bit.
+# # # The recommended setting for this data set is the default of 10. Let's stick with that.
+# cds2 <- estimateTagwiseDisp( cds2 , prior.n = 10 )
+#
+# de.cmn2 <- exactTest( cds2 , common.disp = TRUE )
+# de.tgw2 <- exactTest( cds2 , common.disp = FALSE , pair = c( "Control" , "Cholesterol" ) )
+# de.poi2 <- exactTest( cds2 , dispersion = 1e-06  , pair = c( "Control" , "Cholesterol" ) )
+# et <- exactTest(cds2)
+# topTags(et)
+
+# from edgeR User Guide
+
+design <- model.matrix(~CondTime -1)
+#design <- model.matrix(~Condition)
+
+cds2 <- estimateDisp(cds2,design)
+
+fit <- glmQLFit(cds2, design )
+qlf <- glmQLFTest(fit)
+topTags(qlf)
+
+Fit_results2 <- data.frame(qlf$coefficients, qlf$table)
+
+write.table(Fit_results2, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp,"EdgeR_glmQLFit_CAZy_Anyone_diff_0.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", col.names = NA, row.names = TRUE)
+
+
+fit2 <- glmFit(cds2,design)
+lrt <- glmLRT(fit2)
+topTags(lrt)
+lrt.2vs1 <- glmLRT(fit2, coef=2)
+head(cds2$counts)
+
+
+
+Fit_results <- data.frame(lrt$coefficients, lrt$table)
+
+write.table(Fit_results, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "EdgeR_glmFit_CAZy_Anyone_diff_0.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", col.names = NA, row.names = TRUE)
+
+cds2 <- estimateGLMCommonDisp(cds2, design)
+#To estimate trended dispersions:
+cds2 <- estimateGLMTrendedDisp(cds2, design)
+#To estimate tagwise dispersions:
+cds2 <- estimateGLMTagwiseDisp(cds2, design)
+
+
+```

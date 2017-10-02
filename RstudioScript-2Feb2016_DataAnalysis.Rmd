@@ -1,4 +1,4 @@
-RNA-Seq Data Analysis After Read Processing and TopHat2 alignment
+ RNA-Seq Data Analysis After Read Processing and TopHat2 alignment
 =================================================================
 This will help us when finding our files to source functions:
 ```{r}
@@ -361,6 +361,15 @@ LEV_2010_rpkm <- read.xlsx(paste(sharedPath,
                            sheet = "S9", 
                            startRow = 2)
 
+# check for duplications
+LEV_2010_rpkm[duplicated(LEV_2010_rpkm$Locus)  | duplicated(LEV_2010_rpkm$Locus, fromLast=TRUE),c(1,3:10)]
+
+LEV_2010_rpkm_duplicated <- LEV_2010_rpkm[duplicated(LEV_2010_rpkm[,c(3:10)])  | duplicated(LEV_2010_rpkm[,c(3:10)], fromLast=TRUE),c(1,3:10)]
+
+
+
+
+
 #<<<<<<< HEAD
 LEV_2010_rpkm[LEV_2010_rpkm=="NA"]  <- NA
 colnames(LEV_2010_rpkm)[5]  <- "YEB_Pilch"
@@ -405,6 +414,10 @@ colnames(T_G_conversion_table)[colnames(T_G_conversion_table) == "G_code"] <- "L
 #>>>>>>> b272e7c0e0c1cf0ccd5efa8628919339a1d1fff8
 
 LEV_2010_rpkm_df <- merge(T_G_conversion_table, LEV_2010_rpkm_unique, by = "Locus", all.x = TRUE)
+
+#  There are some duplicates in this dataset
+LEV_2010_rpkm_duplicated_df <- merge(T_G_conversion_table, LEV_2010_rpkm_duplicated, by = "Locus", all.y = TRUE)
+LEV_2010_rpkm_duplicated_df <- LEV_2010_rpkm_duplicated_df[order(LEV_2010_rpkm_duplicated_df$T_code),]
 
 LEV_2010_rpkm_df$T_code[duplicated(LEV_2010_rpkm_df$T_code)]
 

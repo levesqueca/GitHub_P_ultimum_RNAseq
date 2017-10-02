@@ -1,0 +1,745 @@
+Generating plots of gene expression by time course and treatment
+================================================================
+
+Review paths to confirm they are still correct:
+```{r}
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+```
+
+Over here Emily to read the big file
+```{r}
+rpkmPlotsFullImport <- read.table(paste(sharedPath, 
+                                        "rpkmForBarPlots_full.csv", 
+                                        sep = ""), 
+                                  sep = ",", 
+                                  header = TRUE, 
+                                  as.is = FALSE, 
+                                  stringsAsFactors = FALSE)
+
+rpkmPlotsFullImport$xLab <- paste(rpkmPlotsFullImport$Condition,
+                                  rpkmPlotsFullImport$TimePoint, 
+                                  sep = "_")
+unique(rpkmPlotsFullImport$xLab)
+
+rpkmPlotsFullImport$xLab <- sub("OoCTimeCourse_", "", rpkmPlotsFullImport$xLab)
+rpkmPlotsFullImport$xLab <- sub("Various_0", "Various", rpkmPlotsFullImport$xLab)
+unique(rpkmPlotsFullImport$xLab)
+unique(rpkmPlotsFullImport$Experiment)
+
+labOrdered <- c("Various", "Control_0", "Control_3", "Cholesterol_3", 
+                "Control_7", "Cholesterol_7", "Control_24", "Cholesterol_24", 
+                "0", "12", "24", "48", "72", "120", "240") 
+rpkmPlotsFullImport$xLab <- factor(rpkmPlotsFullImport$xLab, levels = c(labOrdered))   
+levels(rpkmPlotsFullImport$xLab)
+
+expOrdered <- c("Mycelium", "Oosporogenesis", "OosporeConversion") 
+rpkmPlotsFullImport$Experiment <- factor(rpkmPlotsFullImport$Experiment, 
+                                         levels = c(expOrdered))   
+levels(rpkmPlotsFullImport$Experiment)
+```
+
+
+Create Main plot folder
+```{r}
+mainFolder <- "GGPLOTS_FROM_FULL_DATA_continuous_X_Figs_thesis"
+dir.create(paste(sharedPath, mainFolder , sep = ""), 
+           showWarnings = TRUE, recursive = FALSE)
+```
+
+Create a folder for the plot outputs:
+```{r}
+analysisDir <- "from_Emily_24_March_2017"
+dir.create(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""), 
+           showWarnings = TRUE, recursive = FALSE)
+analysisPath <- paste(sharedPath, mainFolder , "/", analysisDir, sep = "")
+```
+
+Dump list file as single column and read it.  
+The list could have 2 column, one with better labels.
+List was sent by e-mail we think
+Use next chunk instead
+```{r}
+# #listName <- "Loci_list.txt"
+# #listName <- "listRefCandidates.txt"
+# listName <- "CAZy_of_interest_list"
+# 
+# library(data.table)
+# listLoci <- fread(paste(analysisPath, "/", listName, "", sep = ""), 
+#                   sep = "\t", header = TRUE,  
+#                   stringsAsFactors = FALSE)
+# colnames(listLoci)[1] <- "SequenceID"
+# colnames(listLoci)[2] <- "CAZyFamily"
+# 
+# #listLoci$geneInfo <- paste(listLoci$SequenceID, listLoci$CAZyFamily, sep = " -\n ")
+```
+
+Read CAZy of entire recent run of dbcan pipeline (from Emily's lists)
+```{r}
+
+listName <- "CAZy_of_interest_list"
+
+library(data.table)
+
+# Read full dataset
+cazyPyuuAll <- fread(file = "data/dbCAN_Subset_AllRefs_columnSubset.csv",
+#                        "CAZy_prediction_test/output/Pythium_ultimum_var_ultimum/Pythium_ultimum_var_ultimum.CAZy.out.dm", 
+#                       sep = ""),
+                  sep = "auto", header = TRUE, fill=TRUE)
+
+cazyPyuuAll <- cazyPyuuAll[which(cazyPyuuAll$species=="Pythium_ultimum_var_ultimum"),c("cazyFam", "sequence")]
+
+# Remove one strange code for GT2 (duplicated gene)
+cazyPyuuAll <-cazyPyuuAll[!cazyPyuuAll$cazyFam == "GT2_Cellulose_synt",]
+
+
+# Read Secreted dataset
+cazyPyuuSecreted <- fread(file = "data/dbCAN_SecretedPyuu_Final_subsetColumns.csv",
+                  sep = "auto", header = TRUE, fill=TRUE)
+
+cazyPyuuSecreted <- cazyPyuuSecreted[ ,c("cazyFam", "sequence")]
+cazyPyuuSecreted$Secreted <- "secreted"
+
+
+
+
+# Now make a new table that has only the cazyFam and sequence columns plus info about Secreted
+length(unique(paste(cazyPyuuSecreted$cazyFam,cazyPyuuSecreted$sequence, sep="_")))
+length(unique(paste(cazyPyuuAll$cazyFam,cazyPyuuAll$sequence, sep="_")))
+
+
+cazyFamGene <- merge(cazyPyuuAll, cazyPyuuSecreted, by = c("cazyFam", "sequence"), all.x = TRUE)
+
+cazyFamGene$Secreted[is.na(cazyFamGene$Secreted)] <- "not secreted"
+
+cazyFamGene <- cazyFamGene[!duplicated(cazyFamGene), ]
+
+colnames(cazyFamGene)[2] <- "T_code"
+
+# For some reason I can't get openxlsx package:
+
+library(openxlsx)
+LEV_2010_annotations <- read.xlsx(paste(sharedPath, 
+                                 "References/Genome_Biology_paper_AdditionalDataFile3.xlsx", 
+                                 sep = ""), 
+                           sheet = "S9", 
+                           startRow = 2)
+
+T_G_conversion_table <- read.csv(paste(sharedPath, 
+                                       "References/T_G_name_conversion_from_gff_file.csv", 
+                                       sep = ""), 
+                                 stringsAsFactors = FALSE)
+
+length(unique(T_G_conversion_table$T_code))
+length(unique(T_G_conversion_table$G_code))
+
+T_G_conversion_table$G_code[duplicated(T_G_conversion_table$G_code)]
+T_G_conversion_table$T_codes[duplicated(T_G_conversion_table$T_code)]
+
+colnames(T_G_conversion_table)[colnames(T_G_conversion_table)=="G_code"] <- "Locus"
+
+LEV_2010_df <- merge(T_G_conversion_table, LEV_2010_annotations, by = "Locus", all.x = TRUE)
+
+
+CAZy_of_interest <- merge(cazyFamGene, LEV_2010_df[,2:3], by = "T_code", all.x = TRUE)
+
+# one protein was duopklicated because of different annotations, remove it
+CAZy_of_interest <- CAZy_of_interest[!duplicated(paste(CAZy_of_interest$cazyFam,CAZy_of_interest$T_code)),]
+
+
+CAZy_of_interest$geneInfo <-    paste(CAZy_of_interest$T_code, " - ", CAZy_of_interest$Secreted, " - ", CAZy_of_interest$Functional.Annotation, sep = "")
+CAZy_of_interest$geneInfoTab <- paste(CAZy_of_interest$T_code, " - ", CAZy_of_interest$Secreted, " \n ", CAZy_of_interest$Functional.Annotation, sep = "") 
+
+# To add another line break after several spaces
+for(i in 1:8){
+  CAZy_of_interest$geneInfoTab <- sub(" ", "$", CAZy_of_interest$geneInfoTab, ignore.case = FALSE)
+}
+# add a space after last character denoted by $
+CAZy_of_interest$geneInfoTab <- sub("$", " ", CAZy_of_interest$geneInfoTab, ignore.case = FALSE)
+CAZy_of_interest$geneInfoTab <- sub(" ", "\n", CAZy_of_interest$geneInfoTab, ignore.case = FALSE)
+CAZy_of_interest$geneInfoTab <- gsub("\\$", " ", CAZy_of_interest$geneInfoTab, ignore.case = FALSE)
+
+print(CAZy_of_interest$geneInfoTab[1])
+
+listLoci <- data.frame(CAZy_of_interest$T_code,CAZy_of_interest$cazyFam,CAZy_of_interest$Secreted,CAZy_of_interest$geneInfo,
+                       CAZy_of_interest$geneInfoTab) 
+
+colnames(listLoci)
+colnames(listLoci) <- c("SequenceID", "CAZyFamily",  "Secreted", "geneInfo", "geneInfoTab")
+print(listLoci$geneInfoTab[1])
+
+
+write.table(listLoci, paste(analysisPath, "/", listName, ".csv", sep = ""),
+            append = FALSE, sep = ",", col.names = NA)
+
+# I'll need to read in the table - since I can't get openxlsx to work:
+listLoci <- fread(paste(analysisPath, "/CAZy_of_interest_list.csv", sep = ""),
+                  sep = "auto", header = TRUE)
+# to chack if \n is there
+print(listLoci$geneInfoTab[1])
+
+
+```
+
+
+Creates a data subset for plotting and exports this subset.  
+This can help us when we want to diagnosticate outliers.
+```{r}
+temp <- merge(listLoci, rpkmPlotsFullImport, by = "SequenceID", all.x = TRUE)
+temp$Experiment <- sub("OosporeConversion", "Oospore Conversion", temp$Experiment)
+
+# To order rows
+temp <- temp[order(temp$geneInfo, temp$xLab),] 
+
+# To select and order columns
+selectCol <- c("SequenceID", "CAZyFamily", "geneInfo", "geneInfoTab", "ExpUnit", "Condition", 
+               "TimePoint", "RNA_Replicate", "Experiment", "xLab", "Read_Counts") 
+
+temp <- subset(temp, select = selectCol)
+
+#temp$log_time <- log(temp$TimePoint + 5)
+temp$sqrt_time <- sqrt(temp$TimePoint)
+
+temp$colour_gr  <- temp$Condition
+temp$colour_gr  <- sub("Various|OoCTimeCourse", "Control", temp$colour_gr)
+
+write.table(temp, paste(analysisPath, "/", listName,"_all.csv", sep = ""),
+            append = FALSE, sep = ",", col.names = NA)
+
+```  
+
+
+Single file, multiple Bar plots for gene in listLoci
+```{r}
+library("ggplot2")
+
+svg(file   = paste(analysisPath, "/", listName,  ".svg", sep = ""),
+    width  = 8, 
+    height = 7*ceiling(nrow(temp)/200))
+    # 200 in seems to be the maximum length for a pdf file, so I used sgv
+    #height = 200)
+
+bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp) +
+  theme_bw() +
+  theme(axis.text.y = element_text(size  = 6, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 6, 
+                                   angle  = 45, 
+                                   hjust  = 1, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads\n (rpkm-normalized)") + 
+  labs(x = "Treatment") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 0.2, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  -0.2, 
+                                    face   = 'bold')) +
+  geom_boxplot(position = position_dodge(0.8), 
+               width    = 0.8, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 1, 
+               position = position_dodge(0.8))  +
+#   facet_wrap(~SequenceID, 
+#   facet_grid(SequenceID~Experiment,
+  facet_grid(geneInfoTab~Experiment,
+             scales = "free", space = "free_x") +
+  theme(strip.text.x = element_text(size   = 6, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = 0))  +
+  theme(strip.text.y = element_text(size   = 5, 
+                                    colour = "black",
+                                    hjust = 0,
+                                    angle  =-90))
+
+print(bp)
+dev.off()
+
+```
+
+
+```{r}
+
+nl_coeff <- read.table(paste(sharedPath, 
+                                        "GGPLOTS_STATS_FROM_FULL_DATA_model_fitting/coefficients_conversion_CAZy_output - edited.csv", 
+                                        sep = ""), 
+                                  sep = ",", 
+                                  header = TRUE, 
+                                  as.is = FALSE, 
+                                  stringsAsFactors = FALSE)
+colnames(nl_coeff)[2:3] <- c("SequenceID", "coeff")
+
+nl_coeff_by_gene_estimate <- dcast(data = nl_coeff[,2:9], SequenceID ~ coeff, value.var = c("Estimate"))
+
+
+nl_coeff_by_gene <- reshape(nl_coeff[,2:7], idvar='SequenceID', timevar='coeff', direction='wide')
+
+listLoci_notduplicated <- listLoci[which(!duplicated(listLoci[,c(2,4)])),]
+
+which(duplicated(listLoci[,c(2,4)]))
+
+
+nl_coeff_full <- merge(listLoci_notduplicated[,2:4], nl_coeff_by_gene, by="SequenceID", all.x=TRUE)
+#nl_coeff_sub$Experiment <- "Oospore Conversion"
+
+write.table(nl_coeff_full, paste(analysisPath, "/nlin_coeff_single_line_from_coefficients_conversion_CAZy_output.csv", sep = ""),
+            append = FALSE, sep = ",", col.names = NA)
+
+```
+
+
+
+```{r}
+i <- 15
+  nl_coeff_sub <- subset(nl_coeff_full, nl_coeff_full$SequenceID == listLoci$SequenceID[i])
+
+
+gaussian <- function(x) {exp(nl_coeff_sub$Estimate.max*exp(-((x - nl_coeff_sub$Estimate.cent)^2) / 
+        (2 * nl_coeff_sub$Estimate.StDev^2)))}
+
+my_x <- seq(from = 0, to = 15.5, by = 0.1)
+plot(my_x,gaussian(my_x))
+
+```
+
+
+
+Chunk to generate bar plots for individual genes and output them
+to the specified folder for "analysisPath"
+```{r}
+library("ggplot2")
+
+create_dir <- paste(analysisPath, "/Individual_plots", sep = "")
+if (dir.exists(create_dir)) {} else {
+  dir.create(create_dir, showWarnings = TRUE, recursive = FALSE)  }
+
+i <- 15
+for(i in 1:length(listLoci$geneInfoTab)){
+for(i in 1:length(listLoci$geneInfoTab)){
+  temp2 <- subset(temp, temp$SequenceID == listLoci$SequenceID[i])
+  temp2$Experiment <- sub("Mycelium", "Mycel.", temp2$Experiment )
+  nl_coeff_sub <- subset(nl_coeff_full, nl_coeff_full$SequenceID == listLoci$SequenceID[i])
+  fitted_Y <- gaussian(my_x)
+  fitted_Y <- data.frame("Oospore Conversion", "Various", my_x, gaussian(my_x), temp2$geneInfoTab[1])
+  colnames(fitted_Y)  <- c("Experiment", "xLab", "sqrt_time", "Read_Counts", "geneInfoTab" )
+  
+  
+  png(file   = paste(create_dir, "/", listLoci$SequenceID[i], ".png", sep = ""), 
+      width  = 7, 
+      height = 3, 
+      units  = "in", 
+      res    = 300, 
+      bg     = "white")
+  bp <-  ggplot(aes(y = Read_Counts, x= sqrt_time, group = xLab, colour= colour_gr), data  = temp2) +
+
+  # scale_x_continuous(breaks = c(log(5), log(3+5), log(7+5), log(12+5), log(24+5), 
+  #                               log(48+5), log(72+5), log(120+5), log(240+5)),
+  #                        minor_breaks = NULL, labels=c(0,3,7,12,24,48,72,120,240)) +
+  scale_x_continuous(breaks = c(0, sqrt(3), sqrt(7), sqrt(12), sqrt(24), sqrt(48), sqrt(72), sqrt(120), sqrt(240)),
+                         minor_breaks = NULL, labels=c(0,3,7,12,24,48,72,120,240)) +
+
+  theme_bw() +
+  theme(axis.text.y = element_text(size  = 8, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 8, 
+                                   angle  = 0, 
+                                   hjust  = 0.5, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads\n(rpkm-normalized)") +
+  labs(x = "Days") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 8, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 1.5, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  0, 
+                                    face   = 'bold')) +
+  theme(legend.position="none") +
+  geom_boxplot(position = position_dodge(0.9), 
+ # geom_boxplot(position = position_dodge(0.8), 
+   #            width    = 0.8, 
+               width    = 0.9, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20
+               ) +
+  scale_color_manual(values=c("#619CFF","black")) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 0.5, 
+               position = position_dodge(0.9))  +
+#   facet_wrap(~SequenceID, 
+#   facet_grid(SequenceID~Experiment,
+  facet_grid(geneInfoTab~Experiment,
+             scales = "free", space= "free_x") +
+  theme(strip.text.x = element_text(size   = 8, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = 0)) +
+  theme(strip.text.y = element_text(size   = 7, 
+                                #    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = -90)) 
+ 
+print(bp)
+
+bp2 <- bp + geom_line(data=fitted_Y, aes(x=sqrt_time, y=Read_Counts), color="#619CFF", linetype = 3)
+
+
+library(grid)
+# Get the ggplot grob
+gt = ggplotGrob(bp2)
+
+# Check for the widths - you need to change the two that are set to 1null
+gt$widths
+# The required widths are 4 and 8
+
+# Replace the default widths with relative widths:
+gt$widths[4] = unit(1.5, "null")
+gt$widths[6] = unit(14, "null")
+gt$widths[8] = unit(7.5, "null")
+
+# Draw the plot
+grid.newpage()
+grid.draw(gt)
+
+# I think it is better to have some extra space between the two panels
+# gt$widths[5] = unit(1, "cm")
+# grid.newpage()
+# grid.draw(gt)
+
+
+
+
+# trick to overlay plots here 
+#https://statbandit.wordpress.com/2011/07/29/a-ggplot-trick-to-plot-different-plot-types-in-facets/
+
+#print(gt)
+dev.off()
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+*** Over here Andre - just ran this after you left, 19March2017:
+Bar plots per CAZy family group:
+```{r}
+library("ggplot2")
+cazyFam <- unique(listLoci$CAZyFamily)
+
+ggplotsByCazyFamPath <- paste(analysisPath, "/ggplotsByCAZyFam", sep = "")
+if (dir.exists(ggplotsByCazyFamPath)) {} else {
+  dir.create(ggplotsByCazyFamPath, showWarnings = TRUE, recursive = FALSE)  }
+
+i <- 1
+for(i in 1:length(cazyFam)){
+  temp3 <- subset(temp, temp$CAZyFamily == cazyFam[i])
+  temp3$Experiment <- sub("Mycelium", "Mycel.", temp3$Experiment )
+
+pdf(file   = paste(ggplotsByCazyFamPath, "/", cazyFam[i], ".pdf", sep = ""),
+    width  = 8, 
+    height = 7*ceiling(nrow(temp3)/90))
+
+bp <- ggplot(aes(y = Read_Counts, x = xLab), data  = temp3) +
+theme_bw() +
+  theme(axis.text.y = element_text(size  = 8, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 8, 
+                                   angle  = 45, 
+                                   hjust  = 1, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads\n(rpkm-normalized)") +
+  labs(x = "Treatment") +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 8, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 1.5, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  0, 
+                                    face   = 'bold')) +
+  geom_boxplot(position = position_dodge(0.8), 
+               width    = 0.8, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 0.5, 
+               position = position_dodge(0.8))  +
+#   facet_wrap(~SequenceID, 
+#   facet_grid(SequenceID~Experiment,
+  facet_grid(geneInfoTab~Experiment,
+             scales = "free", space= "free_x") +
+  theme(strip.text.x = element_text(size   = 8, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = 0)) +
+  theme(strip.text.y = element_text(size   = 6, 
+                          #          face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = -90))
+print(bp)
+dev.off()
+}
+
+```
+
+
+Figs for thesis
+```{r}
+library("ggplot2")
+
+
+Fig_7 <- c("PYU1_T010810", "PYU1_T006952","PYU1_T009144", "PYU1_T001945")
+
+Fig_8 <- c("PYU1_T001949", "PYU1_T001346","PYU1_T005445", "PYU1_T001777")
+
+Fig_9 <- c("PYU1_T014660", "PYU1_T008966","PYU1_T012530", "PYU1_T006030")
+
+Fig_10 <- c("PYU1_T011896", "PYU1_T009223","PYU1_T009228", "PYU1_T003553")
+
+
+Fig_11 <- "PYU1_T006194"
+
+mult_figs <- c(Fig_7,Fig_8,Fig_9,Fig_10)
+
+not_converged <- c("PYU1_T001945","PYU1_T001949", "PYU1_T001346", "PYU1_T006030", "PYU1_T011896")
+
+Fig <- mult_figs
+Fig_num <- "mult_figs"
+#incr <- 16
+
+listLoci_Fig <- listLoci[listLoci$SequenceID %in% as.character(Fig),]
+
+dat_agg <- aggregate(listLoci_Fig[,c(2,3)], by=list(listLoci_Fig$SequenceID),FUN=c)
+for(i in 1:length(dat_agg$CAZyFamily)){
+  dat_agg$CAZyFamily2[i] <-paste(unlist(dat_agg$CAZyFamily[i]), collapse="-")
+}
+
+dat_agg$SequenceID <- NULL
+colnames(dat_agg)[1] <- "SequenceID"
+dat_agg$CAZyFamily <- NULL
+colnames(dat_agg)[2] <- "CAZyFamily"
+
+
+listLoci_Fig <- listLoci_Fig[!duplicated(listLoci_Fig$SequenceID)]
+listLoci_Fig$CAZyFamily <- NULL
+listLoci_Fig <- merge(listLoci_Fig, dat_agg, by= "SequenceID")
+
+listLoci_Fig$SequenceID <- factor(listLoci_Fig$SequenceID, levels=as.character(Fig))
+
+listLoci_Fig <- listLoci_Fig[order(listLoci_Fig$SequenceID),]
+
+#listLoci_Fig <- listLoci_Fig[2,] 
+
+create_dir <- paste(analysisPath, "/", Fig_num, sep = "")
+if (dir.exists(create_dir)) {} else {
+  dir.create(create_dir, showWarnings = TRUE, recursive = FALSE)  }
+
+i <- 1
+for(i in 1:nrow(listLoci_Fig)){
+  temp2 <- subset(temp, as.character(temp$SequenceID) == as.character(listLoci_Fig$SequenceID[i]))
+#  temp2 <- temp[temp$SequenceID %in% listLoci_Fig$SequenceID, ]
+  temp2$Experiment <- sub("Mycelium", "Mycel.", temp2$Experiment )
+  nl_coeff_sub <- subset(nl_coeff_full, nl_coeff_full$SequenceID == as.character(listLoci_Fig$SequenceID[i]))
+  nl_coeff_sub$xLab <- "Various"
+  temp2 <- subset(temp2, as.character(temp2$CAZyFamily) == as.character(nl_coeff_sub$CAZyFamily))
+  fitted_Y <- gaussian(my_x)
+  fitted_Y <- data.frame("Oospore Conversion", "Various", my_x, gaussian(my_x), temp2$geneInfoTab[1])
+  colnames(fitted_Y)  <- c("Experiment", "xLab", "sqrt_time", "Read_Counts", "geneInfoTab" )
+  
+ LETTERS[1]
+   
+  png(file   = paste(create_dir, "/", LETTERS[i],"_",listLoci_Fig$SequenceID[i], ".png", sep = ""), 
+      width  = 7, 
+      height = 2.3, 
+      units  = "in", 
+      res    = 600, 
+      bg     = "white")
+  bp <-  ggplot(aes(y = Read_Counts, x= sqrt_time, group = xLab, colour= colour_gr), data  = temp2) +
+
+  # scale_x_continuous(breaks = c(log(5), log(3+5), log(7+5), log(12+5), log(24+5), 
+  #                               log(48+5), log(72+5), log(120+5), log(240+5)),
+  #                        minor_breaks = NULL, labels=c(0,3,7,12,24,48,72,120,240)) +
+  scale_x_continuous(breaks = c(0, sqrt(3), sqrt(7), sqrt(12), sqrt(24), sqrt(48), sqrt(72), sqrt(120), sqrt(240)),
+                         minor_breaks = NULL, labels=c(0,3,7,12,24,48,72,120,240)) +
+
+  theme_bw() +
+      theme(axis.text.y = element_text(size  = 8, 
+                                   hjust = 1, 
+                                   vjust = 0.4)) +
+  theme(axis.text.x = element_text(colour = 'black', 
+                                   size   = 8, 
+                                   angle  = 0, 
+                                   hjust  = 0.5, 
+                                   vjust  = 1)) +
+  theme(axis.ticks = element_line(colour = 'black', 
+                                  size   = 0.5)) +
+  labs(y = "Total Number of Reads\n(rpkm-normalized)") +
+  labs(x = "Days") +
+  labs(title = paste(LETTERS[i], ": ", listLoci_Fig$CAZyFamily[i], sep="")) +
+     theme(title = element_text(colour = "#619CFF", 
+                                   size   = 8, 
+                                   angle  = 0, 
+                                   hjust  = -1, 
+                                   vjust  = 0.5,
+                                face   = 'bold')) +
+  theme(axis.title.y = element_text(colour = 'black', 
+                                    size   = 8, 
+                                    angle  = 90, 
+                                    hjust  = 0.5, 
+                                    vjust  = 1.5, 
+                                    face   = 'bold')) +
+  theme(axis.title.x = element_text(colour = 'black', 
+                                    size   = 10, 
+                                    angle  = 0, 
+                                    hjust  = 0.5, 
+                                    vjust  =  0, 
+                                    face   = 'bold')) +
+  theme(legend.position="none") +
+  geom_boxplot(position = position_dodge(0.9), 
+ # geom_boxplot(position = position_dodge(0.8), 
+   #            width    = 0.8, 
+               width    = 0.9, 
+               outlier.size   = 1, 
+               outlier.colour = "black", 
+               outlier.shape  = 20
+               ) +
+  scale_color_manual(values=c("#619CFF","black")) +
+  stat_summary(fun.y = mean, 
+               geom  = "point", 
+               shape = 5, 
+               size  = 0.5, 
+               position = position_dodge(0.9))  +
+#   facet_wrap(~SequenceID, 
+#   facet_grid(SequenceID~Experiment,
+  facet_grid(geneInfoTab~Experiment, scales = "free", space= "free_x") +
+  theme(strip.text.x = element_text(size   = 8, 
+                                    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = 0)) +
+  theme(strip.text.y = element_text(size   = 6, 
+                                #    face   = 'bold', 
+                                    colour = "black", 
+                                    angle  = -90)) 
+ 
+print(bp)
+
+fitted_Y_SE <- fitted_Y[1,]
+fitted_Y_SE$sqrt_time[1] <- nl_coeff_sub$Estimate.cent[1]
+fitted_Y_SE$Read_Counts[1] <- exp(nl_coeff_sub$Estimate.max[1])
+fitted_Y_SE$max[1] <- exp(nl_coeff_sub$Estimate.max[1] + nl_coeff_sub$Std..Error.max)
+fitted_Y_SE$min[1] <- exp(nl_coeff_sub$Estimate.max[1] - nl_coeff_sub$Std..Error.max)
+fitted_Y_SE$xmax[1] <- nl_coeff_sub$Estimate.cent[1] + nl_coeff_sub$Std..Error.cent
+fitted_Y_SE$xmin[1] <- nl_coeff_sub$Estimate.cent[1] - nl_coeff_sub$Std..Error.cent
+
+if  (!(as.character(listLoci_Fig$SequenceID[i]) %in% not_converged)) {
+bp2 <- bp + geom_line(data=fitted_Y, aes(x=sqrt_time, y=Read_Counts), color="#619CFF", linetype = 3) +
+   geom_point(aes(y = Read_Counts,  x = sqrt_time), shape = 21, colour = "#619CFF",  fill = "#619CFF", size = 1, stroke = 0.5, data = fitted_Y_SE) +
+    geom_errorbar(aes(max = max, min = min), colour = "#619CFF", width = 0.5, size=0.4, data = fitted_Y_SE) +
+   geom_errorbarh(aes(xmax = xmax, xmin = xmin), colour = "#619CFF", height = fitted_Y_SE$Read_Counts[1]/10, size=0.4, data = fitted_Y_SE) 
+}
+ else { bp2 <- bp }
+                  
+print(bp2)
+                  
+library(grid)
+# Get the ggplot grob
+gt = ggplotGrob(bp2)
+
+# Check for the widths - you need to change the two that are set to 1null
+gt$widths
+# The required widths are 4 and 8
+
+# Replace the default widths with relative widths:
+gt$widths[4] = unit(1.5, "null")
+gt$widths[6] = unit(14, "null")
+gt$widths[8] = unit(7.5, "null")
+
+# Draw the plot
+grid.newpage()
+grid.draw(gt)
+
+# I think it is better to have some extra space between the two panels
+# gt$widths[5] = unit(1, "cm")
+# grid.newpage()
+# grid.draw(gt)
+
+
+
+# trick to overlay plots here 
+#https://statbandit.wordpress.com/2011/07/29/a-ggplot-trick-to-plot-different-plot-types-in-facets/
+
+dev.off()
+
+}
+
+
+```
+
+
+Combining single strain plot, SE and coefficient box plots vertical vertical
+```{r}
+library(gridExtra)
+library(grid)
+
+offx  <- 0.04
+offy  <- 0.02
+h1 <- 3
+h2 <- 1.8
+h3 <- 4.5
+
+pdf(paste(create_dir, "/composite_portrait.pdf",sep=""), width = 7, height = 9)
+#grid.arrange(p7, p5, p8,  ncol=1, nrow =3, heights = c(h1, h2, h3))
+grid.arrange(bp2, bp2, bp2,  ncol=1, nrow =3, heights = c(h1, h2, h3))
+grid.text(c(expression(bold("A")),expression(bold("B")),expression(bold("C"))),x = c(offx),y = c(1-offy,((h2+h3)/10)+(2*offy),(h3/10)+offy))
+dev.off()
+
+```
+
+

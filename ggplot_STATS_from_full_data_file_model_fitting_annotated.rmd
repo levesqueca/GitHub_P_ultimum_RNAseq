@@ -1,0 +1,824 @@
+# Generating p-values for oosporogenesis and oospore conversion experiments, analyzed separately
+## (GLM only with treatments as factors)
+
+## Importing, merging and organizing the data
+
+Path of folder
+```{r}
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+
+```
+
+Read file with all the data.  This file was made after normalizing oosporogenesis and oospore conversion together with EdgeR.  The data from Lévesque et al 2010 is as is.  Everything is RPKM.
+```{r}
+rpkmPlotsFullImport <- read.table(paste(sharedPath, 
+                                        "rpkmForBarPlots_full.csv", 
+                                        sep = ""), 
+                                  sep = ",", 
+                                  header = TRUE, 
+                                  as.is = TRUE, 
+                                  stringsAsFactors = FALSE)
+
+rpkmPlotsFullImport$xLab <- paste(rpkmPlotsFullImport$Condition,
+                                  rpkmPlotsFullImport$TimePoint, 
+                                  sep = "_")
+unique(rpkmPlotsFullImport$xLab)
+
+rpkmPlotsFullImport$xLab <- sub("OoCTimeCourse_", "", rpkmPlotsFullImport$xLab)
+rpkmPlotsFullImport$xLab <- sub("Various_0", "Various", rpkmPlotsFullImport$xLab)
+unique(rpkmPlotsFullImport$xLab)
+unique(rpkmPlotsFullImport$Experiment)
+
+# Creates ordered factors (very important for plotting or to see coefficients in the right order)
+labOrdered <- c("Various", "Control_0", "Control_3", "Cholesterol_3", 
+                "Control_7", "Cholesterol_7", "Control_24", "Cholesterol_24", 
+                "0", "12", "24", "48", "72", "120", "240") 
+rpkmPlotsFullImport$xLab <- factor(rpkmPlotsFullImport$xLab, levels = c(labOrdered))   
+levels(rpkmPlotsFullImport$xLab)
+
+expOrdered <- c("Mycelium", "Oosporogenesis", "OosporeConversion") 
+rpkmPlotsFullImport$Experiment <- factor(rpkmPlotsFullImport$Experiment, 
+                                         levels = c(expOrdered))
+rm(expOrdered)
+rm(labOrdered)
+
+# note, there is a bug in the way RNA replicate was carried forward (probably because levels were used instead of actual numbers), this is why Exp_Unit is being used to rebuild it here.
+rpkmPlotsFullImport$RNA_Rep <- sub("^T","", rpkmPlotsFullImport$ExpUnit)
+rpkmPlotsFullImport$RNA_Rep <- sub("^[0-9]+-","", rpkmPlotsFullImport$RNA_Rep)
+rpkmPlotsFullImport$RNA_Rep <- sub("^c|^x","", rpkmPlotsFullImport$RNA_Rep)
+rpkmPlotsFullImport$RNA_Rep <- sub("\\.","", rpkmPlotsFullImport$RNA_Rep)
+rpkmPlotsFullImport$RNA_Rep <- sub("^[A-z]*.[A-z]$","1", rpkmPlotsFullImport$RNA_Rep)
+rpkmPlotsFullImport$RNA_Rep <- sub("emp35C","1", rpkmPlotsFullImport$RNA_Rep)
+
+rpkmPlotsFullImport <- rpkmPlotsFullImport[order(rpkmPlotsFullImport$Experiment, rpkmPlotsFullImport$SequenceID, rpkmPlotsFullImport$xLab, rpkmPlotsFullImport$ExpUnit),]
+
+levels(as.factor(rpkmPlotsFullImport$RNA_Rep))
+```
+Read the file with CAZy and secretome data 
+```{r}
+
+mainFolder <- "GGPLOTS_FROM_FULL_DATA_continuous_X/from_Emily_24_March_2017"
+
+
+listLoci <- read.table(paste(sharedPath, mainFolder, "/CAZy_of_interest_list.csv", sep = ""), 
+                                  sep = ",",header = TRUE, as.is = TRUE,  stringsAsFactors = FALSE)
+
+# Note that I am not using the fread command from data.table.  This one creates a real problem later as column indexing no longer works with data,
+# table that has the feature of usinf<g column names instead.  A real problem if you want to use columns in a loop.
+# library(data.table)
+# listLoci <- fread(paste(sharedPath, mainFolder, "/CAZy_of_interest_list.csv", sep = ""),
+#                   sep = "auto", header = TRUE)
+```
+
+
+Show duplicated secreted genes because of dual families
+```{r}
+Secreted_duplicated <-  listLoci[which(listLoci$Secreted=="secreted"),]
+Secreted_duplicated[duplicated(Secreted_duplicated$SequenceID) | duplicated(Secreted_duplicated$SequenceID, fromLast = TRUE),]
+```
+
+
+Aggregate together CAZy families for genes with more than one family, and remove duplicated
+```{r}
+dat_agg <- aggregate(listLoci[,c(2,3)], by=list(listLoci$SequenceID),FUN=c)
+for(i in 1:length(dat_agg$CAZyFamily)){
+  dat_agg$CAZyFamily2[i] <-paste(unlist(dat_agg$CAZyFamily[i]), collapse="-")
+}
+
+dat_agg$SequenceID <- NULL
+colnames(dat_agg)[1] <- "SequenceID"
+dat_agg$CAZyFamily <- NULL
+colnames(dat_agg)[2] <- "CAZyFamily"
+
+#remove duplicated loci
+listLoci <- listLoci[!duplicated(listLoci$SequenceID),]
+listLoci$CAZyFamily <- NULL
+#replace names with concatenated names
+listLoci <- merge(listLoci, dat_agg, by= "SequenceID")
+```
+
+
+Integrate gene loci CAZy and secreted data into main data table and write non-CAZy for NA
+```{r}
+rpkmPlotsFullImport <- merge(listLoci[,c(1,3,6)], rpkmPlotsFullImport[,2:10], by = "SequenceID", all.y = TRUE)
+rpkmPlotsFullImport$Secreted[is.na(rpkmPlotsFullImport$Secreted)] <- "non-CAZy"
+rpkmPlotsFullImport$CAZyFamily[is.na(rpkmPlotsFullImport$CAZyFamily)] <- "non-CAZy"
+```
+
+
+Create Main plot folder
+```{r}
+mainFolder <- "GGPLOTS_FROM_FULL_DATA_continuous_X_coeff_pvalues"
+
+if (dir.exists(paste(sharedPath, mainFolder , sep = ""))) {} else {
+  dir.create(paste(sharedPath, mainFolder , sep = ""), showWarnings = TRUE, recursive = FALSE)  }
+```
+
+Create a folder for the outputs:
+```{r}
+analysisDir <- "01_Sept_2017_annotated_script"
+if (dir.exists(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""))) {} else {
+  dir.create(paste(sharedPath, mainFolder , "/", analysisDir, sep = ""), showWarnings = TRUE, recursive = FALSE)  }
+
+analysisPath <- paste(sharedPath, mainFolder , "/", analysisDir, sep = "")
+```
+
+
+## Analysing the data
+
+### Set Up the main parameters for these datasets
+The two decisions that affect most analyses.  Adding 1 or 1e-10 to eadr read data point and using time 24 or nor for Oospore conversion
+```{r}
+# add_to_read_count <- 1
+add_to_read_count <- 1e-10
+
+T48 <- "yes"
+#T48 <- "no"
+```
+
+
+
+### Mycelium (data from Lévesque et al)
+
+Make a subset for "Mycelium"[1]   "Oosporogenesis"[2]    OR  "OosporeConversion"[3]
+and keep only secreted CAZy genes
+```{r}
+# select which experiment to analyze
+Exp <- levels(rpkmPlotsFullImport$Experiment)[1]
+#Get only secreted CAZy genes
+subset_count <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment==Exp & rpkmPlotsFullImport$Secreted=="secreted"),]
+levels(as.factor(subset_count$ExpUnit))
+#make Time as factor
+subset_count$Time <- as.factor(subset_count$TimePoint)
+head(subset_count)
+```
+Get a subset and run my own GLM analysis - Reorganize the data so each column is a gene and each line an experimental unit. 
+```{r}
+library(reshape2)
+# to avoid reaching minus infinity in some cases, make the zeros e-10 or 1 depending on the value of add_to_read_count
+subset_count$Read_Counts <- subset_count$Read_Counts + add_to_read_count
+my_counts_GLM <- dcast(data = subset_count, ExpUnit+ Time + Condition + RNA_Rep  ~ SequenceID, value.var = "Read_Counts")
+head(my_counts_GLM[,1:7])
+```
+
+#### To test for the Mycelium data if the mean read count is different than zero.
+
+First get the arithmetic mean of each column and get the natural log value for "PYU1_T010810"
+```{r}
+mean_read_count <- colMeans(my_counts_GLM[,5:ncol(my_counts_GLM)])
+mean_read_count
+mean_read_count["PYU1_T010810"]
+log(mean_read_count["PYU1_T010810"])
+```
+
+Test by GLM to see if the mean is different than zero, doping this for each column
+* note: the loop runs each column individually for each gene but when using library(data.table) it no longer works because it is expecting column names, not number indices.
+Let's work with the first gene in Fig 7 of the thesis  The data fioir this gene is fitted to the model "1".   It is basically the overall mean in GLM and is called intercept because this is like the intercept of a flat line (slope =0) with all the points under x=1. In fact, the command model.matrix shows only a column of 1, so it is exactly what it is doing, fitting $Y = \beta*X$, with X=1.  The data is actually analysed as y=e^intercept^, hence the link=log. This is also why we add the 1 or 1e-10 because intersect would try to go to minus infinity with y=0.   You can see that e^1.6577^ = 5.247, so it found the mean.  There is one more thing to check.  GLM uses the log function but also takes for granted that the distribution is poisson (incidentally this is why you get the warning about non-integers as it is expecting round numbers that are typical of Poisson and we lost round numbers through normalization but giving it non round numbers is not a problem).  In Poisson, the variance is equal to the mean.  What happens is that there is a weight of 1/mean in calculating the coefficients to give less weight of observations with higher variance (this would also explain small differences between arithmetic mean calculated before and the coefficient here).  If the variance is indeed the mean, the dispersion parameter should be equal to 1.0.  This means that we perfectly modelled the variance.  In this case we are above 1 and this means that the variance is higher that the mean.  Therefore, we need to look into quasipoisson as we are underestimating the variance with our model.
+```{r}
+model <- "One_mean"
+# standard GLM Poisson One Variable
+
+fit2 <- glm(my_counts_GLM[,"PYU1_T010810"] ~ 1, family = poisson(link="log"), my_counts_GLM)
+summary(fit2)
+sum(residuals(fit2, type="pearson")^2)/df.residual(fit2)
+model.matrix(fit2)
+```
+
+Here we repeat the same GLM fit with quasi Poisson.  Everything is pretty much the same in the output except for the Std. error and p-values to test of the intercept =0.  The Std. error is larger and we should use this one as the dispersion parameter is higher than 1.0 (note that quasipoisson calculates it automatically for you). We went from highly significant to not significant, the latter being the right answer.
+```{r}
+
+fit2 <- glm(my_counts_GLM[,"PYU1_T010810"] ~ 1, family = quasipoisson(link="log"), my_counts_GLM)
+summary(fit2)
+sum(residuals(fit2, type="pearson")^2)/df.residual(fit2)
+```
+The negative binomial distribution is another way of modeling RNAseq data.  This would be just at the margin of significance with our Bonferoni at 8.0e-5 but the dispersion is above 1, so the error should be larger.  We cannot do a quasi negative binomial with this function, so it is better to stick to quasi poisson.
+```{r}
+library(MASS)
+fit4 <- glm.nb(my_counts_GLM[,"PYU1_T010810"] ~ 1, link="log", my_counts_GLM)
+summary(fit4)
+sum(residuals(fit4, type="pearson")^2)/df.residual(fit4)
+
+```
+
+
+Here we repeat the same GLM fit again with quasi Poisson but with the gene PYU1_T001346.  The dispersion parameter here is lower than zero, i.e. variance lower than expected with Poisson.  There is no good theoritical explanation for such case and it is better to go with the conservative approach and use poisson that would give a higher std. error than quasi Poisson.
+```{r}
+fit2 <- glm(my_counts_GLM[,"PYU1_T001346"] ~ 1, family = quasipoisson(link="log"), my_counts_GLM)
+summary(fit2)
+print("actual read counts not in log")
+my_counts_GLM[,"PYU1_T001346"]
+```
+In this case the Poisson error modelling gives a higher standard error.  It does not really change the significance, as either approach would not be significant with Bonferoni correction, but it is better to be more conservative.
+```{r}
+fit2 <- glm(my_counts_GLM[,"PYU1_T001346"] ~ 1, family = poisson(link="log"), my_counts_GLM)
+summary(fit2)
+```
+
+Test by GLM to see if the mean is different than zero, doing this for each column.   Starting with Poisson.
+* note: the loop runs each column individually for each gene but when using library(data.table) it no longer works because it is expecting column names, not number indices.    
+```{r}
+
+
+fit_poi_pvalues <- data.frame(stringsAsFactors = FALSE)
+for(j in 5:ncol(my_counts_GLM)) { 
+  fit_poi <- suppressWarnings(glm(my_counts_GLM[,j] ~ 1, family = poisson(link="log"), my_counts_GLM))
+
+#extract anova parameters
+anova2 <- anova(fit_poi, test = "Chisq")
+anova2.melted <- melt(as.matrix(anova2), id.vars = NULL, variable.factor = FALSE)
+anova2.melted$my_colname <- paste(anova2.melted$Var1, make.names(anova2.melted$Var2), sep="_")
+
+# extract coefficients
+coeff2 <- coefficients(summary(fit_poi))
+coeff2.melted <- melt(as.matrix(coeff2), id.vars = NULL)
+coeff2.melted$my_colname <- paste(coeff2.melted$Var1, make.names(coeff2.melted$Var2), sep="_")
+
+dispersion_para <- sum(residuals(fit_poi, type="pearson")^2)/df.residual(fit_poi)
+
+temp <- cbind(colnames(my_counts_GLM)[j], t(anova2.melted$value), t(coeff2.melted$value), dispersion_para)
+colnames(temp)  <- c("SequenceID", anova2.melted$my_colname, coeff2.melted$my_colname, "Dispersion")
+
+fit_poi_pvalues <- rbind(fit_poi_pvalues, temp)
+fit_poi_pvalues[,2:ncol(fit_poi_pvalues)] = apply(fit_poi_pvalues[,2:ncol(fit_poi_pvalues)], 2, function(x) as.numeric(as.character(x)))
+head(fit_poi_pvalues)
+} 
+
+fit_poi_pvalues$Var_model <- "Poisson"
+```
+
+Test by GLM to see if the mean is different than zero, doing this for each column.   Doing it with quasi Poisson now.
+```{r}
+fit_Qpoi_pvalues <- data.frame(stringsAsFactors = FALSE)
+for(j in 5:ncol(my_counts_GLM)) { 
+  suppressWarnings(fit_Qpoi <- glm(my_counts_GLM[,j] ~ 1, family = quasipoisson(link="log"), my_counts_GLM))
+
+#extract anova parameters
+anova2 <- anova(fit_Qpoi, test = "Chisq")
+anova2.melted <- melt(as.matrix(anova2), id.vars = NULL, variable.factor = FALSE)
+anova2.melted$my_colname <- paste(anova2.melted$Var1, make.names(anova2.melted$Var2), sep="_")
+
+# extract coefficients
+coeff2 <- coefficients(summary(fit_Qpoi))
+coeff2.melted <- melt(as.matrix(coeff2), id.vars = NULL)
+coeff2.melted$my_colname <- paste(coeff2.melted$Var1, make.names(coeff2.melted$Var2), sep="_")
+
+dispersion_para <- sum(residuals(fit_Qpoi, type="pearson")^2)/df.residual(fit_Qpoi)
+
+temp <- cbind(colnames(my_counts_GLM)[j], t(anova2.melted$value), t(coeff2.melted$value), dispersion_para)
+colnames(temp)  <- c("SequenceID", anova2.melted$my_colname, coeff2.melted$my_colname, "Dispersion")
+
+fit_Qpoi_pvalues <- rbind(fit_Qpoi_pvalues, temp)
+fit_Qpoi_pvalues[,2:ncol(fit_Qpoi_pvalues)] = apply(fit_Qpoi_pvalues[,2:ncol(fit_Qpoi_pvalues)], 2, function(x) as.numeric(as.character(x)))
+head(fit_Qpoi_pvalues)
+} 
+
+fit_Qpoi_pvalues$Var_model <- "quasiPoisson"
+```
+
+Show 10 pairs selected at random Dispersion Parameters estimated with Poisson and Quasi Poisson.  They should be the same.  This also shows that they are in the same order in the two different data frames.
+```{r}
+cbind(fit_poi_pvalues$Dispersion,fit_Qpoi_pvalues$Dispersion)[sample(1:length(fit_poi_pvalues$Dispersion),10,replace=F) ,]
+```
+
+Combine the two data frames, using Poisson when dispersion < 1.0 and quasi Poisson when > 1.0.
+Note that for Poisson, the test for mean = 0 is actually a Z test and not a t-test because of the accurate variance modelling.  We need to change that name for the function to work as it does not like the two columns with different names.
+```{r}
+colnames(fit_poi_pvalues)[colnames(fit_poi_pvalues) %in% c("(Intercept)_z.value", "(Intercept)_Pr...z..")] <- 
+ c("(Intercept)_t.value", "(Intercept)_Pr...t..") 
+
+pvalues_disp_adjusted <- data.frame()
+for(i in 1:nrow(fit_poi_pvalues)) { 
+     if (fit_poi_pvalues$Dispersion[i] <= 1.0) {
+     temp <- fit_poi_pvalues[i,]
+     }  else  {
+       temp <- fit_Qpoi_pvalues[i,]
+     }
+pvalues_disp_adjusted <- rbind(pvalues_disp_adjusted, temp)
+}
+```
+
+** duplicated data **
+I uncovered here that there are some duplicated RNAseq data in the Lévesque data set.  I am not sure why.  We do not have the same problem with our de novo data.  The good news is that there are very few CAZy and none are in those selected for the figures.
+```{r}
+pvalues_disp_adjusted[duplicated(pvalues_disp_adjusted$Dispersion)  | duplicated(pvalues_disp_adjusted$Dispersion, fromLast=TRUE),]
+
+```
+
+Write the p-value table to a file
+```{r}
+write.table(pvalues_disp_adjusted, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "_", model,
+        "_poisson_or_Qpoi_count_plus_", add_to_read_count, "_glm_secreted_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
+        col.names = NA, row.names = TRUE)
+```
+
+
+### Oospore Conversion data 
+
+Make a subset for "Mycelium"[1]   "Oosporogenesis"[2]    OR  "OosporeConversion"[3]
+and keep only secreted CAZy genes.  It is important here to make Time a factor.  We could be removing time 48 which had no replication.
+```{r}
+# select which experiment to analyze
+Exp <- levels(rpkmPlotsFullImport$Experiment)[3]
+#Get only secreted CAZy genes
+subset_count2 <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment==Exp & rpkmPlotsFullImport$Secreted=="secreted"),]
+
+if(T48 == "yes"){
+  subset_count2 <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment==Exp & rpkmPlotsFullImport$Secreted=="secreted"),]
+     } else {
+   subset_count2 <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment==Exp & rpkmPlotsFullImport$Secreted=="secreted" & rpkmPlotsFullImport$TimePoint!= 48),]
+     }
+levels(as.factor(subset_count2$ExpUnit))
+#make Time as factor
+subset_count2$Time <- as.factor(subset_count2$TimePoint)
+head(subset_count2)
+```
+
+
+Get a subset and run my own GLM analysis - Reorganize the data so each column is a gene and each line an experimental unit.  Somehow, adding 1e-10 to the data did not solve some of the minus infinity issue.  I added +1, which is also quite standard for this.  One needs to remember to remove 1 to the fitted data but given that we do this only for p-values, it is not an issue.
+```{r}
+library(reshape2)
+# to avoid reaching minus infinity in some cases, make the zeros e-10
+#subset_count2$Read_Counts <- subset_count2$Read_Counts + 1e-10
+subset_count2$Read_Counts <- subset_count2$Read_Counts + add_to_read_count
+my_counts_GLM2 <- dcast(data = subset_count2, ExpUnit+ Time + Condition + RNA_Rep  ~ SequenceID, value.var = "Read_Counts")
+head(my_counts_GLM2[,1:7])
+```
+
+#### To test for the Oospore conversion data to see if they are all equal.
+
+First get the arithmetic mean for the treatment "PYU1_T010810" and the log of it.
+```{r}
+mean(my_counts_GLM2[,"PYU1_T010810"])
+log(mean(my_counts_GLM2[,"PYU1_T010810"]))
+```
+
+Let's fit this gene column to the model "1" like we did for mycelium.  This way we fit the data again to a single mean. We see that deviance is 591.48 with 15 degrees of freedom.  This is if we summarize the data by a single mean given by the intercept. 
+```{r}
+model <- "One_mean_for_all_time_point"
+# standard GLM Poisson One Variable
+fit2 <- glm(my_counts_GLM2[,"PYU1_T010810"] ~ 1, family = quasipoisson(link="log"), my_counts_GLM2)
+summary(fit2)
+```
+
+Let's calculate the arithmetic average for each time point.
+```{r}
+library(doBy)
+averages <- summaryBy(PYU1_T010810 ~ Time, data=my_counts_GLM2[,c("Time","PYU1_T010810")], FUN = c(mean) )
+averages$LogMean <- log(averages$PYU1_T010810.mean)
+averages
+```
+
+Test by GLM to see if the means for the different time points are not equal.   
+We use Time to the model instead of 1.   By adding Time, the deviance went from 591.48 to 160.07, a drop of 431.41 and a drop of 6 degrees of freedom (these are the numbers when we add 1 and not 1e-10).  This drop follows a chi-square distribution and the p-value for such drop is 3.241e-05 which is highly significant.  The estimates are more difficult to understand here.  The intercept is now the average for Time 0 and the others are the difference from time 0 (Time12 = e^(0.00+3.241)^ = e^3.24^ = 25.55).  This is very convenient as the p-values for the coefficients represent the difference with Time 0 (which happens to be zero here, but this is not always the case).  The standard error here is very high when adding 1e-10 instead of 1.  This is because values of near zero can be problematic, even with the addition of a very small value.
+```{r}
+model <- "One_mean_for_each_time_point"
+# standard GLM Poisson One Variable
+fit2 <- glm(my_counts_GLM2[,"PYU1_T010810"] ~ Time, family = quasipoisson(link="log"), my_counts_GLM2)
+summary(fit2)
+sum(residuals(fit2, type="pearson")^2)/df.residual(fit2)
+```
+Test by GLM to see if the mean is the same for all time points.   Doing it with Poisson first.  Some Dispersion Parameters are below 1.0, so Poisson is needed and we will need quasi poisson as well.
+```{r}
+fit_poi_pvalues2 <- data.frame(stringsAsFactors = FALSE)
+for(j in 5:ncol(my_counts_GLM2)) { 
+  suppressWarnings(fit_poi <- glm(my_counts_GLM2[,j] ~ Time, family = poisson(link="log"), my_counts_GLM2))
+
+#extract anova parameters
+anova2 <- anova(fit_poi, test = "Chisq")
+anova2.melted <- melt(as.matrix(anova2), id.vars = NULL, variable.factor = FALSE)
+anova2.melted$my_colname <- paste(anova2.melted$Var1, make.names(anova2.melted$Var2), sep="_")
+
+# extract coefficients
+coeff2 <- coefficients(summary(fit_poi))
+coeff2.melted <- melt(as.matrix(coeff2), id.vars = NULL)
+coeff2.melted$my_colname <- paste(coeff2.melted$Var1, make.names(coeff2.melted$Var2), sep="_")
+
+dispersion_para <- sum(residuals(fit_poi, type="pearson")^2)/df.residual(fit_poi)
+
+temp <- cbind(colnames(my_counts_GLM2)[j], t(anova2.melted$value), t(coeff2.melted$value), dispersion_para)
+colnames(temp)  <- c("SequenceID", anova2.melted$my_colname, coeff2.melted$my_colname, "Dispersion")
+
+fit_poi_pvalues2 <- rbind(fit_poi_pvalues2, temp)
+fit_poi_pvalues2[,2:ncol(fit_poi_pvalues2)] = apply(fit_poi_pvalues2[,2:ncol(fit_poi_pvalues2)], 2, function(x) as.numeric(as.character(x)))
+head(fit_poi_pvalues2)
+} 
+
+fit_poi_pvalues2$Var_model <- "Poisson"
+```
+Doing it with quasi Poisson now.
+```{r}
+fit_Qpoi_pvalues2 <- data.frame(stringsAsFactors = FALSE)
+for(j in 5:ncol(my_counts_GLM2)) { 
+  suppressWarnings(fit_Qpoi <- glm(my_counts_GLM2[,j] ~ Time, family = quasipoisson(link="log"), my_counts_GLM2))
+
+#extract anova parameters
+anova2 <- anova(fit_Qpoi, test = "Chisq")
+anova2.melted <- melt(as.matrix(anova2), id.vars = NULL, variable.factor = FALSE)
+anova2.melted$my_colname <- paste(anova2.melted$Var1, make.names(anova2.melted$Var2), sep="_")
+
+# extract coefficients
+coeff2 <- coefficients(summary(fit_Qpoi))
+coeff2.melted <- melt(as.matrix(coeff2), id.vars = NULL)
+coeff2.melted$my_colname <- paste(coeff2.melted$Var1, make.names(coeff2.melted$Var2), sep="_")
+
+dispersion_para <- sum(residuals(fit_Qpoi, type="pearson")^2)/df.residual(fit_Qpoi)
+
+temp <- cbind(colnames(my_counts_GLM2)[j], t(anova2.melted$value), t(coeff2.melted$value), dispersion_para)
+colnames(temp)  <- c("SequenceID", anova2.melted$my_colname, coeff2.melted$my_colname, "Dispersion")
+
+fit_Qpoi_pvalues2 <- rbind(fit_Qpoi_pvalues2, temp)
+fit_Qpoi_pvalues2[,2:ncol(fit_Qpoi_pvalues2)] = apply(fit_Qpoi_pvalues2[,2:ncol(fit_Qpoi_pvalues2)], 2, function(x) as.numeric(as.character(x)))
+head(fit_Qpoi_pvalues2)
+} 
+
+fit_Qpoi_pvalues2$Var_model <- "quasiPoisson"
+```
+
+Show 10 pairs selected at random Dispersion Parameters estimated with Poisson and Quasi Poisson.  They should be the same.  This also shows that they are in the same order in the two different data frames.
+```{r}
+cbind(fit_poi_pvalues2$Dispersion,fit_Qpoi_pvalues2$Dispersion)[sample(1:length(fit_poi_pvalues2$Dispersion),10,replace=F) ,]
+```
+Combine the two data frames, using Poisson when dispersion < 1.0 and quasi Poisson when > 1.0.
+Note that for Poisson, the test for mean = 0 is actually a Z test and not a t-test because of the accurate variance modelling.  We need to change that name for the function to work as it does not like the two columns with different names.  I renames the colnames of Poisson with colnames of quasiPoisson the colnames 
+```{r}
+colnames(fit_poi_pvalues2)  <- colnames(fit_Qpoi_pvalues2)
+
+pvalues_disp_adjusted2 <- data.frame()
+for(i in 1:nrow(fit_poi_pvalues2)) { 
+     if (fit_poi_pvalues2$Dispersion[i] <= 1.0) {
+     temp <- fit_poi_pvalues2[i,]
+     }  else  {
+       temp <- fit_Qpoi_pvalues2[i,]
+     }
+pvalues_disp_adjusted2 <- rbind(pvalues_disp_adjusted2, temp)
+}
+```
+
+Write the p-value table to a file
+```{r}
+
+write.table(pvalues_disp_adjusted2, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "_", model,
+        "_poisson_or_Qpoi_count_plus_", add_to_read_count, "_T48_", T48, "_glm_secreted_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
+        col.names = NA, row.names = TRUE)
+```
+
+
+
+GLM Negative Binomial One Variable. Note that warning is suppressed.  Besides the non-integer warning (which is just telling you that it is expecting integers but not a problem if not) there were the following "control$trace > : iteration limit reached" for some
+```{r}
+library(MASS)
+
+fit_Nbin_pvalues2 <- data.frame(stringsAsFactors = FALSE)
+for(j in 5:ncol(my_counts_GLM2)) { 
+try(
+   suppressWarnings(fit4 <- glm.nb(my_counts_GLM2[,j] ~ Time, link="log", my_counts_GLM2))
+, silent=FALSE)
+anova4 <- anova(fit4, test = "Chisq")
+anova4.melted <- melt(as.matrix(anova4), id.vars = NULL, variable.factor = FALSE)
+anova4.melted$my_colname <- paste(anova4.melted$Var1, anova4.melted$Var2, sep="_")
+
+# Defines the fitted model
+coeff4 <- coefficients(summary(fit4))
+coeff4.melted <- melt(as.matrix(coeff4), id.vars = NULL)
+coeff4.melted$my_colname <- paste(coeff4.melted$Var1, coeff4.melted$Var2, sep="_")
+
+dispersion_para <- sum(residuals(fit4, type="pearson")^2)/df.residual(fit4)
+
+temp <- cbind(colnames(my_counts_GLM2)[j], t(anova4.melted$value), t(coeff4.melted$value), dispersion_para)
+colnames(temp)  <- c("SequenceID", anova4.melted$my_colname, coeff4.melted$my_colname, "Dispersion")
+
+fit_Nbin_pvalues2 <- rbind (fit_Nbin_pvalues2, temp)
+fit_Nbin_pvalues2[,2:ncol(fit_Nbin_pvalues2)] = apply(fit_Nbin_pvalues2[,2:ncol(fit_Nbin_pvalues2)], 2, function(x) as.numeric(as.character(x)))
+head(fit_Nbin_pvalues2)
+
+}
+
+fit_Nbin_pvalues2[duplicated(fit_Nbin_pvalues2[,2:ncol(fit_Nbin_pvalues2)]) , 2:ncol(fit_Nbin_pvalues2) ] <- NA
+
+fit_Nbin_pvalues2$Var_model <- "NegBin"
+
+write.table(fit_Nbin_pvalues2, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "_", model,
+        "_negative_bin_plus_", add_to_read_count, "_T48_", T48, "_glm_secreted_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
+        col.names = NA, row.names = TRUE)
+
+```
+
+
+
+### Oosporogenesis data 
+
+Make a subset for "Mycelium"[1]   "Oosporogenesis"[2]    OR  "OosporeConversion"[3]
+and keep only secreted CAZy genes.  It is important here to make Time **and Condition** a factor.  We could be removing time 48 which had no replication.
+```{r}
+# select which experiment to analyze
+Exp <- levels(rpkmPlotsFullImport$Experiment)[2]
+#Get only secreted CAZy genes
+subset_count3 <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment==Exp & rpkmPlotsFullImport$Secreted=="secreted"),]
+# to remove time point 48
+# subset_count3 <-  rpkmPlotsFullImport[which(rpkmPlotsFullImport$Experiment==Exp & rpkmPlotsFullImport$Secreted=="secreted" & rpkmPlotsFullImport$TimePoint!= 48),]
+levels(as.factor(subset_count3$ExpUnit))
+#make Time as factor
+subset_count3$Time <- as.factor(subset_count3$TimePoint)
+subset_count3$Condition <- factor(subset_count3$Condition, levels = c("Control", "Cholesterol"))
+head(subset_count3)
+```
+
+
+Get a subset and run my own GLM analysis - Reorganize the data so each column is a gene and each line an experimental unit.  Somehow, adding 1e-10 to the data did not solve some of the minus infinity issue.  I added +1, which is also quite standard for this.  One needs to remember to remove 1 to the fitted data but given that we do this only for p-values, it is not an issue.
+```{r}
+library(reshape2)
+# to avoid reaching minus infinity in some cases, make the zeros e-10 or 1
+subset_count3$Read_Counts <- subset_count3$Read_Counts + add_to_read_count
+my_counts_GLM3 <- dcast(data = subset_count3, ExpUnit+ Time + Condition + RNA_Rep  ~ SequenceID, value.var = "Read_Counts")
+head(my_counts_GLM3[,1:7])
+```
+
+#### To test for the Oosporogenesis data to see if one of the treatments is above zero.  
+
+We could also test iof they are all equal but I think that it is better to do the same as the mycelium.  We are looking for absence of expression here.
+First get the arithmetic mean for the treatment "PYU1_T010810" and the log of it.
+```{r}
+mean(my_counts_GLM3[,"PYU1_T010810"])
+log(mean(my_counts_GLM3[,"PYU1_T010810"]))
+```
+
+Let's fit this gene column to the model "1" like we did for mycelium.  This way we fit the data again to a single mean. The deviance here is the deviance of the NULL model, i.e. a single mean.  Again. model matrix is a straight column of 1.
+```{r}
+model <- "One_overall_mean_for_all_time_point"
+# standard GLM Poisson One Variable
+fit2 <- glm(my_counts_GLM3[,"PYU1_T010810"] ~ 1, family = quasipoisson(link="log"), my_counts_GLM3)
+summary(fit2)
+cbind(my_counts_GLM3[,c("Time","Condition")],model.matrix(fit2))
+```
+
+Let's calculate the arithmetic avegare for each treatment point.
+```{r}
+library(doBy)
+averages <- summaryBy(PYU1_T010810 ~ Condition + Time, data=my_counts_GLM3[,c("Time","Condition","PYU1_T010810")], FUN = c(mean))
+averages$LogMean <- log(averages$PYU1_T010810.mean)
+averages
+
+```
+
+
+Now I use Time and Condition as full interaction without an intercept. These numbers are matching the arithmetic Table.     The p-values are testing if one of these is different than zero and I used the lowest value (slightly different here from Figure 7 if I use read_count +1 unstead of + 1e-10).  
+```{r}
+model <- "Which_treatment_combination_is_different_from_0"
+# standard GLM Poisson One Variable
+levels(my_counts_GLM3$Condition)
+fit2 <- glm(my_counts_GLM3[,"PYU1_T010810"] ~ Condition:Time - 1, family = quasipoisson(link="log"), my_counts_GLM3)
+summary(fit2)
+cbind(my_counts_GLM3[,c("Time","Condition")],model.matrix(fit2))
+```
+
+Now I run this on all the data
+```{r}
+fit_poi_pvalues3 <- data.frame(stringsAsFactors = FALSE)
+for(j in 5:ncol(my_counts_GLM3)) { 
+  fit_poi <- suppressWarnings(glm(my_counts_GLM3[,j] ~ Condition:Time - 1, family = poisson(link="log"), my_counts_GLM3))
+
+#extract anova parameters
+anova2 <- anova(fit_poi, test = "Chisq")
+anova2.melted <- melt(as.matrix(anova2), id.vars = NULL, variable.factor = FALSE)
+anova2.melted$my_colname <- paste(anova2.melted$Var1, make.names(anova2.melted$Var2), sep="_")
+
+# extract coefficients
+coeff2 <- coefficients(summary(fit_poi))
+coeff2.melted <- melt(as.matrix(coeff2), id.vars = NULL)
+coeff2.melted$my_colname <- paste(coeff2.melted$Var1, make.names(coeff2.melted$Var2), sep="_")
+
+dispersion_para <- sum(residuals(fit_poi, type="pearson")^2)/df.residual(fit_poi)
+
+temp <- cbind(colnames(my_counts_GLM3)[j], t(anova2.melted$value), t(coeff2.melted$value), dispersion_para)
+colnames(temp)  <- c("SequenceID", anova2.melted$my_colname, coeff2.melted$my_colname, "Dispersion")
+
+fit_poi_pvalues3 <- rbind(fit_poi_pvalues3, temp)
+fit_poi_pvalues3[,2:ncol(fit_poi_pvalues3)] = apply(fit_poi_pvalues3[,2:ncol(fit_poi_pvalues3)], 2, function(x) as.numeric(as.character(x)))
+head(fit_poi_pvalues3)
+} 
+
+fit_poi_pvalues3$Var_model <- "Poisson"
+```
+Doing it with quasi Poisson now.
+```{r}
+fit_Qpoi_pvalues3 <- data.frame(stringsAsFactors = FALSE)
+for(j in 5:ncol(my_counts_GLM3)) { 
+  suppressWarnings(fit_Qpoi <- glm(my_counts_GLM3[,j] ~ Condition:Time - 1, family = quasipoisson(link="log"), my_counts_GLM3))
+
+#extract anova parameters
+anova2 <- anova(fit_Qpoi, test = "Chisq")
+anova2.melted <- melt(as.matrix(anova2), id.vars = NULL, variable.factor = FALSE)
+anova2.melted$my_colname <- paste(anova2.melted$Var1, make.names(anova2.melted$Var2), sep="_")
+
+# extract coefficients
+coeff2 <- coefficients(summary(fit_Qpoi))
+coeff2.melted <- melt(as.matrix(coeff2), id.vars = NULL)
+coeff2.melted$my_colname <- paste(coeff2.melted$Var1, make.names(coeff2.melted$Var2), sep="_")
+
+dispersion_para <- sum(residuals(fit_Qpoi, type="pearson")^2)/df.residual(fit_Qpoi)
+
+temp <- cbind(colnames(my_counts_GLM3)[j], t(anova2.melted$value), t(coeff2.melted$value), dispersion_para)
+colnames(temp)  <- c("SequenceID", anova2.melted$my_colname, coeff2.melted$my_colname, "Dispersion")
+
+fit_Qpoi_pvalues3 <- rbind(fit_Qpoi_pvalues3, temp)
+fit_Qpoi_pvalues3[,2:ncol(fit_Qpoi_pvalues3)] = apply(fit_Qpoi_pvalues3[,2:ncol(fit_Qpoi_pvalues3)], 2, function(x) as.numeric(as.character(x)))
+head(fit_Qpoi_pvalues3)
+} 
+fit_Qpoi_pvalues3$Var_model <- "quasiPoisson"
+```
+
+Show 10 pairs selected at random Dispersion Parameters estimated with Poisson and Quasi Poisson.  They should be the same.  This also shows that they are in the same order in the two different data frames.
+```{r}
+cbind(fit_poi_pvalues3$Dispersion,fit_Qpoi_pvalues3$Dispersion)[sample(1:length(fit_poi_pvalues3$Dispersion),10,replace=F) ,]
+```
+Combine the two data frames, using Poisson when dispersion < 1.0 and quasi Poisson when > 1.0.
+Note that for Poisson, the test for mean = 0 is actually a Z test and not a t-test because of the accurate variance modelling.  We need to change that name for the function to work as it does not like the two columns with different names.  I renames the colnames of Poisson with colnames of quasiPoisson the colnames.  I also pulled out the minimum p-vales of all treatments combination. 
+```{r}
+colnames(fit_poi_pvalues3)  <- colnames(fit_Qpoi_pvalues3)
+
+pvalues_disp_adjusted3 <- data.frame()
+for(i in 1:nrow(fit_poi_pvalues3)) { 
+     if (fit_poi_pvalues3$Dispersion[i] <= 1.0) {
+     temp <- fit_poi_pvalues3[i,]
+     }  else  {
+       temp <- fit_Qpoi_pvalues3[i,]
+     }
+pvalues_disp_adjusted3 <- rbind(pvalues_disp_adjusted3, temp)
+}
+
+pvalues_disp_adjusted3$Lowest_pval <- apply(pvalues_disp_adjusted3[,c(33:39)], 1, FUN=min)
+
+```
+
+Write the p-value table to a file
+```{r}
+write.table(pvalues_disp_adjusted3, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "_", model,
+        "_poisson_or_Qpoi_count_plus_", add_to_read_count, "_glm_secreted_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
+        col.names = NA, row.names = TRUE)
+```
+
+
+#### To test for the Oosporogenesis data to see if one cholesterol treatment is different from its equivalent control.  
+
+
+Let's calculate the arithmetic average for each time point for the control only
+```{r}
+library(doBy)
+averages <- summaryBy(PYU1_T010810 ~ Time, data=my_counts_GLM3[which(my_counts_GLM3$Condition=="Control"),c("Time","Condition","PYU1_T010810")], FUN = c(mean))
+averages$LogMean <- log(averages$PYU1_T010810.mean)
+averages
+
+```
+
+
+Now I use Time and Condition without an interaction and without an intercept.  The p-values of ConditionCholesterol is testing if all the cholesterol treatments are different from all controls by the same value.  Just by looking at the figures, this unlikely as often only one of the cholesterol is above, and sometimes one cholesterol is below the control.  Therefore, there is an interaction Time x Condition.  PYU1_T010810 is the closest to be without an interaction but Time 7 they are equal.  This is why there is a p-value of 0.0261.  No need to test the other genes. 
+```{r}
+model <- "Which_is_different_from_control"
+# standard GLM Poisson One Variable
+levels(my_counts_GLM3$Condition)
+fit2 <- glm(my_counts_GLM3[,"PYU1_T010810"] ~ Time + Condition - 1, family = quasipoisson(link="log"), my_counts_GLM3)
+summary(fit2)
+cbind(my_counts_GLM3[,c("Time","Condition")],model.matrix(fit2))
+```
+Now I use Time with an interaction TimexCondition and without an intercept.  The coefficient Time3:ConditionCholesterol is the difference between control and cholesterol for Time 3, so the p-valus is testing for the significance of this difference.
+```{r}
+# standard GLM Poisson One Variable
+levels(my_counts_GLM3$Condition)
+fit2 <- glm(my_counts_GLM3[,"PYU1_T010810"] ~ Time + Condition:Time - 1, family = quasipoisson(link="log"), my_counts_GLM3)
+summary(fit2)
+cbind(my_counts_GLM3[,c("Time","Condition")],model.matrix(fit2))
+```
+
+
+Now I run this on all the data
+```{r}
+fit_poi_pvalues4 <- data.frame(stringsAsFactors = FALSE)
+for(j in 5:ncol(my_counts_GLM3)) { 
+  suppressWarnings(fit_poi <- glm(my_counts_GLM3[,j] ~ Time + Condition:Time - 1, family = poisson(link="log"), my_counts_GLM3))
+
+#extract anova parameters
+anova2 <- anova(fit_poi, test = "Chisq")
+anova2.melted <- melt(as.matrix(anova2), id.vars = NULL, variable.factor = FALSE)
+anova2.melted$my_colname <- paste(anova2.melted$Var1, make.names(anova2.melted$Var2), sep="_")
+
+# extract coefficients
+coeff2 <- coefficients(summary(fit_poi))
+coeff2.melted <- melt(as.matrix(coeff2), id.vars = NULL)
+coeff2.melted$my_colname <- paste(coeff2.melted$Var1, make.names(coeff2.melted$Var2), sep="_")
+
+dispersion_para <- sum(residuals(fit_poi, type="pearson")^2)/df.residual(fit_poi)
+
+temp <- cbind(colnames(my_counts_GLM3)[j], t(anova2.melted$value), t(coeff2.melted$value), dispersion_para)
+colnames(temp)  <- c("SequenceID", anova2.melted$my_colname, coeff2.melted$my_colname, "Dispersion")
+
+fit_poi_pvalues4 <- rbind(fit_poi_pvalues4, temp)
+fit_poi_pvalues4[,2:ncol(fit_poi_pvalues4)] = apply(fit_poi_pvalues4[,2:ncol(fit_poi_pvalues4)], 2, function(x) as.numeric(as.character(x)))
+head(fit_poi_pvalues4)
+} 
+
+fit_poi_pvalues4$Var_model <- "Poisson"
+```
+Doing it with quasi Poisson now.
+```{r}
+
+fit_Qpoi_pvalues4 <- data.frame(stringsAsFactors = FALSE)
+for(j in 5:ncol(my_counts_GLM3)) { 
+  suppressWarnings(fit_Qpoi <- glm(my_counts_GLM3[,j] ~ Time + Condition:Time - 1, family = quasipoisson(link="log"), my_counts_GLM3))
+
+#extract anova parameters
+anova2 <- anova(fit_Qpoi, test = "Chisq")
+anova2.melted <- melt(as.matrix(anova2), id.vars = NULL, variable.factor = FALSE)
+anova2.melted$my_colname <- paste(anova2.melted$Var1, make.names(anova2.melted$Var2), sep="_")
+
+# extract coefficients
+coeff2 <- coefficients(summary(fit_Qpoi))
+coeff2.melted <- melt(as.matrix(coeff2), id.vars = NULL)
+coeff2.melted$my_colname <- paste(coeff2.melted$Var1, make.names(coeff2.melted$Var2), sep="_")
+
+dispersion_para <- sum(residuals(fit_Qpoi, type="pearson")^2)/df.residual(fit_Qpoi)
+
+temp <- cbind(colnames(my_counts_GLM3)[j], t(anova2.melted$value), t(coeff2.melted$value), dispersion_para)
+colnames(temp)  <- c("SequenceID", anova2.melted$my_colname, coeff2.melted$my_colname, "Dispersion")
+
+fit_Qpoi_pvalues4 <- rbind(fit_Qpoi_pvalues4, temp)
+fit_Qpoi_pvalues4[,2:ncol(fit_Qpoi_pvalues4)] = apply(fit_Qpoi_pvalues4[,2:ncol(fit_Qpoi_pvalues4)], 2, function(x) as.numeric(as.character(x)))
+head(fit_Qpoi_pvalues4)
+} 
+
+fit_Qpoi_pvalues4$Var_model <- "quasiPoisson"
+```
+
+Show 10 pairs selected at random Dispersion Parameters estimated with Poisson and Quasi Poisson.  They should be the same.  This also shows that they are in the same order in the two different data frames.
+```{r}
+cbind(fit_poi_pvalues4$Dispersion,fit_Qpoi_pvalues4$Dispersion)[sample(1:length(fit_poi_pvalues4$Dispersion),10,replace=F) ,]
+```
+Combine the two data frames, using Poisson when dispersion < 1.0 and quasi Poisson when > 1.0.
+Note that for Poisson, the test for mean = 0 is actually a Z test and not a t-test because of the accurate variance modelling.  We need to change that name for the function to work as it does not like the two columns with different names.  I renames the colnames of Poisson with colnames of quasiPoisson the colnames.  I also pulled out the minimum p-vales of all treatments combination. 
+```{r}
+colnames(fit_poi_pvalues4)  <- colnames(fit_Qpoi_pvalues4)
+
+pvalues_disp_adjusted4 <- data.frame()
+for(i in 1:nrow(fit_poi_pvalues4)) { 
+     if (fit_poi_pvalues4$Dispersion[i] <= 1.0) {
+     temp <- fit_poi_pvalues4[i,]
+     }  else  {
+       temp <- fit_Qpoi_pvalues4[i,]
+     }
+pvalues_disp_adjusted4 <- rbind(pvalues_disp_adjusted4, temp)
+}
+
+pvalues_disp_adjusted4$Lowest_pval <- apply(pvalues_disp_adjusted4[,c(42:44)], 1, FUN=min)
+
+```
+
+Write the p-value table to a file
+```{r}
+write.table(pvalues_disp_adjusted3, paste(sharedPath,mainFolder,"/",analysisDir, "/", Exp, "_", model,
+        "_poisson_or_Qpoi_count_plus_", add_to_read_count, "_glm_secreted_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
+        col.names = NA, row.names = TRUE)
+```
+
+
+Make a Table with relevant p-values in thesis
+```{r}
+Fig_7A <- c("PYU1_T010810", "PYU1_T006952","PYU1_T009144", "PYU1_T001945")
+Fig_7E <- c("PYU1_T001949", "PYU1_T001346","PYU1_T005445", "PYU1_T001777")
+Fig_7I <- c("PYU1_T014660", "PYU1_T008966","PYU1_T012530", "PYU1_T006030")
+Fig_7M <- c("PYU1_T011896", "PYU1_T009223","PYU1_T009228", "PYU1_T003553")
+Fig_8 <- "PYU1_T006194"
+
+mult_figs <- c(Fig_7A,Fig_7E,Fig_7I,Fig_7M,Fig_8)
+
+colnames(pvalues_disp_adjusted2)
+p_Myce_one_mean <- pvalues_disp_adjusted[pvalues_disp_adjusted$SequenceID %in% mult_figs,c("SequenceID","Var_model","(Intercept)_Pr...t..")]
+p_Ocon_T_all_equal <- pvalues_disp_adjusted2[pvalues_disp_adjusted2$SequenceID %in% mult_figs,c("SequenceID","Var_model","Time_Pr..Chi.")]
+temp1 <- merge(p_Myce_one_mean,p_Ocon_T_all_equal, by="SequenceID", suffixes=c("_Myce_one_mean", "_Ocon_T_all_equal"))
+p_Ogen_HiTr_not0 <- pvalues_disp_adjusted3[pvalues_disp_adjusted3$SequenceID %in% mult_figs,c("SequenceID","Var_model","Lowest_pval")]
+temp2 <- merge(temp1,p_Ogen_HiTr_not0, by="SequenceID")
+colnames(temp2)[colnames(temp2) == "Var_model"] <- paste("Var_model","Ogen_HiTr_not0", sep="_")
+p_Ogen_HiChol_diff_not0 <- pvalues_disp_adjusted4[pvalues_disp_adjusted3$SequenceID %in% mult_figs,c("SequenceID","Var_model","Lowest_pval")]
+temp3a <- merge(temp2,p_Ogen_HiChol_diff_not0, by="SequenceID")
+colnames(temp3a)[colnames(temp3a) == "Var_model"] <- paste("Var_model","Ogen_HiChol_diff_not0", sep="_")
+p_Ocon_T_all_equal_Nb <- fit_Nbin_pvalues2[pvalues_disp_adjusted2$SequenceID %in% mult_figs,c("SequenceID","Var_model","Time_Pr(>Chi)")]
+temp3 <- merge(temp3a,p_Ocon_T_all_equal_Nb, by="SequenceID")
+
+
+temp3$SequenceID <- factor(temp3$SequenceID, levels=as.character(mult_figs))
+p_val_in_figs <- temp3[order(temp3$SequenceID),]
+
+
+write.table(p_val_in_figs, paste(sharedPath,mainFolder,"/",analysisDir, "/", "GLM_pvalues_figs_read_count_plus_", add_to_read_count,
+        "_T48_", T48, "_secreted_CAZy.csv", sep=""), append = FALSE, quote = TRUE, sep = ",", 
+        col.names = NA, row.names = TRUE)
+
+```
+
+
+
+
+
+
+
+
+
+ 

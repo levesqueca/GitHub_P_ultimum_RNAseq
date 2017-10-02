@@ -1,0 +1,603 @@
+RNA-Seq Read Processing and Alignment with TopHat2
+===============================================================
+
+Installing the required packages for R:
+This is to be done in the R command line and not in R studio
+source("http://www.Bioconductor.org/biocLite.R")
+biocLite("BiocUpgrade")
+
+Getting started in R:
+Set the working directory > setwd("~/")
+Check version installed
+```{r}
+library(knitr)
+```
+
+
+Setting up the system environment to run qsub jobs from within RStudio
+```{r}
+Sys.setenv(SGE_ROOT="/opt/gridengine")
+Sys.setenv(SGE_CELL="default")
+Sys.setenv(SGE_ARCH="linux-x64")
+Sys.setenv(SGE_EXECD_PORT="537")
+Sys.setenv(SGE_QMASTER_PORT="536")
+```
+
+
+** ran megahit with the following command **
+
+/home/AAFC-AAC/levesqueca/megahit/megahit -1 /isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Oospore_Conversion_TimeCourse/HiSeq_data2/T48-1_BC21_a1.5processed.R1.fastq -2 /isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Oospore_Conversion_TimeCourse/HiSeq_data2/T48-1_BC21_a1.5processed.R2.fastq -o /isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Megahit_assembly/T48-1_BC21__a1_HiSeq
+
+/home/AAFC-AAC/levesqueca/megahit/megahit  --k-min 21 --k-max 255 --k-step 28 -1  /isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Oospore_Conversion_TimeCourse/HiSeq_data2/T48-1_BC21_a1.5processed.R1.fastq
+T48-1_BC21.5processedMerged.fastq -2  /isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Oospore_Conversion_TimeCourse/HiSeq_data2/T48-1_BC21_a1.5processed.R2.fastq -o /isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Megahit_assembly/T48-1_BC21__a1_HiSeq_B
+
+/home/AAFC-AAC/levesqueca/megahit/megahit  --k-min 21 --k-max 255 --k-step 28 -r /isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Oospore_Conversion_TimeCourse/MiSeq_data_Sci2/T48-1_BC21.5processedMerged.fastq,/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Oospore_Conversion_TimeCourse/MiSeq_data_Sci2/T48-2_BC21.5processedMerged.fastq -o /isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Megahit_assembly/T48-1_BC21_MiSeq
+
+
+
+** THIS IS TO CLEAN UP GFF AND SCAFFOLDS OF ALL rDNA INFORMATION **
+
+Make Blast database of all scaffolds assembled from /T48-1_BC21__a1_HiSeq
+
+```{r}
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+
+sharedPathBlast <- paste(sharedPath, "References/Blast_RNAseq_contig/", sep ="")
+#referencesPath   <- paste(sharedPath, "References/Genomic_Mito/", sep="")
+
+fasta_file <- "k255.contigs"
+
+
+cmd    <- paste("/opt/bio/ncbi-blast+/bin/makeblastdb -in ", sharedPathBlast, fasta_file, ".fa -out ",
+                sharedPathBlast, fasta_file,
+                " -dbtype nucl", sep = "")
+system(cmd)
+```
+
+
+Run blast in using Paenibascillus as input cistron as input:
+
+```{r}
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+
+sharedPathBlast <- paste(sharedPath, "References/Blast_RNAseq_contig/", sep ="")
+
+
+db_file <- "k255.contigs"
+query_file <- "Paenibacillus_polymyxa.fa"
+
+
+cmd    <- paste("/opt/bio/ncbi-blast+/bin/blastn -query ",
+                sharedPathBlast,   "Paenibacillus_polymyxa.fa -db ",
+                sharedPathBlast, db_file, " -outfmt 6 -out ",
+                sharedPathBlast, db_file, ".tab",
+                 sep = "")
+system(cmd)
+
+
+cmd    <- paste("/opt/bio/ncbi-blast+/bin/blastn -query ",
+                sharedPathBlast,   "Paenibacillus_polymyxa.fa -db ",
+                sharedPathBlast, db_file, " -html -out ",
+                sharedPathBlast, db_file, ".html",
+                 sep = "")
+
+system(cmd)
+```
+
+Read gff file
+```{r}
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+Reference_folder <- "Genomic_Mito"
+referencesPath   <- paste(sharedPath, "References/", Reference_folder, "/",sep="")
+reference_file   <- "Pyuu_ref_1ribo_mitoGB_no_repeats"
+
+gff_file <- read.delim(paste(referencesPath, reference_file, ".gff3", sep=""),  header=F, 
+                       comment.char="#",   stringsAsFactors = FALSE)
+
+colnames(gff_file)[1] <- "sseqid"
+
+
+```
+
+Read Blast Table of ribo cistron against scaffolds
+```{r}
+
+Blast_Table <- read.delim(paste(sharedPathBlast, db_file, ".tab", sep=""),  header=F, 
+                        stringsAsFactors = FALSE)
+colnames(Blast_Table) <- c("qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", 
+                         "qstart", "qend", "sstart", "send", "evalue", "bitscore")
+
+length(unique(Blast_Table$sseqid))
+
+Blast_Table <-Blast_Table[!(Blast_Table$sseqid==unique(Blast_Table$qseqid)),]
+
+Blast_Table <-Blast_Table[(Blast_Table$evalue < 1e-100),]
+
+Blast_Table <- Blast_Table[order(-Blast_Table$evalue),]
+
+length(unique(Blast_Table$sseqid))
+
+library("doBy")
+summaryBy(length + sstart ~ sseqid  , data=Blast_Table, FUN = c(max,min) )
+
+Blast_stats <- summaryBy(length + sstart ~ sseqid  , data=Blast_Table, FUN = c(max,min) )
+
+Blast_scaff_hits <- unique(Blast_Table$sseqid)
+
+```
+
+
+Finding if scaffolds have rRNA gene information (one row meand no transcript)
+```{r}
+
+gff_file_ribo <- gff_file[gff_file$sseqid %in% Blast_scaff_hits,]
+
+gff_lines <- data.frame(table(gff_file_ribo$sseqid), stringsAsFactors = FALSE)
+colnames(gff_lines)[1] <- "seeqid"
+
+scaff_wo_transcripts <- as.character(gff_lines[gff_lines$Freq == 1, 1])
+
+#remove those scaffolds without
+gff_file_sub <- gff_file[!gff_file$sseqid %in% scaff_wo_transcripts,]
+
+```
+
+
+Read fasta File of contigs
+```{r}
+library("ape")
+
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+Reference_folder <- "Blast_RNAseq_contig"
+referencesPath   <- paste(sharedPath, "References/", Reference_folder, "/",sep="")
+reference_file   <- "k255.supercontigs_Paenibacillus_subset"
+
+Sequences <- read.dna(paste(referencesPath, reference_file, ".fa", sep=""), format = "fasta")
+
+length(Sequences)/3
+
+names(Sequences) <- sub(" .*","",names(Sequences))
+
+Seq_temp <- Sequences[unique(Blast_Table$sseqid)]
+
+names(Sequences)
+
+# sequence lengths of those sequences that have rDNA
+Seq_lengths <- data.frame(cbind(names(Seq_temp), sapply(Seq_temp, length)))
+Seq_lengths <- data.frame(cbind(names(Sequences[Blast_scaff_hits]), sapply(Sequences, length)[Blast_scaff_hits]))
+colnames(Seq_lengths) <- c("sseqid", "scaff_length")
+
+
+
+```
+
+
+
+```{r}
+
+Paenibacillus_RNAseq_gff <- data.frame(cbind(as.character(Seq_lengths$sseqid), "Paeni_RNASeq","region", "1", as.character(Seq_lengths$scaff_length),
+                                             ".", "+", ".",  paste("ID=",Seq_lengths$sseqid, "", sep="" )))
+Paenibacillus_RNAseq_gff2 <- data.frame(cbind(as.character(Seq_lengths$sseqid), "Paeni_RNASeq","gene", "1", as.character(Seq_lengths$scaff_length),
+                                             ".", "+", ".",  paste("ID=",Seq_lengths$sseqid, ";","Name=",Seq_lengths$sseqid, "", sep="" )))
+Paenibacillus_RNAseq_gff3 <- data.frame(cbind(as.character(Seq_lengths$sseqid), "Paeni_RNASeq","CDS", "1", as.character(Seq_lengths$scaff_length),
+                                             ".", "+", "0",  paste("ID=",Seq_lengths$sseqid, ";","Name=",Seq_lengths$sseqid, "", sep="" )))
+Paenibacillus_RNAseq_gff_all <- rbind(Paenibacillus_RNAseq_gff,Paenibacillus_RNAseq_gff2,Paenibacillus_RNAseq_gff3)
+
+Paenibacillus_RNAseq_gff_all <- Paenibacillus_RNAseq_gff_all[order(Paenibacillus_RNAseq_gff_all$X1,Paenibacillus_RNAseq_gff_all$X2),]
+
+
+
+```
+
+
+```{r}
+Reference_folder <- "Paenibacillus_from_RNAseq"
+referencesPath   <- paste(sharedPath, "References/", Reference_folder, "/",sep="")
+reference_file <- "k255.contigs"
+  
+write.table(Paenibacillus_RNAseq_gff_all, file = paste(referencesPath, reference_file, "_Paenibacillus_subset.gff3", sep=""), sep="\t", col.names=FALSE, row.names = FALSE, quote = FALSE)
+
+write.dna(Seq_temp, file = paste(referencesPath, reference_file, "_Paenibacillus_subset.fa", sep=""), format = "fasta")
+
+```
+
+
+Run blast, Pythium scaffolds against scaffolds
+```{r}
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+
+sharedPathBlast <- paste(sharedPath, "References/Blast_ribo/", sep ="")
+
+
+db_file <- "Pyuu_ref_1ribo_mitoGB_no_repeats"
+query_file <- "Pyuu_ref_1ribo_mitoGB_no_repeats.fa"
+
+
+cmd    <- paste("/opt/bio/ncbi-blast+/bin/blastn -query ",
+                sharedPathBlast,   "Pyuu_ref_1ribo_mitoGB_no_repeats.fa -db ",
+                sharedPathBlast, db_file, " -outfmt 6 -out ",
+                sharedPathBlast, db_file, "_all_against_all.tab",
+                 sep = "")
+system(cmd)
+
+
+cmd    <- paste("/opt/bio/ncbi-blast+/bin/blastn -query ",
+                sharedPathBlast,   "scf1117875581257.txt -db ",
+                sharedPathBlast, db_file, " -html -out ",
+                sharedPathBlast, db_file, ".html",
+                 sep = "")
+
+system(cmd)
+```
+
+Read Blast all scafflods against all Table 
+```{r}
+
+Blast_Table <- read.delim(paste(sharedPathBlast, db_file, "_all_against_all.tab", sep=""),  header=F, 
+                        stringsAsFactors = FALSE)
+colnames(Blast_Table) <- c("qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", 
+                         "qstart", "qend", "sstart", "send", "evalue", "bitscore")
+
+length(unique(Blast_Table$sseqid))
+
+Blast_Table_sub <-Blast_Table[(Blast_Table$sseqid!=Blast_Table$qseqid),]
+
+length(unique(Blast_Table_sub$qseqid))
+
+Blast_Table_sub2 <-Blast_Table_sub[(Blast_Table_sub$pident > 99 & Blast_Table_sub$length > 150),]
+
+Blast_Table_sub2 <- Blast_Table_sub2[order(-Blast_Table_sub2$length, Blast_Table_sub2$evalue) ,]
+
+length(unique(Blast_Table$sseqid))
+
+library("doBy")
+
+Blast_stats_scaffolds_ssequid <- summaryBy(length  ~ sseqid  , data=Blast_Table_sub, FUN = c(max) )
+colnames(Blast_stats_scaffolds_ssequid)[2] <- "length"
+
+Blast_stats_scaffolds_ssequid2 <- merge(Blast_stats_scaffolds_ssequid, Blast_Table_sub, all.x=TRUE, by = c("sseqid","length"))
+
+Blast_stats_scaffolds_ssequid2 <- Blast_stats_scaffolds_ssequid2[order(-Blast_stats_scaffolds_ssequid2$length),]
+
+
+```
+
+
+transcript per scaffold Table
+```{r}
+#read gff
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+Reference_folder <- "Genomic_Mito"
+referencesPath   <- paste(sharedPath, "References/", Reference_folder, "/",sep="")
+reference_file   <- "Pyuu_ref_1ribo_mitoGB_no_repeats_edited"
+
+gff_file2 <- read.delim(paste(referencesPath, reference_file, ".gff3", sep=""),  header=F, 
+                       comment.char="#",   stringsAsFactors = FALSE)
+
+colnames(gff_file2) <- c("rname","source","feature","start","end","score","strand","frame","attribute")
+
+gff_mRNA <- gff_file2[gff_file2$feature =="mRNA",]
+gff_mRNA$gene <- sub("\\;.*", "", gff_mRNA$attribute, ignore.case = FALSE)
+gff_mRNA$gene <- sub("^ID=", "", gff_mRNA$gene, ignore.case = FALSE)
+
+gff_mRNA <- subset(gff_mRNA, select=-c(source,feature,attribute))
+  
+  
+  
+
+```
+
+
+
+
+Make Blast database of all transcripts
+
+```{r}
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+
+sharedPathBlast <- paste(sharedPath, "References/Blast_transcripts/", sep ="")
+#referencesPath   <- paste(sharedPath, "References/Genomic_Mito/", sep="")
+
+fasta_file <- "pythium_ultimum_transcripts"
+
+
+cmd    <- paste("/opt/bio/ncbi-blast+/bin/makeblastdb -in ", sharedPathBlast, fasta_file, ".fasta -out ",
+                sharedPathBlast, fasta_file,
+                " -dbtype nucl", sep = "")
+system(cmd)
+```
+
+
+run Blast all transcripts against all  
+```{r}
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+
+db_file <- "pythium_ultimum_transcripts"
+
+
+cmd    <- paste("/opt/bio/ncbi-blast+/bin/blastn -query ",
+                sharedPathBlast,   "pythium_ultimum_transcripts.fasta -db ",
+                sharedPathBlast, db_file, " -outfmt 6 -out ",
+                sharedPathBlast, db_file, "_all_against_all.tab",
+                 sep = "")
+system(cmd)
+
+
+cmd    <- paste("/opt/bio/ncbi-blast+/bin/blastn -query ",
+                sharedPathBlast,   "scf1117875581257.txt -db ",
+                sharedPathBlast, db_file, " -html -out ",
+                sharedPathBlast, db_file, ".html",
+                 sep = "")
+
+system(cmd)
+```
+
+Read Blast all transcripts against all Table 
+```{r}
+
+Blast_Table_trans <- read.delim(paste(sharedPathBlast, db_file, "_all_against_all.tab", sep=""),  header=F, 
+                        stringsAsFactors = FALSE)
+colnames(Blast_Table_trans) <- c("qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", 
+                         "qstart", "qend", "sstart", "send", "evalue", "bitscore")
+
+length(unique(Blast_Table_trans$sseqid))
+
+Blast_Table_trans_sub <-Blast_Table_trans[(Blast_Table_trans$sseqid!=Blast_Table_trans$qseqid),]
+
+length(unique(Blast_Table_trans_sub$qseqid))
+
+Blast_Table_trans_sub2 <-Blast_Table_trans_sub[(Blast_Table_trans_sub$pident > 99 & Blast_Table_trans_sub$length > 300),]
+
+Blast_Table_trans_sub2 <- Blast_Table_trans_sub2[order(Blast_Table_trans_sub2$evalue, -Blast_Table_trans_sub2$length),]
+
+write.table(Blast_Table_trans_sub2, file = paste(sharedPathBlast, db_file, "_multiple_copy.tab", sep=""), sep="\t", col.names=FALSE, row.names = FALSE, quote = FALSE)
+
+genes_with_repeats_over_300 <- unique(c(Blast_Table_trans_sub2$sseqid,Blast_Table_trans_sub2$qseqid))
+
+write.table(genes_with_repeats_over_300, file = paste(sharedPathBlast, db_file, "_genes_with_repeats_over_300.tab", sep=""), sep="\t", col.names=FALSE, row.names = FALSE, quote = FALSE)
+
+```
+
+Import Bam file into R from here
+https://gist.github.com/SamBuckberry/9914246
+```{r}
+
+library(Rsamtools)
+
+# specify the bam file you want to import
+bamFile <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Oospore_Conversion_TimeCourse/HiSeq_Analyses2/T72-2_BC24_a2/T72-2_BC24_a2.TopHat.2016-07-19/T72-2_BC24_a2_sn.bam"
+
+# A function to read bam file
+
+readBAM <- function(bamFile){
+
+  bam <- scanBam(bamFile)
+  
+  # A function for collapsing the list of lists into a single list
+  # as per the Rsamtools vignette
+  .unlist <- function (x){
+    x1 <- x[[1L]]
+    if (is.factor(x1)){
+      structure(unlist(x), class = "factor", levels = levels(x1))
+    } else {
+      do.call(c, x)
+    }
+  }
+  
+  bam_field <- names(bam[[1]])
+  
+  list <- lapply(bam_field, function(y) .unlist(lapply(bam, "[[", y)))
+  
+  bam_df <- do.call("DataFrame", list)
+  names(bam_df) <- bam_field
+
+  #return a list that can be called as a data frame
+  return(bam_df)
+}
+
+# Load the bam file
+bam1 <- readBAM(bamFile)
+nrow(bam1)
+
+bam2 <- bam1[bam1$mapq < 10, ]
+nrow(bam2)
+remove(bam1)
+
+bam2 <- subset(bam2, select=-c(mrnm,seq,qual))
+
+scaffs_with_duplicates <- data.frame(table(as.character(bam2$rname)), stringsAsFactors = FALSE)
+colnames(scaffs_with_duplicates)[1] <- "rname"
+
+gff_mRNA_sub <- gff_mRNA[gff_mRNA$rname %in% scaffs_with_duplicates$rname,]
+
+
+
+scaff_lines_gff <- data.frame(table(gff_file2$rname), stringsAsFactors = FALSE)
+scaff_no_genes <- scaff_lines_gff[scaff_lines_gff$Freq==1,]
+scaff_with_genes <- scaff_lines_gff[scaff_lines_gff$Freq!=1,]
+
+setdiff(scaff_with_genes$Var1,scaff_list)
+
+table(as.character(bam2$rname)
+bam2$rname <- as.character(bam2$rname)
+sapply(bam2,class)
+
+bam2_dup_scaffolds <- unique(bam2$rname)
+
+intersect(bam2_dup_scaffolds,scaff_no_genes$Var1)
+
+```
+
+** the intersect results between the list of scaffolds with  results show that there 164 scaffolds without genes that are causing "__alignment_not_unique" and likely "__no_feature" problems,  They should be removed **
+
+Create and write new gff file without those scaffolds that have a single line in the gff, i.e., no genes
+```{r}
+
+gff_file_scaff_with_genes <- gff_file2[!as.character(gff_file2$rname) %in% scaff_no_genes$Var1,]
+
+write.table(gff_file_scaff_with_genes, file = paste(referencesPath, reference_file, "_edited2.gff3", sep=""), sep="\t", col.names=FALSE, row.names = FALSE, quote = FALSE)
+
+
+```
+
+Create and write a new fasta file with scaffolds without genes
+```{r}
+library("ape")
+
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+Reference_folder <- "Genomic_Mito"
+referencesPath   <- paste(sharedPath, "References/", Reference_folder, "/",sep="")
+reference_file   <- "Pyuu_ref_1ribo_mitoGB_no_repeats_edited"
+
+Sequences <- read.dna(paste(referencesPath, reference_file, ".fa", sep=""), format = "fasta")
+
+
+# sequence lengths of those scaffolds what have no genes
+Seq_lengths_no_genes <- data.frame(cbind(names(Sequences[scaff_no_genes$Var1]), sapply(Sequences, length)[scaff_no_genes$Var1]))
+colnames(Seq_lengths) <- c("sseqid", "scaff_length")
+
+#remove sequences with ribo and no transcripts
+length(Sequences)
+
+Sequences_with_genes <- Sequences[names(Sequences)[!names(Sequences) %in% scaff_no_genes$Var1]]
+
+write.dna(Sequences_with_genes, file = paste(referencesPath, reference_file, "_edited2.fa", sep=""), nbcol = -6, colw=10000, format = "fasta")
+
+
+
+```
+
+
+** Start again with new HiSeq analysis of T72-2_BC24_a2 done with the reference file without duplicates  **
+
+```{r}
+
+
+
+# specify the bam file you want to import
+bamFile3 <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/Oospore_Conversion_TimeCourse/HiSeq_Analyses2_Genomic_Mito/T72-2_BC24_a2/T72-2_BC24_a2.TopHat.2017-07-19/T72-2_BC24_a2_sn.bam"
+
+# Load the bam file
+bam3 <- readBAM(bamFile3)
+nrow(bam3)
+
+bam4 <- bam3[bam3$mapq < 10, ]
+nrow(bam4)
+nrow(bam2)
+remove(bam3)
+
+bam4 <- subset(bam4, select=-c(mrnm,seq,qual))
+
+scaffs_with_duplicates4 <- data.frame(table(as.character(bam4$rname)), stringsAsFactors = FALSE)
+colnames(scaffs_with_duplicates4)[1] <- "rname"
+scaffs_with_duplicates4$rname <- as.character(scaffs_with_duplicates4$rname)
+
+scaffs_with_duplicates4 <- scaffs_with_duplicates4[order(-scaffs_with_duplicates4$Freq),]
+
+# gff_mRNA_sub4 <- gff_file_scaff_with_genes$rname %in% scaffs_with_duplicates4$rname,]
+# 
+# 
+# scaff_lines_gff4 <- data.frame(table(gff_file2$rname), stringsAsFactors = FALSE)
+# scaff_no_genes <- scaff_lines_gff[scaff_lines_gff$Freq==1,]
+# scaff_with_genes <- scaff_lines_gff[scaff_lines_gff$Freq!=1,]
+# 
+# setdiff(scaff_with_genes$Var1,scaff_list)
+# 
+# table(as.character(bam2$rname)
+# bam2$rname <- as.character(bam2$rname)
+# sapply(bam2,class)
+# 
+# bam2_dup_scaffolds <- unique(bam2$rname)
+# 
+# intersect(bam2_dup_scaffolds,scaff_no_genes$Var1)
+
+
+```
+
+Scaffolds with Cazy
+```{r}
+library(data.table)
+Cazy_Loci <- fread(paste(sharedPath, mainFolder, "/CAZy_of_interest_list.csv", sep = ""),
+                  sep = "auto", header = TRUE)
+gff_mRNA_cazy <- gff_mRNA[gff_mRNA$gene %in% Cazy_Loci$SequenceID,]
+
+scaffolds_with_cazy <- unique(gff_mRNA_cazy$rname)
+
+Bam_all_Cazy_scaff <- bam4[bam4$rname %in% scaffolds_with_cazy,]
+
+
+```
+
+
+```{r}   
+i <- 25
+j<-1
+
+sapply()
+
+bam4_gene <- data.frame()
+for(i in 1:length(scaffs_with_duplicates4$rname)) {
+  bam4_temp <- bam4[bam4$rname == scaffs_with_duplicates4$rname[i],]
+  bam4_temp$gene_read <- "NA"
+  gff_mRNA_temp <- gff_mRNA[gff_mRNA$rname == scaffs_with_duplicates4$rname[i], ] 
+  for(j in 1:nrow(gff_mRNA_temp)) {
+   bam4_temp$gene_read <-  
+     ifelse((bam4_temp$pos > gff_mRNA_temp$start[j] & bam4_temp$pos < gff_mRNA_temp$end[j]),
+              gff_mRNA_temp$gene[j], bam4_temp$gene_read)
+     }
+   
+   bam4_gene <- rbind(bam4_gene, bam4_temp)
+}
+  
+sapply(bam4_gene, class)
+bam4_gene$rname <- as.character(bam4_gene$rname)
+
+
+```
+
+
+```{r}
+library(data.table)
+Cazy_Loci <- fread(paste(sharedPath, mainFolder, "/CAZy_of_interest_list.csv", sep = ""),
+                  sep = "auto", header = TRUE)
+
+bam4_gene_cazy <- bam4_gene[bam4_gene$gene_read %in% Cazy_Loci$SequenceID,]
+
+
+bam4_gene_cazy <- bam4_gene_cazy[order(bam4_gene_cazy$qname),]
+
+# Put together data from multiple hits on single line
+bam4_gene_cazy_agg <- aggregate(bam4_gene_cazy, by=list(bam4_gene_cazy$qname),FUN=c)
+
+bam4_gene_cazy_agg$gene_agg <- sapply(bam4_gene_cazy_agg$gene_read, function(x) list(sort(unique(unlist(x)))))
+
+bam4_gene_cazy_agg$gene_agg_coll <- sapply(bam4_gene_cazy_agg$gene_agg, function(x) paste(x,collapse="|") )
+
+bam4_gene_cazy_agg2 <- aggregate(bam4_gene_cazy_agg, by=list(bam4_gene_cazy_agg$gene_agg_coll),FUN=c)
+
+sapply(bam4_gene_cazy_agg2,class)
+
+bam4_gene_cazy_agg2$counts <- sapply(bam4_gene_cazy_agg2$gene_read, function(x) length(unlist(x)))
+
+bam4_gene_cazy_agg2 <- bam4_gene_cazy_agg2[order(-bam4_gene_cazy_agg2$counts),]
+
+# from here http://stackoverflow.com/questions/13545547/how-to-write-a-data-frame-with-one-column-a-list-to-a-file
+
+dataset2 <- bam4_gene_cazy_agg2 # make a copy just to be on the safe side
+dataset2[sapply(dataset2, is.list)] <-
+  sapply(dataset2[sapply(dataset2, is.list)], 
+         function(x)sapply(x, function(y) paste(unlist(y),collapse=", ") ) )
+
+library("xlsx")
+
+write.xlsx(dataset2, file = paste(sharedPath, "to check CAZY with not unique alignments2.xlsx", sep=""), sheetName="Sheet1", col.names=TRUE, row.names=TRUE, append=FALSE, showNA=TRUE)
+
+
+write.table(dataset2, file = paste(sharedPath, "to check CAZY with not unique alignments2.tab", sep=""), sep="\t", col.names=FALSE, row.names = FALSE, quote = FALSE)
+
+
+
+```
+
+
+**  Paenibacillus

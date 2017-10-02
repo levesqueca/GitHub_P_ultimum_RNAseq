@@ -1,0 +1,487 @@
+RNA-Seq Read Processing and Alignment with TopHat2
+===============================================================
+
+Installing the required packages for R:
+This is to be done in the R command line and not in R studio
+source("http://www.Bioconductor.org/biocLite.R")
+biocLite("BiocUpgrade")
+
+Getting started in R:
+Set the working directory > setwd("~/")
+Check version installed
+```{r}
+library(knitr)
+```
+
+This will help us when finding our files to source functions:
+```{r}
+install.packages("rprojroot")
+library(rprojroot)
+# We specify ours is an RStudio project
+# The root object contains a function that will help us locate our package r files
+# regarless of our current working directory
+root <- rprojroot::is_rstudio_project
+scriptsPath <- root$make_fix_file(".")("R")
+scripts <- dir(root$find_file("R", path = root$find_file()))
+scriptsl <- paste(scriptsPath, scripts, sep = "//")
+lapply(scriptsl, source)
+```
+
+Setting up the system environment to run qsub jobs from within RStudio
+```{r}
+Sys.setenv(SGE_ROOT="/opt/gridengine")
+Sys.setenv(SGE_CELL="default")
+Sys.setenv(SGE_ARCH="linux-x64")
+Sys.setenv(SGE_EXECD_PORT="537")
+Sys.setenv(SGE_QMASTER_PORT="536")
+```
+
+Many of the commands and approach are from:
+Simon Anders et al., 2013. Count-based differential expression analysis of 
+RNA sequencing data using R and Bioconductor. Nature protocols | VOL.8 NO.9 | 2013
+
+Chunk: Analysis and Sequence Data Directory Setting
+User:
+Define the the folder in the shared folder that will hold the analyses of the time-course/dataset 
+you will be working with. In our case, we have two different time-course experiments, Oosporogenesis 
+and Oospore Conversion. Below we set which one the script will run analyses for. We also get the 
+user to specify what the name of the directory that will hold the reads will be.
+```{r}
+# Define the path to the shared folder where the main working directory will be.
+sharedPath <- "/isilon/biodiversity/users/shared/Pythium_ultimum_RNAseq/"
+
+# What is the name of the overall experiment?
+#analysis   <- "Oospore_Conversion_TimeCourse/"
+analysis   <- ""
+analysis_out   <- "Oosporogenesis_new_references"
+
+# Name of the directory you'll be keeping all the analyses for this pipeline:
+workDir    <- "MiSeq_Analyses_Paenibacillus_from_RNAseq"
+workDir    <- "MiSeq_Analyses_Paenibacillus_polymyxa"
+workDir    <- "HiSeq_Analyses2_Genomic_Mito"
+workDir    <- "HiSeq_Analyses2_Paenibacillus_polymyxa"
+workDir    <- "HiSeq_Analyses2_Paenibacillus_from_RNAseq"
+
+#Oospore_conversion
+#Name of the directory to keep the fastq files in:
+# seqDataDir <- "MiSeq_data_Sci2"
+# seqDataDir <- "HiSeq_data2"
+seqDataDir <- "HiSeq_data"
+
+
+
+```
+
+Chunk: Library Adapter Sequence User Input
+
+User needs to specify the adapter sequences attached to the sequencing reads. This will depend on 
+how the libraries were prepared. We prepared our libraries using the Mondrian and SciClone with 
+library kits, instruments and kits by NuGen. NuGen kits are designed to work with Illumina 
+sequencing platforms and generate libraries with the sequence structure:
+
+5' AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT 
+   (N) 
+   AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC <- region to select as forward adapter
+   XXXXXX 
+   ATCTCGTATGCCGTCTTCTGCTTG 3'
+   
+3' TTACTATGCCGCTGGTGGCTCTAGATGTGAGAAAGGGATGTGCTGCGAGAAGGCTAGA 
+   (N) 
+   TCTAGCCTTCTCGTGTGCAGACTTGAGGTCAGTG <- region to select as reverse adapter
+   XXXXXX 
+   TAGAGCATACGGCAGAAGACGAAC 5'
+
+Where each string of ‘X’ is the unique 4-, 6, or 8-base barcode from the L2 adaptor mix of the 
+library construction system (where applicable) and (N) is the library insert.
+
+We will need to remove any adapter sequences from our reads. We will be doing this with SeqPrep. 
+SeqPrep specifies that the user must first ensure the adapter sequences they choose are correct by 
+doing a "grep" on the reads first:
+
+Before running SeqPrep make sure to check that the program's defaults are indeed the adapters you 
+are looking for. Try copying the default forward adapter from this file and grep it against your 
+reads doing a word count, also try the same with the reverse adapter with grep. You should see some 
+hits. You can also try using (and validating with grep) -A GATCGGAAGAGCACACG -B AGATCGGAAGAGCGTCGT  
+as parameters. To find a list of Illumina adapter sequences you should write to Illumina tech 
+support TechSupport@illumina.com (they do not like people to share the list of sequences outside of 
+their institution).
+
+
+<!-- User to specify the time-points, if any, for the RNA-Seq experiment: -->
+<!-- ```{r} -->
+<!-- timePoints <- c("0", "12" , "24", "48", "72", "120", "240") -->
+<!-- ``` -->
+
+Chunk: Path Setting
+The following paths are to directories where the references, tools and general requirements are 
+located, this depends on the directories actually having been put there:
+```{r}
+toolsDirPath     <- paste(sharedPath, "tools/",      sep="")
+
+referencesPath   <- paste(sharedPath, "References/Genomic_Mito",  "/", sep="")
+#referencesPath   <- paste(sharedPath, "References/Paenibacillus_from_RNAseq",  "/", sep="")
+cazyPath         <- paste(sharedPath, "CAZy/",       sep="")
+bowtie2BuildPath <- "/opt/bio/bowtie2/bowtie2-build"
+htseqCountPath   <- "/opt/bio/HTSeq/bin/htseq-count"
+prinSeqPath      <- "/opt/bio/prinseq-lite/prinseq-lite"
+prinSeqGraphPath <- "/opt/bio/prinseq-lite/prinseq-graphs"
+samtools1Path    <- "/opt/bio/samtools1/bin/samtools1"
+seqPrepPath      <- "/opt/bio/SeqPrep/SeqPrep"
+tophat2Path      <- "/opt/bio/tophat/bin/tophat2"
+#pyuuRefPath      <- paste(referencesPath, "Pyuu_ref_1ribo_mitoGB_no_repeats.fa", sep = "")
+#pyuugff3Path     <- paste(referencesPath, "Pyuu_ref_1ribo_mitoGB_no_repeats.gff3", sep = "")
+#pyuuRefPath      <- paste(referencesPath, "GU138662no_inverted.fasta", sep = "")
+#pyuugff3Path     <- paste(referencesPath, "GU138662no_inverted.gff", sep = "")
+pyuuRefPath      <- paste(referencesPath, "Pyuu_ref_1ribo_mitoGB_no_repeats_edited2.fa", sep = "")
+pyuugff3Path     <- paste(referencesPath, "Pyuu_ref_1ribo_mitoGB_no_repeats_edited2.gff3", sep = "")
+bowind <- "Pyuu_ref_1ribo_mitoGB_no_repeats_edited2"
+#bowind <- "k255.supercontigs_Paenibacillus_subset2"
+#pyuuRefPath      <- paste(referencesPath, "Pyuu_ref_1ribo_no_mito.fa", sep = "")
+#pyuugff3Path     <- paste(referencesPath, "Pyuu_ref_1ribo_no_mito.gff3", sep = "")
+#pyuuRefPath      <- paste(referencesPath, "Paenibacillus_Y412MC10.fa", sep = "")
+#pyuugff3Path     <- paste(referencesPath, "Paenibacillus_Y412MC10.gff3", sep = "")
+#pyuuRefPath      <- paste(referencesPath, "Paenibacillus_polymyxa.fa", sep = "")
+#pyuugff3Path     <- paste(referencesPath, "Paenibacillus_polymyxa.gff3", sep = "")
+#pyuuRefPath      <- paste(referencesPath, "k255.supercontigs_Paenibacillus_subset2.fa", sep = "")
+#pyuugff3Path     <- paste(referencesPath, "k255.supercontigs_Paenibacillus_subset2.gff3", sep = "")
+
+pathFastq <- paste(sharedPath, analysis, seqDataDir, "/", sep = "")
+
+pyuuTranscripts  <- paste(referencesPath, "pythium_ultimum_transcripts.fasta", sep = "")
+pyuuProteins     <- paste(referencesPath, "pythium_ultimum_proteins.fasta", sep = "")
+
+# Set the path:
+sharedPathAn <- paste(sharedPath, analysis_out, "/", workDir, "/", sep ="")
+```
+
+
+The user does not alter the variables below. The following chunk will integrate the user-defined 
+variables from the previous chunk into the script.
+```{r}
+# Create the working directory for the current analyses:
+dir.create(paste(sharedPath, analysis_out, "/", workDir, sep = ""), showWarnings = TRUE, recursive = FALSE)
+
+# Establish the working directory for R:
+setwd(sharedPathAn)
+# Verify the working Directory:
+getwd()
+# Create fastq directory in sharedPath folder based on "seqDataDir":
+dir.create(paste(sharedPath, analysis, seqDataDir, sep = ""), showWarnings=TRUE, recursive=FALSE)
+
+```
+
+Bowtie:
+Creating Bowtie reference index from the fasta file: 
+```{r}
+cmd    <- paste(bowtie2BuildPath, " -f ", pyuuRefPath, " ", paste(referencesPath, bowind, sep = ""), 
+                sep = "")
+system(cmd)
+```
+
+Note, for the oospore conversion timecourse off the HiSeq in the folder HiSeq_Analyses2, we
+saved the final metadata table a couple of times and now have files with the same infor but 
+with different names:
+"Final_metadataTable_afterProcessing.csv"
+"metadataAdapRemOosporeConvHiSeqAnalyses2.tab.tsv"
+```{r}
+# Specify which metadata table you've been using:
+# finalMetadata <- metadataAdapRem
+#finalName <- "OosporeConversion_Final_metadataTable_afterProcessing.csv"
+finalName <- "Oosporogenesis_Final_metadataTable_afterProcessing.csv"
+# write.table(finalMetadata, file = finalName, 
+#             append = FALSE, quote = FALSE, 
+#             sep = ",", row.names = FALSE)
+finalMetadata <- read.csv(paste(sharedPath,finalName, sep=""), stringsAsFactors = FALSE)
+metadataAdapRem <- finalMetadata 
+```
+
+
+Make changes to work with MiSeq data to save time
+```{r}
+
+metadataAdapRM <- metadataAdapRem
+metadataAdapRM$AdapRMDustMinLen <- gsub("_a1\\.|_a2\\.|_b1\\.|_b2\\.", ".",   metadataAdapRM$processed5.R1.Fastq)
+
+metadataAdapRM$AdapRMDustMinLen <- gsub(".5processed\\.R1\\.fastq", ".5processedMerged.fastq", 
+                                        metadataAdapRM$AdapRMDustMinLen)
+metadataAdapRM$LibraryName <- gsub("_a1|_a2|_b1|_b2", "",   metadataAdapRM$LibraryName)
+
+
+metadataAdapRM <- metadataAdapRM[!duplicated(metadataAdapRM$AdapRMDustMinLen), ]
+
+metadataAdapRM <- metadataAdapRM[!metadataAdapRM$LibraryName == "T0-1_BC09", ]
+
+```
+
+
+* TopHat for HiSEQ: *
+Create folders to put Tophat results and runs the jobs.  
+```{r}
+prefix <- "JoG_TophatQsub"
+node   <- 2
+
+# For paired-end not merged:
+for(j in 1:length(metadataAdapRem$LibraryName)) {
+  dir.create(paste(sharedPathAn, metadataAdapRem$LibraryName[j], sep = ""),
+             showWarnings = TRUE, recursive = FALSE)
+}
+
+cmd <- with(metadataAdapRem, 
+            paste(tophat2Path, 
+                  " -G ", pyuugff3Path,
+                  " -p ", node, 
+                  " -o ", sharedPathAn, LibraryName, "/",LibraryName,".TopHat.",
+                          format(Sys.time(), "%Y-%m-%d"),
+                  " ",    referencesPath, bowind,
+                  " ",    pathFastq, R1, ".gz ", pathFastq, R2,".gz",
+                  sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+```
+
+
+MUST DO CLEAN UP OF TMP FILES WITHIN FOLDERS
+- fix the matching to temp tophat files to be removed
+```{r}
+# For paired-end not merged
+cmd <- with(metadataAdapRem, paste("rm -r ", sharedPathAn, metadataAdapRem$LibraryName, "/", 
+                                   metadataAdapRem$LibraryName, ".TopHat.2016-07-19/tmp", sep = ""))
+
+# # For merged or single-end reads:
+# cmd <- with(metadataAdapRM, paste("rm -r ", sharedPathAn, metadataAdapRM$LibraryName, "/", 
+#                                   metadataAdapRM$LibraryName, ".TopHat.2016-07-10/tmp", sep = ""))
+system(cmd)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Setting up the folder date
+```{r}
+# could have automatic search for most recent
+topHatDate <- ".2017-08-08"
+```
+
+To run Samtools on the Tophat folder that has the right date
+```{r}
+prefix <- "KoG_SamtoolsSortQsub"
+# cmd <- with(metadataAdapRM, # For merged or single-end reads
+cmd <- with(metadataAdapRem,  # For paired-end not merged
+            (paste(samtools1Path, " sort",   " -n ", 
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", "accepted_hits.bam ", sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn", sep = ""),
+                   "\n",
+                   samtools1Path, " view ", " -o ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn.bam", sep = ""),
+                   "\n",
+                   samtools1Path, " sort ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", "accepted_hits.bam ", sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_s", sep = ""),
+                   "\n",
+                   samtools1Path, " index ", 
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat",
+                         topHatDate, "/", LibraryName, "_s.bam", sep = ""),
+                   sep = "")))
+node   <- 1
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+HTSeq-count for TopHat2 hits:  
+Prepare the metadata table for recording TopHat counts:
+```{r}
+# For paired-end not merged
+# metadataAdapRem$countfTopHat = paste(metadataAdapRem$LibraryName, "TopHat2Count", sep = ".")
+
+# # For merged or single-end reads:
+# metadataAdapRM$countfTopHat = paste(metadataAdapRM$LibraryName, "TopHat2Count", sep = ".")
+```
+
+
+Read count with HT-Seq:
+```{r}
+# Set HT-Seq options:
+stranded <- "no"
+#stranded <- "yes"
+MINAQUAL <- 10
+#MINAQUAL <- 0
+prefix   <- paste("LoG_HTSeq_Qsub_MINAQUAL_",MINAQUAL,"_stranded_no",sep="")
+#prefix   <- "LoG_HTSeq_Qsub"
+node     <- 1
+#  # cmd <- with(metadataAdapRM, # For merged or single-end reads
+ cmd <- with(metadataAdapRem,  # For paired-end not merged
+             paste(htseqCountPath, 
+                   " -s ", stranded,
+ #                  " -a ", MINAQUAL,
+                   " --minaqual=", MINAQUAL,
+#                    " -m  intersection-strict", 
+# #     union, intersection-strict and intersection-nonempty--nonunique= all",
+                    " --idattr=Parent ", 
+                   paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
+                   pyuugff3Path, " > ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
+                       #  topHatDate, "/", metadataAdapRem$countfTopHat, sep = ""),  # PE not merged
+                         # topHatDate, "/", metadataAdapRM$countfTopHat, sep = ""), # Merged/SE reads
+                        topHatDate, "/", metadataAdapRem$countfTopHat, "_MINAQUAL_" ,MINAQUAL, "_stranded_NO", sep = ""),  # PE not merged
+                   sep = ""))
+ 
+ suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+
+
+
+
+** TopHat for MiSEQ: **
+Create folders to put Tophat results and runs the jobs.  
+```{r}
+prefix <- "J_TophatQsub"
+node   <- 2
+
+# # For merged or single-end reads:
+for(j in 1:length(metadataAdapRM$LibraryName)) {
+  dir.create(paste(sharedPathAn, metadataAdapRM$LibraryName[j], sep = ""),
+             showWarnings = TRUE, recursive = FALSE)
+}
+
+cmd <- with(metadataAdapRM,
+            paste(tophat2Path,
+                  " -G ", pyuugff3Path,
+                  " -p ", node,
+                  " -o ", sharedPathAn, LibraryName, "/",LibraryName,".TopHat.",
+                          format(Sys.time(), "%Y-%m-%d"),
+                  " ",    referencesPath, bowind,
+#                  " ",    pathFastq, AdapRMDustMinLen, 
+         " ",    pathFastq, substr(AdapRMDustMinLen, 1,nchar(AdapRMDustMinLen)-6), "B.fastq",
+                  sep = ""))
+
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+```
+
+
+MUST DO CLEAN UP OF TMP FILES WITHIN FOLDERS
+- fix the matching to temp tophat files to be removed
+```{r}
+# For paired-end not merged
+cmd <- with(metadataAdapRem, paste("rm -r ", sharedPathAn, metadataAdapRem$LibraryName, "/", 
+                                   metadataAdapRem$LibraryName, ".TopHat.2016-07-19/tmp", sep = ""))
+
+# # For merged or single-end reads:
+# cmd <- with(metadataAdapRM, paste("rm -r ", sharedPathAn, metadataAdapRM$LibraryName, "/", 
+#                                   metadataAdapRM$LibraryName, ".TopHat.2016-07-10/tmp", sep = ""))
+system(cmd)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+Setting up the folder date
+```{r}
+# could have automatic search for most recent
+topHatDate <- ".2017-08-08"
+```
+
+** Mi Seq ** 
+To run Samtools on the Tophat folder that has the right date
+```{r}
+prefix <- "K_SamtoolsSortQsub"
+# cmd <- with(metadataAdapRM, # For merged or single-end reads
+cmd <- with(metadataAdapRM,  # For paired-end not merged
+            (paste(samtools1Path, " sort",   " -n ", 
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", "accepted_hits.bam ", sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn", sep = ""),
+                   "\n",
+                   samtools1Path, " view ", " -o ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn.bam", sep = ""),
+                   "\n",
+                   samtools1Path, " sort ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", "accepted_hits.bam ", sep = ""),
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat", 
+                         topHatDate, "/", LibraryName, "_s", sep = ""),
+                   "\n",
+                   samtools1Path, " index ", 
+                   paste(sharedPathAn, LibraryName, "/", LibraryName, ".TopHat",
+                         topHatDate, "/", LibraryName, "_s.bam", sep = ""),
+                   sep = "")))
+node   <- 1
+suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix, node)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
+HTSeq-count for TopHat2 hits:  
+Prepare the metadata table for recording TopHat counts:
+```{r}
+# For paired-end not merged
+# metadataAdapRem$countfTopHat = paste(metadataAdapRem$LibraryName, "TopHat2Count", sep = ".")
+
+# # For merged or single-end reads:
+# metadataAdapRM$countfTopHat = paste(metadataAdapRM$LibraryName, "TopHat2Count", sep = ".")
+```
+
+** Mi Seq ** 
+Read count with HT-Seq:
+```{r}
+# Set HT-Seq options:
+stranded <- "no"
+MINAQUAL <- 10
+prefix   <- "L_HTSeq_Qsub"
+node     <- 1
+#  # cmd <- with(metadataAdapRM, # For merged or single-end reads
+ cmd <- with(metadataAdapRM,  # For paired-end not merged
+             paste(htseqCountPath, 
+                   " -s ", stranded,
+                   " -a ", MINAQUAL,
+                   " --idattr=Parent ", 
+                   paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
+                         topHatDate, "/", LibraryName, "_sn.sam ", sep = ""),
+                   pyuugff3Path, " > ",
+                   paste(sharedPathAn, LibraryName, "/", LibraryName,".TopHat", 
+   #                      topHatDate, "/", metadataAdapRem$countfTopHat, sep = ""),  # PE not merged
+                         topHatDate, "/", metadataAdapRM$countfTopHat, sep = ""), # Merged/SE reads
+                   sep = ""))
+ 
+ suffix <- ".sub"; cat(bashDirections); MakeQsubs(cmd, prefix, suffix)
+```
+
+To remove the output files after you are done:
+```{r}
+system("/opt/gridengine/bin/linux-x64/qstat") # Remove qsub temp when qstat returns nothing.
+RemoveQsubTempFiles(sharedPathAn, prefix)
+```
+
